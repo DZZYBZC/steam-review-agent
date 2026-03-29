@@ -11,11 +11,11 @@ Usage:
 
 import logging
 import sys
-from config import DB_PATH
 from ingest import fetch_all_reviews
 from clean import clean_pipeline
 from storage import get_connection, create_tables, save_reviews, load_reviews
 from stats import compute_basic_stats, compute_keyword_frequency, print_stats_report
+from classify import run_classification
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,8 +62,16 @@ def run_pipeline(app_id: str, max_reviews: int = 500, skip_fetch: bool = False) 
         # Step 3: Store in database
         logger.info("=== STEP 3: Saving to database ===")
         save_reviews(conn, df)
+
+        # Step 3.5: Classify reviews
+        logger.info("=== STEP 3.5: Classifying reviews ===")
+        run_classification(conn, app_id, limit=5)
+        
+
     else:
         logger.info("Skipping fetch — loading from database.")
+        logger.info("Classifying any unclassified reviews")
+        run_classification(conn, app_id, limit=5)
 
     # Step 4: Load from DB and compute stats
     logger.info("=== STEP 4: Computing statistics ===")

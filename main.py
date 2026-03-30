@@ -13,14 +13,16 @@ import logging
 import sys
 from ingest import fetch_all_reviews
 from clean import clean_pipeline
-from storage import get_connection, create_tables, save_reviews, load_reviews
+from storage import get_connection, create_tables, save_reviews, load_reviews, load_classified_reviews
 from stats import compute_basic_stats, compute_keyword_frequency, print_stats_report
 from classify import run_classification
+from cluster import build_clusters, rank_clusters, summarize_cluster
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -65,13 +67,41 @@ def run_pipeline(app_id: str, max_reviews: int = 500, skip_fetch: bool = False) 
 
         # Step 3.5: Classify reviews
         logger.info("=== STEP 3.5: Classifying reviews ===")
-        run_classification(conn, app_id, limit=5)
+        run_classification(conn, app_id, limit=0)
         
+        # Step 3.7: Cluster detection & priority ranking
+        logger.info("=== STEP 3.7: Clustering and ranking ===")
+        classified_df = load_classified_reviews(conn, app_id)
+
+        if len(classified_df) == 0:
+            logger.warning("No classified reviews found. Skipping clustering.")
+        else:
+            clusters = build_clusters(classified_df)
+            clusters = rank_clusters(clusters)
+
+            for cluster in clusters:
+                cluster.summary = summarize_cluster(cluster)
+                print(f"\n--- {cluster.category} (priority: {cluster.priority_score}) ---")
+                print(cluster.summary)
 
     else:
         logger.info("Skipping fetch — loading from database.")
         logger.info("Classifying any unclassified reviews")
-        run_classification(conn, app_id, limit=5)
+        run_classification(conn, app_id, limit=0)
+        # Step 3.7: Cluster detection & priority ranking
+        logger.info("=== STEP 3.7: Clustering and ranking ===")
+        classified_df = load_classified_reviews(conn, app_id)
+
+        if len(classified_df) == 0:
+            logger.warning("No classified reviews found. Skipping clustering.")
+        else:
+            clusters = build_clusters(classified_df)
+            clusters = rank_clusters(clusters)
+
+            for cluster in clusters:
+                cluster.summary = summarize_cluster(cluster)
+                print(f"\n--- {cluster.category} (priority: {cluster.priority_score}) ---")
+                print(cluster.summary)
 
     # Step 4: Load from DB and compute stats
     logger.info("=== STEP 4: Computing statistics ===")

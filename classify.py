@@ -91,7 +91,7 @@ def call_classifier(review_text: str) -> ClassificationResult:
         )
         raise ValueError("Model refused to classify review.")
 
-    logger.info(f"Classifier API call: {response.usage.input_tokens} input tokens + {response.usage.output_tokens} output tokens")
+    logger.debug(f"Classifier API call: {response.usage.input_tokens} input tokens + {response.usage.output_tokens} output tokens")
 
     content_block = response.content[0]
     if not hasattr(content_block, "text"):
@@ -148,6 +148,10 @@ def run_classification(conn, app_id: str, limit: int | None = None) -> dict:
         A summary dict with counts of what happened.
     """
 
+    if limit is not None and limit <= 0:
+        logger.info("Classification limit set to 0 — skipping.")
+        return {"total": 0, "classified": 0, "failed": 0}
+
     df = get_unclassified_reviews(conn, app_id)
 
     if len(df) == 0:
@@ -161,13 +165,12 @@ def run_classification(conn, app_id: str, limit: int | None = None) -> dict:
     classified = 0
     failed = 0
 
-    for _, row in df.iterrows():
+    for i, (_, row) in enumerate(df.iterrows(), start=1):
         review_id = row["review_id"]
         review_text = row["review_text"]
 
-        logger.info(
-            f"Classifying review {classified + failed + 1}/{len(df)}: {review_id}"
-        )
+        if i % 10 == 0 or i == len(df) or i == 1:
+            logger.info(f"Classification progress: {i}/{len(df)}")
 
         result = classify_review(review_text)
 

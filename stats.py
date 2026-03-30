@@ -89,7 +89,9 @@ def compute_keyword_frequency(df: pd.DataFrame, top_n: int = 20) -> list[tuple]:
         "ours", "hate", "minute", "minutes", "seconds", "beat", "pew", "end",
         "players", "player", "people", "die", "dead", "find", "start", "lose",
         "things", "give", "gave", "main", "far", "near", "thing", "going", "used",
-        "uses", "use", "few", "around", "work", "works", "worked", "overall"
+        "uses", "use", "few", "around", "work", "works", "worked", "overall",
+        "once", "doing", "add", "enjoyed", "looking", "plenty", "take", "takes",
+        "taken", "took"
     }
     
     word_counts = Counter()

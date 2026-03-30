@@ -31,3 +31,15 @@ REVIEW_CATEGORIES = [
     "monetization_value",
     "other"
 ]
+
+CLUSTER_TIME_WINDOW_DAYS = 30
+CLUSTER_MIN_REVIEWS = 3
+PRIORITY_WEIGHTS = {
+    "volume": 0.3,
+    "velocity": 0.3,
+    "sentiment": 0.2,
+    "rating_impact": 0.2,
+}
+CLUSTER_SUMMARY_MODEL = "claude-haiku-4-5-20251001"
+CLUSTER_SUMMARY_TEMPERATURE = 0.2
+CLUSTER_SUMMARY_MAX_TOKENS = 600

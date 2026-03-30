@@ -210,3 +210,30 @@ def load_classifications(
 
     logger.info(f"Loaded {len(df)} classifications.")
     return df
+
+def load_classified_reviews(
+    conn: sqlite3.Connection,
+    app_id: str,
+) -> pd.DataFrame:
+    """
+    Load non-duplicate reviews joined with their classifications.
+    """
+    query = """
+        SELECT r.review_id, r.app_id, r.review_text, r.voted_up, r.timestamp,
+               r.playtime_hours, r.votes_up, r.weighted_vote_score,
+               c.primary_category, c.secondary_categories, c.confidence
+        FROM reviews r
+        JOIN classifications c ON r.review_id = c.review_id
+        WHERE r.app_id = ?
+          AND r.is_near_duplicate = 0
+          AND c.primary_category != 'other'
+    """
+    df = pd.read_sql_query(query, conn, params=[app_id])
+    
+    if len(df) > 0 and "secondary_categories" in df.columns:
+        df["secondary_categories"] = df["secondary_categories"].apply(
+            lambda x: json.loads(x) if x else []
+        )
+    
+    logger.info(f"Loaded {len(df)} classified reviews for app {app_id}.")
+    return df

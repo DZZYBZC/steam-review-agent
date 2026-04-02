@@ -9,7 +9,7 @@ import anthropic
 from datetime import timedelta, timezone
 from pydantic import BaseModel, Field
 from collections import Counter
-from skills import load_skill
+from utils import load_skill
 from config import (
     CLUSTER_TIME_WINDOW_DAYS,
     CLUSTER_MIN_REVIEWS,
@@ -227,7 +227,7 @@ def rank_clusters(clusters: list[ClusterSummary]) -> list[ClusterSummary]:
     return clusters
 
 client = anthropic.Anthropic()
-CLUSTER_SYSTEM_PROMPT = load_skill("analyze_cluster")
+CLUSTER_SYSTEM_PROMPT = load_skill("analyze-cluster")
 
 
 def summarize_cluster(cluster: ClusterSummary) -> str:

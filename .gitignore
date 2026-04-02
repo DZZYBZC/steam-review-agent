@@ -12,3 +12,8 @@ __pycache__/
 
 .DS_Store
 Thumbs.db
+
+data/*.json
+data/*.csv
+embeddings/
+logs/

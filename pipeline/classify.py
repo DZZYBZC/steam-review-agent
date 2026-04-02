@@ -6,8 +6,8 @@ import json
 import logging
 import anthropic
 from pydantic import BaseModel, Field, field_validator, model_validator
-from skills import load_skill
-from storage import get_unclassified_reviews, save_classification
+from utils import load_skill
+from pipeline.storage import get_unclassified_reviews, save_classification
 
 from config import (
     CLASSIFIER_MODEL,
@@ -57,7 +57,7 @@ class ClassificationResult(BaseModel):
         return self
 
 client = anthropic.Anthropic()
-SYSTEM_PROMPT = load_skill("classify_review")
+SYSTEM_PROMPT = load_skill("classify-review")
 
 def call_classifier(review_text: str) -> ClassificationResult:
     """

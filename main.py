@@ -11,12 +11,12 @@ Usage:
 
 import logging
 import sys
-from ingest import fetch_all_reviews
-from clean import clean_pipeline
-from storage import get_connection, create_tables, save_reviews, load_reviews, load_classified_reviews
-from stats import compute_basic_stats, compute_keyword_frequency, print_stats_report
-from classify import run_classification
-from cluster import build_clusters, rank_clusters, summarize_cluster
+from pipeline.ingest import fetch_all_reviews
+from pipeline.clean import clean_pipeline
+from pipeline.storage import get_connection, create_tables, save_reviews, load_reviews, load_classified_reviews
+from pipeline.stats import compute_basic_stats, compute_keyword_frequency, print_stats_report
+from pipeline.classify import run_classification
+from pipeline.cluster import build_clusters, rank_clusters, summarize_cluster
 
 logging.basicConfig(
     level=logging.INFO,

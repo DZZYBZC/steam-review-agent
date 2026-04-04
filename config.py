@@ -47,3 +47,9 @@ CLUSTER_SUMMARY_MAX_TOKENS = 600
 AGENT_MAX_ITERATIONS = 3
 CHECKPOINT_BACKEND = "memory"
 CHECKPOINT_DB_PATH = "checkpoints.db"
+
+STEAM_NEWS_API_URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid={app_id}"
+PATCH_NOTE_MAX_ITEMS = 50
+PATCH_NOTE_EXTRA_FEEDS: list[str] = []
+
+CHUNK_MAX_LENGTH = 500

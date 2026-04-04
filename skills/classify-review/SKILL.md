@@ -31,15 +31,34 @@ Classify into exactly one primary category and zero or more secondary categories
 - **multiplayer_network** — Server issues, matchmaking problems, lag/latency, cheating, co-op connectivity
 - **story_presentation** — Writing quality, dialogue, voice acting, narrative pacing, world-building, immersion
 - **monetization_value** — Price fairness, DLC value, microtransactions, value for money, regional pricing
-- **other** — Reviews that don't fit any above category, or are too vague/off-topic to classify
+- **other** — Any review that is not primarily a complaint about one of the categories above, including purely positive praise, pure irrelevant opinions, mixed but non-specific reactions, off-topic comments, jokes/memes, or feedback that does not map clearly to those complaint categories
 </review_categories>
 
 <disambiguation>
 When a review could fit multiple categories, use these distinctions:
-- technical_issues = something is broken, crashing, or failing to work as intended
-- performance_optimization = the game works but runs slowly, stutters, or has poor FPS
-- gameplay_mechanics = the system works as designed but feels bad or is poorly designed
+
+- technical_issues = something is broken, crashing, bugged, or failing to work as intended
+- performance_optimization = the game works, but runs poorly (low FPS, stutter, long loading, bad optimization)
+- gameplay_mechanics = the game system works as intended, but feels bad, shallow, clunky, or poorly designed
+- balance_difficulty = the main complaint is fairness or tuning, such as overpowered enemies/weapons/builds, unfair spikes, or bad scaling
+- ui_controls = the main complaint is about menus, HUD, controls, keybinds, controller support, readability, or accessibility
+- content_progression = the main complaint is about amount of content, pacing, repetition, grind, replayability, or endgame emptiness
+- story_presentation = the main complaint is about narrative quality, dialogue, characters, voice acting, immersion, or world-building
+- multiplayer_network = the main complaint is online play quality, including servers, matchmaking, lag, disconnects, cheating, or co-op connectivity
+- monetization_value = the main complaint is price, DLC value, microtransactions, or whether the game is worth the money
+- other = use only when the review is not primarily a complaint covered above, such as pure praise, vague sentiment, jokes, off-topic remarks, or mixed reactions without a clear issue
 </disambiguation>
+
+<priority_rules>
+- Choose the primary category based on the review's main complaint, not every issue mentioned.
+- Use secondary categories only if they are explicitly mentioned and materially important.
+- If a problem is caused by something broken, prefer technical_issues over gameplay_mechanics.
+- If a problem is caused by poor FPS, stutter, or loading, prefer performance_optimization over technical_issues.
+- If a complaint is about unfairness or tuning, prefer balance_difficulty over gameplay_mechanics.
+- If a complaint is about controls, HUD, menus, or readability, prefer ui_controls over gameplay_mechanics.
+- If a complaint is about online connection or matchmaking, prefer multiplayer_network even if lag or crashes are mentioned.
+- Use other only when no concrete complaint category clearly applies.
+</priority_rules>
 
 <classification_process>
 Use the following rubric internally. Return only the final JSON as in the output_format section:

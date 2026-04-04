@@ -12,18 +12,11 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_FEED = "steam_community_announcements"
 
-# Strong title signals — these words alone in a title mean "patch".
-# Version numbers (v1.0, Ver.1.2.3) are deliberately excluded here because
-# they appear in non-patch titles like "v1.0 Is Now Available!". A title
-# like "Early Access Patch 047 -- v0.32647" still matches via "patch\b".
-# Titles that are newsletters/digests — short-circuit to content_update
-# before patch signals get a chance to false-positive on body content.
 _TITLE_NEWSLETTER_SIGNALS = re.compile(
     r"newsletter|neowsletter|digest|community\s+hub|director'?s?\s+letter",
     re.IGNORECASE,
 )
 
-# Livestream/event titles — classify as event before patch body signals fire.
 _TITLE_EVENT_SIGNALS = re.compile(
     r"watch\b|livestream|live\s+on\b|free\s+weekend|twitch",
     re.IGNORECASE,
@@ -74,15 +67,12 @@ def classify_news_type(item: dict) -> str:
     title = item.get("title", "")
     contents_preview = item.get("contents", "")[:1000]
 
-    # Newsletters and digests are never patches, even if body mentions fixes.
     if _TITLE_NEWSLETTER_SIGNALS.search(title):
         return "content_update"
 
-    # Livestream/event announcements — skip patch checks entirely.
     if _TITLE_EVENT_SIGNALS.search(title):
         return "event"
 
-    # A patch keyword in the title is definitive.
     if _TITLE_PATCH_SIGNALS.search(title):
         return "patch"
 

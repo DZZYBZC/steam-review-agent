@@ -90,9 +90,6 @@ def strip_markup(text: str) -> str:
     result = result.replace("&nbsp;", " ")
     result = result.replace("&quot;", '"')
 
-    # Insert newline before bracket-style section headers (\[ SOUND ], [ ENGINE ])
-    # and strip brackets/backslashes so they become plain section names on their own line.
-    # Requires all-caps content to avoid matching e.g. [Game Name] in prose.
     result = re.sub(
         r"\\?\[\s*([A-Z][A-Z '/&\-]{1,57}?)\s*\\?\]",
         r"\n\1\n",
@@ -116,7 +113,6 @@ _SECTION_HEADER_PATTERN = re.compile(
     r"$"
 )
 
-# Bracket-style headers: [ SOUND ], [GAMEPLAY], \[ ENGINE ]
 _BRACKET_HEADER_PATTERN = re.compile(
     r"^\\?\[\s*([A-Za-z][A-Za-z '/&\-]{1,57}?)\s*\\?\]$"
 )
@@ -191,7 +187,6 @@ def _is_section_header(line: str) -> str | None:
     if _BULLET_PATTERN.match(stripped):
         return None
 
-    # Bracket-style: [ SOUND ], \[ ENGINE ]
     bracket_match = _BRACKET_HEADER_PATTERN.match(stripped)
     if bracket_match:
         return bracket_match.group(1).strip()

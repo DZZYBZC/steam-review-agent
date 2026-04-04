@@ -87,8 +87,6 @@ def classify_news_type(item: dict) -> str:
         return "content_update"
     elif has_event:
         return "event"
-    elif has_content:
-        return "event"
     else:
         return "content_update"
 

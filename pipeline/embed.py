@@ -10,9 +10,12 @@ import logging
 import chromadb
 from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
+from sentence_transformers import CrossEncoder
 from config import (
     CHROMA_PERSIST_DIR,
     EMBEDDING_MODEL,
+    RERANKER_MODEL,
+    RERANKER_TOP_N,
     SIMILARITY_THRESHOLD,
     RRF_K,
 )
@@ -21,6 +24,7 @@ from pipeline.chunk import PatchChunk
 logger = logging.getLogger(__name__)
 
 _model: SentenceTransformer | None = None
+_reranker: CrossEncoder | None = None
 
 def _get_model() -> SentenceTransformer:
     """Load the embedding model lazily and cache it."""
@@ -29,6 +33,15 @@ def _get_model() -> SentenceTransformer:
         logger.info(f"Loading embedding model: {EMBEDDING_MODEL}")
         _model = SentenceTransformer(EMBEDDING_MODEL)
     return _model
+
+
+def _get_reranker() -> CrossEncoder:
+    """Load the cross-encoder reranker lazily and cache it."""
+    global _reranker
+    if _reranker is None:
+        logger.info(f"Loading reranker model: {RERANKER_MODEL}")
+        _reranker = CrossEncoder(RERANKER_MODEL)
+    return _reranker
 
 
 def _get_client():
@@ -218,6 +231,7 @@ def reciprocal_rank_fusion(
     vector_results: list[dict],
     bm25_results: list[dict],
     k: int = RRF_K,
+    n_results: int = 12,
 ) -> list[dict]:
     """
     Merge vector and BM25 results using Reciprocal Rank Fusion.
@@ -249,7 +263,7 @@ def reciprocal_rank_fusion(
             docs[cid] = r
         retrievers.setdefault(cid, []).append("bm25")
 
-    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:n_results]
 
     output = []
     for cid, rrf_score in ranked:
@@ -263,3 +277,46 @@ def reciprocal_rank_fusion(
         })
 
     return output
+
+
+def rerank(
+    query_text: str,
+    rrf_results: list[dict],
+    top_n: int = RERANKER_TOP_N,
+) -> list[dict]:
+    """
+    Re-score RRF candidates using a cross-encoder for fine-grained relevance.
+
+    Scores each (query, chunk_text) pair with the cross-encoder, then returns
+    the top_n results sorted by relevance score descending.
+
+    Parameters:
+        query_text: The player complaint or search query.
+        rrf_results: Output from reciprocal_rank_fusion().
+        top_n: Number of top results to return (default 5).
+
+    Returns:
+        A list of dicts sorted by relevance_score descending, each with:
+        chunk_id, text, metadata, relevance_score, rrf_score, retrievers.
+    """
+    if not rrf_results:
+        return []
+
+    reranker = _get_reranker()
+
+    pairs = [[query_text, r["text"]] for r in rrf_results]
+    scores = reranker.predict(pairs)
+
+    scored = []
+    for i, r in enumerate(rrf_results):
+        scored.append({
+            "chunk_id": r["chunk_id"],
+            "text": r["text"],
+            "metadata": r["metadata"],
+            "relevance_score": float(scores[i]),
+            "rrf_score": r["rrf_score"],
+            "retrievers": r["retrievers"],
+        })
+
+    scored.sort(key=lambda x: x["relevance_score"], reverse=True)
+    return scored[:top_n]

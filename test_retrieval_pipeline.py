@@ -1,14 +1,15 @@
 """
-Manual inspection script for vector search and BM25 retrieval quality.
+Manual inspection script for the full retrieval pipeline.
 
 Fetches real patch notes for Monster Hunter Wilds, chunks and embeds them,
-then runs test queries through both retrieval methods side by side.
+then runs test queries through vector search, BM25, RRF fusion, and
+cross-encoder reranking.
 """
 
 from pipeline.ingest_patch_notes import fetch_news
 from pipeline.chunk import chunk_all_patch_notes
-from pipeline.embed import embed_chunks, query_similar, build_bm25_index, query_bm25, reciprocal_rank_fusion
-from config import VECTOR_TOP_K, BM25_TOP_K
+from pipeline.embed import embed_chunks, query_similar, build_bm25_index, query_bm25, reciprocal_rank_fusion, rerank
+from config import VECTOR_TOP_K, BM25_TOP_K, RERANKER_TOP_N
 
 APP_ID = "2246340"
 
@@ -19,30 +20,6 @@ TEST_QUERIES = [
     "textures not loading properly looks blurry",
     "game is too expensive not worth the price",
 ]
-
-
-def print_vector_results(results):
-    if not results:
-        print("  (no results above similarity threshold)")
-        return
-    for j, r in enumerate(results):
-        meta = r["metadata"]
-        text_preview = r["text"][:120]
-        print(f"  [{j}] dist={r['distance']:.4f}  rank={r['rank']}  retriever={r['retriever']}  version={meta['patch_version']}")
-        print(f"      section={meta['section']}  type={meta['news_type']}")
-        print(f"      {text_preview}...")
-
-
-def print_bm25_results(results):
-    if not results:
-        print("  (no results with score > 0)")
-        return
-    for j, r in enumerate(results):
-        meta = r["metadata"]
-        text_preview = r["text"][:120]
-        print(f"  [{j}] score={r['score']:.4f}  rank={r['rank']}  retriever={r['retriever']}  version={meta['patch_version']}")
-        print(f"      section={meta['section']}  type={meta['news_type']}")
-        print(f"      {text_preview}...")
 
 
 def main():
@@ -69,24 +46,15 @@ def main():
         vec_results = query_similar(collection, query, n_results=VECTOR_TOP_K)
         bm25_results = query_bm25(bm25_index, bm25_chunks, query, n_results=BM25_TOP_K)
 
-        print(f"\n  --- VECTOR RESULTS (top {VECTOR_TOP_K}, cosine) ---")
-        print_vector_results(vec_results)
-
-        print(f"\n  --- BM25 RESULTS (top {BM25_TOP_K}, keyword) ---")
-        print_bm25_results(bm25_results)
-
+        # Summary of retriever overlap
         vec_ids = {r["chunk_id"] for r in vec_results}
         bm25_ids = {r["chunk_id"] for r in bm25_results}
         overlap = vec_ids & bm25_ids
-        vec_only = vec_ids - bm25_ids
-        bm25_only = bm25_ids - vec_ids
-
-        print(f"\n  --- COMPARISON ---")
-        print(f"  overlap={len(overlap)}  vector_only={len(vec_only)}  bm25_only={len(bm25_only)}")
+        print(f"\n  Retrievers: vector={len(vec_results)}  bm25={len(bm25_results)}  overlap={len(overlap)}")
 
         rrf_results = reciprocal_rank_fusion(vec_results, bm25_results)
 
-        print(f"\n  --- RRF FUSED RESULTS ({len(rrf_results)} unique) ---")
+        print(f"\n  --- RRF FUSED RESULTS ({len(rrf_results)} candidates) ---")
         if not rrf_results:
             print("  (no results)")
         else:
@@ -94,6 +62,19 @@ def main():
                 meta = r["metadata"]
                 text_preview = r["text"][:120]
                 print(f"  [{j}] rrf={r['rrf_score']:.6f}  retrievers={r['retrievers']}  version={meta['patch_version']}")
+                print(f"      section={meta['section']}  type={meta['news_type']}")
+                print(f"      {text_preview}...")
+
+        reranked = rerank(query, rrf_results)
+
+        print(f"\n  --- RERANKED RESULTS (top {RERANKER_TOP_N}) ---")
+        if not reranked:
+            print("  (no results)")
+        else:
+            for j, r in enumerate(reranked):
+                meta = r["metadata"]
+                text_preview = r["text"][:120]
+                print(f"  [{j}] relevance={r['relevance_score']:.4f}  rrf={r['rrf_score']:.6f}  retrievers={r['retrievers']}  version={meta['patch_version']}")
                 print(f"      section={meta['section']}  type={meta['news_type']}")
                 print(f"      {text_preview}...")
         print()

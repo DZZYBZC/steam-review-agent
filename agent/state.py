@@ -16,6 +16,7 @@ class AgentState(TypedDict):
     """
 
     # Input
+    app_id: str
     review_text: str
     cluster_summary: dict # cluster.py
     review_tone: str
@@ -24,12 +25,13 @@ class AgentState(TypedDict):
     evidence_package: dict  # Investigator
     drafted_response: str   # Responder
     proposed_action: str    # Responder
+    source_ids_cited: list[str]  # Responder — chunk ids cited in the draft
     critique: str           # Critic (Reflection)
 
     # Control flow
     iteration_count: int
-    max_iterations: int
     approved: bool          # Whether the Critic approved the draft
     revision_reason: str    # Why the Critic rejected the draft (empty string if approved)
     stop_reason: str        # Why the graph stopped
     node_log: Annotated[list[str], operator.add]
+    token_usage: dict  # Per-node token tracking: {"node_name": {"input": N, "output": N}}

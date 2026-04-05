@@ -9,7 +9,6 @@ import logging
 
 from agent.graph import build_graph
 from agent.state import AgentState
-from config import AGENT_MAX_ITERATIONS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,6 +27,7 @@ def test_graph():
 
     # 2. Create a test input state
     test_state: AgentState = {
+        "app_id": "2246340",
         "review_text": "Game crashes every time I enter the second dungeon. Tried reinstalling, no fix.",
         "cluster_summary": {
             "category": "technical_issues",
@@ -36,15 +36,16 @@ def test_graph():
         },
         "review_tone": "frustrated",
         "iteration_count": 0,
-        "max_iterations": AGENT_MAX_ITERATIONS,
         "approved": False,
         "revision_reason": "",
         "stop_reason": "",
         "evidence_package": {},
         "drafted_response": "",
         "proposed_action": "",
+        "source_ids_cited": [],
         "critique": "",
         "node_log": [],
+        "token_usage": {},
     }
 
     # 3. Invoke the graph
@@ -70,10 +71,10 @@ def test_graph():
         print(f"  - {entry}")
 
     # 5. Basic assertions
-    assert result["approved"] == True, "Expected placeholder critic to approve"
-    assert result["stop_reason"] == "approved", f"Expected stop_reason='approved', got '{result['stop_reason']}'"
-    assert result["iteration_count"] == 1, f"Expected 1 iteration, got {result['iteration_count']}"
-    assert len(result["node_log"]) > 0, "Expected non-empty node_log"
+    assert result.get("stop_reason", "") != "", f"Expected non-empty stop_reason, got '{result.get('stop_reason', '')}'"
+    assert result.get("iteration_count", 0) > 0, f"Expected iteration_count > 0, got {result.get('iteration_count', 0)}"
+    assert result.get("drafted_response", "") != "", "Expected non-empty drafted_response"
+    assert len(result.get("node_log", [])) > 0, "Expected non-empty node_log"
 
     print("\n✓ All assertions passed. Graph is working correctly.")
     print("=" * 50)

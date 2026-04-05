@@ -15,6 +15,9 @@ from config import (
     CLASSIFIER_MAX_TOKENS,
     REVIEW_CATEGORIES,
     CONFIDENCE_THRESHOLD,
+    TONE_CLASSIFIER_MODEL,
+    TONE_CLASSIFIER_TEMPERATURE,
+    TONE_CLASSIFIER_MAX_TOKENS,
 )
 
 logger = logging.getLogger(__name__)
@@ -159,18 +162,22 @@ def run_classification(conn, app_id: str, limit: int | None = None) -> dict:
         return {"total": 0, "classified": 0, "failed": 0}
 
     if limit:
-        df = df.head(limit)
-        logger.info(f"Limiting to {limit} reviews for this run.")
+        logger.info(f"Targeting {limit} successful classifications.")
 
     classified = 0
     failed = 0
+    attempted = 0
 
-    for i, (_, row) in enumerate(df.iterrows(), start=1):
+    for _, row in df.iterrows():
+        if limit and classified >= limit:
+            break
+
         review_id = row["review_id"]
         review_text = row["review_text"]
+        attempted += 1
 
-        if i % 10 == 0 or i == len(df) or i == 1:
-            logger.info(f"Classification progress: {i}/{len(df)}")
+        if attempted % 10 == 0 or attempted == 1:
+            logger.info(f"Classification progress: {classified}/{limit or '?'} successful ({attempted} attempted)")
 
         result = classify_review(review_text)
 
@@ -188,13 +195,68 @@ def run_classification(conn, app_id: str, limit: int | None = None) -> dict:
         classified += 1
 
     summary = {
-        "total": len(df),
+        "total": attempted,
         "classified": classified,
         "failed": failed
     }
 
     logger.info(
-        f"Classification complete: {classified} classified, {failed} failed out of {len(df)} reviews."
+        f"Classification complete: {classified} classified, {failed} failed out of {attempted} attempted."
     )
 
     return summary
+
+
+# --- Tone classification ---
+
+VALID_TONES = ["frustrated", "angry", "sarcastic", "constructive", "neutral", "disappointed", "confused", "appreciative"]
+TONE_SYSTEM_PROMPT = load_skill("classify-tone")
+
+
+def classify_tone(review_text: str) -> str:
+    """
+    Classify the emotional tone of a review.
+
+    Returns one of: frustrated, angry, sarcastic, constructive, neutral.
+    Falls back to "neutral" on any failure.
+    """
+    try:
+        response = client.messages.create(
+            model=TONE_CLASSIFIER_MODEL,
+            max_tokens=TONE_CLASSIFIER_MAX_TOKENS,
+            temperature=TONE_CLASSIFIER_TEMPERATURE,
+            system=TONE_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": review_text}],
+        )
+    except anthropic.APIError as e:
+        logger.error(f"Tone classifier API call failed: {e}")
+        return "neutral"
+
+    content_block = response.content[0]
+    if not hasattr(content_block, "text"):
+        logger.error("Tone classifier returned non-text response")
+        return "neutral"
+    raw_text = content_block.text.strip()
+
+    if raw_text.startswith("```"):
+        lines = raw_text.split("\n")
+        raw_text = "\n".join(lines[1:-1]).strip()
+
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        logger.error(f"Tone classifier response is not valid JSON: {e}")
+        logger.error(f"Raw response was: {raw_text[:500]}")
+        # Try extracting just the first JSON object (model sometimes appends explanation)
+        try:
+            decoder = json.JSONDecoder()
+            data, _ = decoder.raw_decode(raw_text)
+        except (json.JSONDecodeError, ValueError):
+            return "neutral"
+
+    tone = data.get("tone", "neutral")
+    if tone not in VALID_TONES:
+        logger.warning(f"Tone classifier returned invalid tone '{tone}', defaulting to neutral")
+        return "neutral"
+
+    return tone

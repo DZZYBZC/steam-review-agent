@@ -17,6 +17,8 @@ from config import (
     RERANKER_MODEL,
     RERANKER_TOP_N,
     SIMILARITY_THRESHOLD,
+    VECTOR_TOP_K,
+    BM25_TOP_K,
     RRF_K,
 )
 from pipeline.chunk import PatchChunk
@@ -25,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 _model: SentenceTransformer | None = None
 _reranker: CrossEncoder | None = None
+_bm25_cache: dict[str, tuple[BM25Okapi, list[dict]]] = {}
 
 def _get_model() -> SentenceTransformer:
     """Load the embedding model lazily and cache it."""
@@ -320,3 +323,117 @@ def rerank(
 
     scored.sort(key=lambda x: x["relevance_score"], reverse=True)
     return scored[:top_n]
+
+
+def _get_bm25_index(app_id: str) -> tuple[BM25Okapi, list[dict]]:
+    """
+    Build or retrieve a cached BM25 index for an app.
+
+    On first call, pulls all documents and metadata from ChromaDB
+    and builds the index. Subsequent calls return the cached version.
+
+    Returns:
+        A tuple of (BM25Okapi index, list of doc dicts with chunk_id/text/metadata).
+    """
+    if app_id in _bm25_cache:
+        return _bm25_cache[app_id]
+
+    client = _get_client()
+    collection = _get_or_create_collection(client, app_id)
+    all_data = collection.get(include=["documents", "metadatas"])
+
+    ids = all_data["ids"]
+    documents = all_data["documents"]
+    metadatas = all_data["metadatas"]
+
+    if not ids or not documents or not metadatas:
+        logger.warning(f"No documents found in collection patches_{app_id}.")
+        empty_index = BM25Okapi([[]])
+        _bm25_cache[app_id] = (empty_index, [])
+        return empty_index, []
+
+    docs = []
+    corpus = []
+    for i in range(len(ids)):
+        docs.append({
+            "chunk_id": ids[i],
+            "text": documents[i],
+            "metadata": metadatas[i],
+        })
+        corpus.append(_tokenize(documents[i]))
+
+    index = BM25Okapi(corpus)
+    logger.info(f"Built and cached BM25 index for app {app_id} ({len(docs)} documents).")
+    _bm25_cache[app_id] = (index, docs)
+    return index, docs
+
+
+def _query_bm25_from_cache(
+    app_id: str,
+    query_text: str,
+    n_results: int = BM25_TOP_K,
+) -> list[dict]:
+    """
+    Query the cached BM25 index for an app.
+
+    Returns:
+        A list of dicts with: chunk_id, text, score, retriever, rank, metadata.
+    """
+    index, docs = _get_bm25_index(app_id)
+
+    if not docs:
+        return []
+
+    tokenized_query = _tokenize(query_text)
+    scores = index.get_scores(tokenized_query)
+
+    top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:n_results]
+
+    output = []
+    for idx in top_indices:
+        score = float(scores[idx])
+        if score <= 0:
+            break
+
+        doc = docs[idx]
+        output.append({
+            "chunk_id": doc["chunk_id"],
+            "text": doc["text"],
+            "score": score,
+            "retriever": "bm25",
+            "rank": len(output),
+            "metadata": doc["metadata"],
+        })
+
+    return output
+
+
+def retrieve(
+    query_text: str,
+    app_id: str,
+) -> list[dict]:
+    """
+    Run the full hybrid retrieval pipeline: vector search + BM25 → RRF fusion → rerank.
+
+    Both indexes are read from persistent storage (ChromaDB for vector,
+    cached BM25 built from ChromaDB documents). No chunk list needed.
+
+    Parameters:
+        query_text: The search query (review text or reformulated query).
+        app_id: Steam app ID, used to select the ChromaDB collection.
+
+    Returns:
+        Top reranked results from rerank(), or an empty list if no
+        results survive the pipeline.
+    """
+    # Vector search
+    client = _get_client()
+    collection = _get_or_create_collection(client, app_id)
+    vector_results = query_similar(collection, query_text, n_results=VECTOR_TOP_K)
+
+    # BM25 search (from cached index)
+    bm25_results = _query_bm25_from_cache(app_id, query_text, n_results=BM25_TOP_K)
+
+    # Fuse and rerank
+    rrf_results = reciprocal_rank_fusion(vector_results, bm25_results)
+    return rerank(query_text, rrf_results)

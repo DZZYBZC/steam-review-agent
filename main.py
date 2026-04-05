@@ -11,7 +11,7 @@ Usage:
 
 import logging
 import sys
-from pipeline.ingest import fetch_all_reviews
+from pipeline.ingest_reviews import fetch_all_reviews
 from pipeline.clean import clean_pipeline
 from pipeline.storage import get_connection, create_tables, save_reviews, load_reviews, load_classified_reviews
 from pipeline.stats import compute_basic_stats, compute_keyword_frequency, print_stats_report
@@ -67,7 +67,7 @@ def run_pipeline(app_id: str, max_reviews: int = 500, skip_fetch: bool = False) 
 
         # Step 3.5: Classify reviews
         logger.info("=== STEP 3.5: Classifying reviews ===")
-        run_classification(conn, app_id, limit=0)
+        run_classification(conn, app_id, limit=50)
         
         # Step 3.7: Cluster detection & priority ranking
         logger.info("=== STEP 3.7: Clustering and ranking ===")
@@ -87,7 +87,7 @@ def run_pipeline(app_id: str, max_reviews: int = 500, skip_fetch: bool = False) 
     else:
         logger.info("Skipping fetch — loading from database.")
         logger.info("Classifying any unclassified reviews")
-        run_classification(conn, app_id, limit=0)
+        run_classification(conn, app_id, limit=50)
         # Step 3.7: Cluster detection & priority ranking
         logger.info("=== STEP 3.7: Clustering and ranking ===")
         classified_df = load_classified_reviews(conn, app_id)

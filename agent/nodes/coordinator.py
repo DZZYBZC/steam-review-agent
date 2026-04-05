@@ -4,6 +4,7 @@ Routes the graph based on state fields.
 
 import logging
 from agent.state import AgentState
+from config import AGENT_MAX_ITERATIONS
 
 logger = logging.getLogger(__name__)
 
@@ -16,20 +17,31 @@ def coordinator_node(state: AgentState) -> dict:
     """
     iteration = state.get("iteration_count", 0)
     approved = state.get("approved", False)
-    max_iter = state.get("max_iterations", 3)
 
     logger.info(
-        f"Coordinator: iteration={iteration}, approved={approved}, max_iterations={max_iter}"
+        f"Coordinator: iteration={iteration}, approved={approved}, max_iterations={AGENT_MAX_ITERATIONS}"
     )
 
-    # If this is a revision cycle (critic has run), increment the counter
     if iteration > 0 and not approved:
         logger.info(
             f"Coordinator: revision cycle {iteration}, reason: {state.get('revision_reason', 'unknown')}"
         )
 
+    if approved:
+        return {
+            "stop_reason": "approved",
+            "node_log": [f"coordinator: iteration={iteration}, approved — ending"],
+        }
+
+    if iteration >= AGENT_MAX_ITERATIONS:
+        return {
+            "stop_reason": "max_iterations_reached",
+            "node_log": [f"coordinator: iteration={iteration}, max iterations reached — ending"],
+        }
+
     return {
-        "node_log": [f"coordinator: iteration={iteration}, approved={approved}"],
+        "stop_reason": "revising",
+        "node_log": [f"coordinator: iteration={iteration}, routing next"],
     }
 
 
@@ -42,16 +54,18 @@ def route_from_coordinator(state: AgentState) -> str:
     """
     approved = state.get("approved", False)
     iteration = state.get("iteration_count", 0)
-    max_iter = state.get("max_iterations", 3)
 
     if approved:
         logger.info("Coordinator: draft approved, end.")
         return "done"
 
-    if iteration >= max_iter:
+    if iteration >= AGENT_MAX_ITERATIONS:
         logger.warning(
-            f"Coordinator: max iterations ({max_iter}) reached, forcing end."
+            f"Coordinator: max iterations ({AGENT_MAX_ITERATIONS}) reached, forcing end."
         )
         return "done"
 
-    return "investigate"
+    if iteration == 0:
+        return "investigate"
+
+    return "respond"

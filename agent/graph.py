@@ -54,6 +54,7 @@ def build_graph():
         route_from_coordinator,
         {
             "investigate": "investigator",
+            "respond": "responder",
             "done": END,
         },
     )

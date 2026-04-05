@@ -1,5 +1,5 @@
 """
-test_chunker.py — Verify the chunker handles real-world Steam formatting.
+test_chunk.py — Verify the chunker handles real-world Steam formatting.
 
 Tests:
 1. BBCode markup is stripped from chunk text
@@ -7,7 +7,7 @@ Tests:
 3. Image URLs are extracted and stored as metadata
 4. news_type classification heuristics
 
-Usage: python test_chunker.py
+Usage: python test_chunk.py
 """
 
 import sys

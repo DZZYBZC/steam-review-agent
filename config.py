@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN")
 
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 STEAM_API_URL = "https://store.steampowered.com/appreviews/{app_id}?json=1"
@@ -17,6 +18,10 @@ DB_PATH = "reviews.db"
 CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
 CLASSIFIER_TEMPERATURE = 0.0
 CLASSIFIER_MAX_TOKENS = 500
+
+TONE_CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
+TONE_CLASSIFIER_TEMPERATURE = 0.0
+TONE_CLASSIFIER_MAX_TOKENS = 50
 CONFIDENCE_THRESHOLD = 0.7
 
 REVIEW_CATEGORIES = [
@@ -62,3 +67,29 @@ BM25_TOP_K = 8
 RRF_K = 60
 RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 RERANKER_TOP_N = 5
+
+INVESTIGATOR_MODEL = "claude-haiku-4-5-20251001"
+INVESTIGATOR_TEMPERATURE = 0.1
+INVESTIGATOR_MAX_TOKENS = 400
+
+RESPONDER_MODEL = "claude-sonnet-4-6"
+RESPONDER_TEMPERATURE = 0.4
+RESPONDER_MAX_TOKENS = 1000
+
+CRITIC_MODEL = "claude-haiku-4-5-20251001"
+CRITIC_TEMPERATURE = 0.1
+CRITIC_MAX_TOKENS = 400
+
+RETRIEVAL_CATEGORIES = [
+    "technical_issues",
+    "performance_optimization",
+    "gameplay_mechanics",
+    "balance_difficulty",
+    "ui_controls",
+    "content_progression",
+    "multiplayer_network",
+    "story_presentation",
+    "monetization_value",
+]
+
+SELF_RAG_MAX_RETRIES = 2  # Max query reformulation attempts in Investigator

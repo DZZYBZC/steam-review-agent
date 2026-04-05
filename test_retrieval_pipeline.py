@@ -8,7 +8,7 @@ cross-encoder reranking.
 
 from pipeline.ingest_patch_notes import fetch_news
 from pipeline.chunk import chunk_all_patch_notes
-from pipeline.embed import embed_chunks, query_similar, build_bm25_index, query_bm25, reciprocal_rank_fusion, rerank
+from pipeline.retrieve import embed_chunks, query_similar, build_bm25_index, query_bm25, reciprocal_rank_fusion, rerank
 from config import VECTOR_TOP_K, BM25_TOP_K, RERANKER_TOP_N
 
 APP_ID = "2246340"

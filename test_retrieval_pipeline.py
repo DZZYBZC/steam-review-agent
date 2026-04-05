@@ -9,9 +9,7 @@ cross-encoder reranking.
 from pipeline.ingest_patch_notes import fetch_news
 from pipeline.chunk import chunk_all_patch_notes
 from pipeline.retrieve import embed_chunks, query_similar, build_bm25_index, query_bm25, reciprocal_rank_fusion, rerank
-from config import VECTOR_TOP_K, BM25_TOP_K, RERANKER_TOP_N
-
-APP_ID = "2246340"
+from config import VECTOR_TOP_K, BM25_TOP_K, RERANKER_TOP_N, TEST_APP_ID
 
 TEST_QUERIES = [
     "crashing on startup after latest update",
@@ -23,15 +21,15 @@ TEST_QUERIES = [
 
 
 def main():
-    print(f"Fetching patch notes for app {APP_ID}...")
-    items = fetch_news(APP_ID)
+    print(f"Fetching patch notes for app {TEST_APP_ID}...")
+    items = fetch_news(TEST_APP_ID)
     print(f"Fetched {len(items)} items.")
 
     chunks = chunk_all_patch_notes(items)
     print(f"Created {len(chunks)} chunks.")
 
     print(f"\nEmbedding chunks into ChromaDB...")
-    collection = embed_chunks(chunks, APP_ID)
+    collection = embed_chunks(chunks, TEST_APP_ID)
     print(f"Embedding complete.")
 
     print(f"Building BM25 index...")

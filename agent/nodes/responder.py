@@ -12,8 +12,9 @@ import anthropic
 
 from agent.state import AgentState
 from agent.utils import accumulate_tokens, format_evidence_sources
-from utils import load_skill
+from utils import load_skill, parse_llm_json
 from config import (
+    CLAUDE_API_KEY,
     RESPONDER_MODEL,
     RESPONDER_TEMPERATURE,
     RESPONDER_MAX_TOKENS,
@@ -21,7 +22,7 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-client = anthropic.Anthropic()
+client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
 SYSTEM_PROMPT = load_skill("draft-response")
 
 
@@ -99,17 +100,15 @@ def _call_responder_llm(user_message: str) -> tuple[dict, dict[str, int]]:
         f"Responder API call: {tokens['input']} input + {tokens['output']} output tokens"
     )
 
+    if not response.content:
+        raise ValueError("Responder LLM returned empty response")
     content_block = response.content[0]
     if not hasattr(content_block, "text"):
         raise ValueError(f"Expected a text response, got {type(content_block).__name__}")
     raw_text = content_block.text.strip()  # type: ignore[union-attr]
 
-    if raw_text.startswith("```"):
-        lines = raw_text.split("\n")
-        raw_text = "\n".join(lines[1:-1]).strip()
-
     try:
-        data = json.loads(raw_text)
+        data = parse_llm_json(raw_text)
     except json.JSONDecodeError as e:
         logger.error(f"Responder response is not valid JSON: {e}")
         logger.error(f"Raw response was: {raw_text[:500]}")
@@ -151,7 +150,7 @@ def responder_node(state: AgentState) -> dict:
             "proposed_action": "investigate",
             "source_ids_cited": [],
             "iteration_count": iteration + 1,
-            "token_usage": {**state.get("token_usage", {}), "responder": accumulate_tokens(state.get("token_usage", {}).get("responder"), {"input": 0, "output": 0})},
+            "token_usage": state.get("token_usage", {}),
             "node_log": [f"responder: failed — {e}"],
         }
 

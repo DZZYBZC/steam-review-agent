@@ -34,4 +34,5 @@ def format_evidence_sources(evidence: dict) -> str:
             f"section={meta.get('section', 'unknown')}"
         )
         source_lines.append(f'    "{s.get("text", "")}"')
-    return f"<evidence_sources>\n{chr(10).join(source_lines)}\n</evidence_sources>"
+    joined = "\n".join(source_lines)
+    return f"<evidence_sources>\n{joined}\n</evidence_sources>"

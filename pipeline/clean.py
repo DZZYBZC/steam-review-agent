@@ -5,6 +5,7 @@ Cleans raw Steam review data and extracts useful features.
 import logging
 import pandas as pd
 from datasketch import MinHash, MinHashLSH
+from config import REVIEW_MIN_CHARS, REVIEW_MIN_WORDS, NEAR_DUPLICATE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +56,8 @@ def clean_reviews(df: pd.DataFrame) -> pd.DataFrame:
     original_count = len(df)
 
     df = df.dropna(subset=["review_text"]) # Reviews NA
-    df = df[df["review_text"].str.len() >= 5] # Review too short
-    df = df[df["review_text"].str.split().str.len() >= 3] # Review too short
+    df = df[df["review_text"].str.len() >= REVIEW_MIN_CHARS] # Review too short
+    df = df[df["review_text"].str.split().str.len() >= REVIEW_MIN_WORDS] # Review too short
     df = df.drop_duplicates(subset=["review_id"]) # Duplicated reviews
 
     removed = original_count - len(df)
@@ -67,7 +68,7 @@ def clean_reviews(df: pd.DataFrame) -> pd.DataFrame:
 
 def detect_near_duplicates(
     df: pd.DataFrame,
-    similarity_threshold: float = 0.85,
+    similarity_threshold: float = NEAR_DUPLICATE_THRESHOLD,
 ) -> pd.DataFrame:
     """
     Flag reviews that are near-duplicates using MinHash + LSH.

@@ -22,6 +22,7 @@ from agent.graph import build_graph
 from agent.state import AgentState
 from pipeline.storage import get_connection, load_classified_reviews
 from pipeline.classify import classify_tone
+from config import TEST_APP_ID
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,17 +33,15 @@ logging.getLogger("chromadb").setLevel(logging.WARNING)
 logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-APP_ID = "2246340"
-
 
 def load_review(category: str | None = None, review_id: str | None = None) -> dict | None:
     """Load a real classified review from the database."""
     conn = get_connection()
-    df = load_classified_reviews(conn, APP_ID)
+    df = load_classified_reviews(conn, TEST_APP_ID)
     conn.close()
 
     if len(df) == 0:
-        logger.error("No classified reviews in database. Run the pipeline first: python main.py 2246340")
+        logger.error(f"No classified reviews in database. Run the pipeline first: python main.py {TEST_APP_ID}")
         return None
 
     # Filter to negative reviews (more interesting for testing)
@@ -79,7 +78,7 @@ def load_review(category: str | None = None, review_id: str | None = None) -> di
 def list_reviews():
     """Print available reviews grouped by category."""
     conn = get_connection()
-    df = load_classified_reviews(conn, APP_ID)
+    df = load_classified_reviews(conn, TEST_APP_ID)
     conn.close()
 
     if len(df) == 0:
@@ -87,7 +86,7 @@ def list_reviews():
         return
 
     negatives = df[df["voted_up"] == 0]
-    print(f"\nClassified reviews for app {APP_ID}: {len(df)} total, {len(negatives)} negative\n")
+    print(f"\nClassified reviews for app {TEST_APP_ID}: {len(df)} total, {len(negatives)} negative\n")
 
     for category, group in negatives.groupby("primary_category"):
         print(f"  {category}: {len(group)} reviews")
@@ -120,7 +119,7 @@ def run(category: str | None = None, review_id: str | None = None):
 
     # 4. Build initial state
     test_state: AgentState = {
-        "app_id": APP_ID,
+        "app_id": TEST_APP_ID,
         "review_text": review["review_text"],
         "cluster_summary": {
             "category": review["primary_category"],

@@ -13,6 +13,7 @@ from sentence_transformers import SentenceTransformer
 from sentence_transformers import CrossEncoder
 from config import (
     CHROMA_PERSIST_DIR,
+    EMBEDDING_BATCH_SIZE,
     EMBEDDING_MODEL,
     RERANKER_MODEL,
     RERANKER_TOP_N,
@@ -80,7 +81,7 @@ def embed_chunks(
     client = _get_client()
     collection = _get_or_create_collection(client, app_id)
 
-    batch_size = 100
+    batch_size = EMBEDDING_BATCH_SIZE
     total = len(chunks)
 
     for start in range(0, total, batch_size):

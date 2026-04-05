@@ -6,10 +6,11 @@ import json
 import logging
 import anthropic
 from pydantic import BaseModel, Field, field_validator, model_validator
-from utils import load_skill
+from utils import load_skill, strip_code_fence, parse_llm_json
 from pipeline.storage import get_unclassified_reviews, save_classification
 
 from config import (
+    CLAUDE_API_KEY,
     CLASSIFIER_MODEL,
     CLASSIFIER_TEMPERATURE,
     CLASSIFIER_MAX_TOKENS,
@@ -59,15 +60,13 @@ class ClassificationResult(BaseModel):
             ]
         return self
 
-client = anthropic.Anthropic()
+client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
 SYSTEM_PROMPT = load_skill("classify-review")
 
 def call_classifier(review_text: str) -> ClassificationResult:
     """
     Send a single review to the LLM and return a validated ClassificationResult.
     """
-    system_prompt = SYSTEM_PROMPT
-
     try:
         response = client.messages.create(
             model=CLASSIFIER_MODEL,
@@ -96,17 +95,15 @@ def call_classifier(review_text: str) -> ClassificationResult:
 
     logger.debug(f"Classifier API call: {response.usage.input_tokens} input tokens + {response.usage.output_tokens} output tokens")
 
+    if not response.content:
+        raise ValueError("Classifier LLM returned empty response")
     content_block = response.content[0]
     if not hasattr(content_block, "text"):
         raise ValueError(f"Expected a text response, got {type(content_block).__name__}")
     raw_text = content_block.text.strip()  # type: ignore[union-attr]
 
-    if raw_text.startswith("```"):
-        lines = raw_text.split("\n")
-        raw_text = "\n".join(lines[1:-1]).strip()
-
     try:
-        data = json.loads(raw_text)
+        data = parse_llm_json(raw_text)
     except json.JSONDecodeError as e:
         logger.error(f"Classifier response is not valid JSON: {e}")
         logger.error(f"Raw response was: {raw_text[:500]}")
@@ -232,18 +229,17 @@ def classify_tone(review_text: str) -> str:
         logger.error(f"Tone classifier API call failed: {e}")
         return "neutral"
 
+    if not response.content:
+        logger.error("Tone classifier returned empty response")
+        return "neutral"
     content_block = response.content[0]
     if not hasattr(content_block, "text"):
         logger.error("Tone classifier returned non-text response")
         return "neutral"
     raw_text = content_block.text.strip()
 
-    if raw_text.startswith("```"):
-        lines = raw_text.split("\n")
-        raw_text = "\n".join(lines[1:-1]).strip()
-
     try:
-        data = json.loads(raw_text)
+        data = parse_llm_json(raw_text)
     except json.JSONDecodeError as e:
         logger.error(f"Tone classifier response is not valid JSON: {e}")
         logger.error(f"Raw response was: {raw_text[:500]}")

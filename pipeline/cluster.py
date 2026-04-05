@@ -6,11 +6,12 @@ Groups reviews by complaint category, computes metrics, and ranks by priority.
 import logging
 import pandas as pd
 import anthropic
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, Field
-from collections import Counter
 from utils import load_skill
+from pipeline.keywords import extract_keywords
 from config import (
+    CLAUDE_API_KEY,
     CLUSTER_TIME_WINDOW_DAYS,
     CLUSTER_MIN_REVIEWS,
     PRIORITY_WEIGHTS,
@@ -61,7 +62,7 @@ def build_clusters(df: pd.DataFrame) -> list[ClusterSummary]:
     df = df.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
 
-    now = pd.Timestamp.now(tz="UTC").tz_localize(None)
+    now = pd.Timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
     recent_cutoff = now - timedelta(days=CLUSTER_TIME_WINDOW_DAYS)
     prior_cutoff = recent_cutoff - timedelta(days=CLUSTER_TIME_WINDOW_DAYS)
 
@@ -94,7 +95,7 @@ def build_clusters(df: pd.DataFrame) -> list[ClusterSummary]:
 
         avg_playtime = round(group["playtime_hours"].mean(), 1)
 
-        top_keywords = _extract_top_keywords(group["review_text"], n=10)
+        top_keywords = [word for word, _ in extract_keywords(group["review_text"], n=10)]
 
         samples = (
             group.sort_values("weighted_vote_score", ascending=False)
@@ -129,55 +130,6 @@ def build_clusters(df: pd.DataFrame) -> list[ClusterSummary]:
     logger.info(f"Built {len(clusters)} clusters from {len(df)} reviews.")
     return clusters
 
-
-def _extract_top_keywords(texts: pd.Series, n: int = 5) -> list[str]:
-    """
-    Quick keyword extraction for a cluster's reviews.
-    A simpler version of stats.py's version.
-    """
-    stop_words = {
-        "the", "a", "an", "is", "it", "in", "to", "and", "of", "for",
-        "on", "with", "this", "that", "was", "are", "you", "but", "not",
-        "have", "has", "had", "be", "been", "can", "will", "would",
-        "just", "so", "its", "my", "me", "i", "do", "if", "at", "by",
-        "or", "no", "from", "they", "we", "there", "all", "your",
-        "what", "when", "up", "out", "about", "how", "one", "their",
-        "very", "really", "more", "some", "than", "get", "got", "like",
-        "don", "as", "im", "ive", "also", "even", "much", "too",
-        "don't", "dont", "can't", "cant", "won't", "wont", "isn't", "isnt",
-        "didn't", "didnt", "doesn't", "doesnt", "it's", "i'm", "i've",
-        "you're", "youre", "that's", "thats", "there's", "theres",
-        "am", "did", "does", "should", "could", "may", "might", "must",
-        "he", "she", "him", "her", "them", "us", "who", "which", "because",
-        "game", "games", "played", "playing", "being", "time", "hours", "play",
-        "best", "ever", "every", "great", "love", "good", "amazing", "first",
-        "after", "fun", "then", "only", "go", "again", "most", "see", "still",
-        "where", "feel", "other", "made", "into", "feels", "way", "many",
-        "better", "any", "want", "lot", "make", "over", "well", "run", "runs",
-        "experience", "while", "back", "each", "new", "different", "bit", 
-        "say", "never", "makes", "everything", "now", "recommend", "full",
-        "it's", "know", "nice", "bad", "here", "think", "enjoy", "why", "win",
-        "though", "masterpiece", "try", "addictive", "addicting", "second",
-        "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth",
-        "tenth", "since", "years", "year", "day", "days", "month", "months",
-        "own", "need", "something", "worth", "it’s", "his", "hers", "theirs",
-        "ours", "hate", "minute", "minutes", "seconds", "beat", "pew", "end",
-        "players", "player", "people", "die", "dead", "find", "start", "lose",
-        "things", "give", "gave", "main", "far", "near", "thing", "going", "used",
-        "uses", "use", "few", "around", "work", "works", "worked", "overall",
-        "once", "doing", "add", "enjoyed", "looking", "plenty", "take", "takes",
-        "taken", "took"
-    }
-
-    counts: Counter = Counter()
-
-    for text in texts.dropna():
-        for word in text.lower().split():
-            cleaned = word.strip(".,!?;:\"'()[]{}#@*&^%$~`<>/\\|+=-_")
-            if len(cleaned) > 1 and cleaned not in stop_words:
-                counts[cleaned] += 1
-
-    return [word for word, _ in counts.most_common(n)]
 
 def rank_clusters(clusters: list[ClusterSummary]) -> list[ClusterSummary]:
     """
@@ -226,7 +178,7 @@ def rank_clusters(clusters: list[ClusterSummary]) -> list[ClusterSummary]:
 
     return clusters
 
-client = anthropic.Anthropic()
+client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
 CLUSTER_SYSTEM_PROMPT = load_skill("analyze-cluster")
 
 
@@ -281,6 +233,8 @@ priority_score: {cluster.priority_score}
         f"Cluster summary API call for '{cluster.category}': {response.usage.input_tokens} input + {response.usage.output_tokens} output tokens"
     )
 
+    if not response.content:
+        raise ValueError("Cluster summary LLM returned empty response")
     content_block = response.content[0]
     if not hasattr(content_block, "text"):
         raise ValueError(f"Expected a text response, got {type(content_block).__name__}")

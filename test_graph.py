@@ -9,6 +9,7 @@ import logging
 
 from agent.graph import build_graph
 from agent.state import AgentState
+from config import TEST_APP_ID
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,7 +28,7 @@ def test_graph():
 
     # 2. Create a test input state
     test_state: AgentState = {
-        "app_id": "2246340",
+        "app_id": TEST_APP_ID,
         "review_text": "Game crashes every time I enter the second dungeon. Tried reinstalling, no fix.",
         "cluster_summary": {
             "category": "technical_issues",

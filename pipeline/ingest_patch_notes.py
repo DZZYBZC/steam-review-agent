@@ -3,10 +3,9 @@ Fetches game news from the Steam News API.
 """
 
 import re
-import time
 import logging
-import requests
 from config import STEAM_NEWS_API_URL, PATCH_NOTE_MAX_ITEMS
+from pipeline.retry import fetch_with_retries
 
 logger = logging.getLogger(__name__)
 
@@ -157,45 +156,11 @@ def fetch_news(
         "feeds": feeds_param,
     }
 
-    for attempt in range(max_retries):
-        try:
-            response = requests.get(url, params=params, timeout=timeout)
-            response.raise_for_status()
-            data = response.json()
-            break
-
-        except requests.exceptions.HTTPError as e:
-            status_code = e.response.status_code if e.response else None
-
-            if status_code == 429 or (status_code and status_code >= 500):
-                wait_time = 2 ** attempt
-                logger.warning(
-                    f"HTTP {status_code} on attempt {attempt + 1}/{max_retries}. "
-                    f"Retrying in {wait_time}s..."
-                )
-                time.sleep(wait_time)
-            else:
-                logger.error(f"HTTP error {status_code}: {e}")
-                raise
-
-        except requests.exceptions.ConnectionError:
-            wait_time = 2 ** attempt
-            logger.warning(
-                f"Connection error on attempt {attempt + 1}/{max_retries}. "
-                f"Retrying in {wait_time}s..."
-            )
-            time.sleep(wait_time)
-
-        except requests.exceptions.Timeout:
-            wait_time = 2 ** attempt
-            logger.warning(
-                f"Timeout on attempt {attempt + 1}/{max_retries}. "
-                f"Retrying in {wait_time}s..."
-            )
-            time.sleep(wait_time)
-    else:
-        logger.error(f"All {max_retries} attempts failed for app {app_id}.")
-        raise Exception(f"Failed to fetch news after {max_retries} retries")
+    response = fetch_with_retries(
+        url, params, max_retries=max_retries, timeout=timeout,
+        context=f"news for app {app_id}",
+    )
+    data = response.json()
 
     app_news = data.get("appnews", {})
     all_items = app_news.get("newsitems", [])

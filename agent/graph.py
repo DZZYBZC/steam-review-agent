@@ -24,8 +24,10 @@ def _create_checkpointer():
     """
     if CHECKPOINT_BACKEND == "sqlite":
         import sqlite3
-        conn = sqlite3.connect(CHECKPOINT_DB_PATH)
+        conn = sqlite3.connect(CHECKPOINT_DB_PATH, check_same_thread=False)
         checkpointer = SqliteSaver(conn)
+        # Store connection reference for cleanup
+        checkpointer._conn = conn  # type: ignore[attr-defined]
         logger.info(f"Using SQLite checkpointer at {CHECKPOINT_DB_PATH}")
         return checkpointer
     else:

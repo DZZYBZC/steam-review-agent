@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
@@ -23,6 +23,10 @@ TONE_CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
 TONE_CLASSIFIER_TEMPERATURE = 0.0
 TONE_CLASSIFIER_MAX_TOKENS = 50
 CONFIDENCE_THRESHOLD = 0.7
+
+REVIEW_MIN_CHARS = 5
+REVIEW_MIN_WORDS = 3
+NEAR_DUPLICATE_THRESHOLD = 0.85
 
 REVIEW_CATEGORIES = [
     "technical_issues",
@@ -55,9 +59,11 @@ CHECKPOINT_DB_PATH = "checkpoints.db"
 
 STEAM_NEWS_API_URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid={app_id}"
 PATCH_NOTE_MAX_ITEMS = 50
-PATCH_NOTE_EXTRA_FEEDS: list[str] = []
 
 CHUNK_MAX_LENGTH = 500
+CHUNK_MIN_TEXT_LENGTH = 10
+
+EMBEDDING_BATCH_SIZE = 100
 
 CHROMA_PERSIST_DIR = "chroma_db"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
@@ -93,3 +99,7 @@ RETRIEVAL_CATEGORIES = [
 ]
 
 SELF_RAG_MAX_RETRIES = 2  # Max query reformulation attempts in Investigator
+
+CLASSIFICATION_LIMIT = 50  # Default number of reviews to classify per run
+
+TEST_APP_ID = "2246340"  # Monster Hunter Wilds — used by test scripts

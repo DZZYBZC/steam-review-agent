@@ -14,8 +14,9 @@ import anthropic
 from agent.state import AgentState
 from agent.models import EvidencePackage
 from pipeline.retrieve import retrieve
-from utils import load_skill
+from utils import load_skill, parse_llm_json
 from config import (
+    CLAUDE_API_KEY,
     INVESTIGATOR_MODEL,
     INVESTIGATOR_TEMPERATURE,
     INVESTIGATOR_MAX_TOKENS,
@@ -25,7 +26,7 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-client = anthropic.Anthropic()
+client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
 SYSTEM_PROMPT = load_skill("investigate-evidence")
 
 
@@ -98,17 +99,15 @@ def _call_investigator_llm(
         f"Investigator API call: {tokens['input']} input + {tokens['output']} output tokens"
     )
 
+    if not response.content:
+        raise ValueError("Investigator LLM returned empty response")
     content_block = response.content[0]
     if not hasattr(content_block, "text"):
         raise ValueError(f"Expected a text response, got {type(content_block).__name__}")
     raw_text = content_block.text.strip()  # type: ignore[union-attr]
 
-    if raw_text.startswith("```"):
-        lines = raw_text.split("\n")
-        raw_text = "\n".join(lines[1:-1]).strip()
-
     try:
-        data = json.loads(raw_text)
+        data = parse_llm_json(raw_text)
     except json.JSONDecodeError as e:
         logger.error(f"Investigator response is not valid JSON: {e}")
         logger.error(f"Raw response was: {raw_text[:500]}")

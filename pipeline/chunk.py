@@ -14,7 +14,7 @@ import re
 import logging
 from datetime import datetime, timezone
 from dataclasses import dataclass, field, asdict
-from config import CHUNK_MAX_LENGTH
+from config import CHUNK_MAX_LENGTH, CHUNK_MIN_TEXT_LENGTH
 
 logger = logging.getLogger(__name__)
 
@@ -307,7 +307,7 @@ def chunk_patch_note(item: dict) -> list[PatchChunk]:
         if _BULLET_PATTERN.match(stripped):
             clean_text = _clean_bullet_text(stripped)
 
-            if len(clean_text) < 10:
+            if len(clean_text) < CHUNK_MIN_TEXT_LENGTH:
                 continue
 
             body = clean_text

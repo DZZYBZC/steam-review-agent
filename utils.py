@@ -2,6 +2,7 @@
 utils.py — Shared utilities for the project.
 """
 
+import json
 import os
 import frontmatter
 
@@ -31,3 +32,21 @@ def load_skill(name: str) -> str:
 
     post = frontmatter.load(skill_path)
     return post.content
+
+
+def strip_code_fence(text: str) -> str:
+    """Strip markdown code fences (```json ... ```) from LLM output."""
+    if text.startswith("```"):
+        lines = text.split("\n")
+        text = "\n".join(lines[1:-1]).strip()
+    return text
+
+
+def parse_llm_json(text: str) -> dict:
+    """
+    Parse JSON from an LLM response, stripping code fences if present.
+
+    Raises json.JSONDecodeError if the text is not valid JSON.
+    """
+    text = strip_code_fence(text)
+    return json.loads(text)

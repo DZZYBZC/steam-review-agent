@@ -8,8 +8,9 @@ description: >
 ---
 
 ## File organization
-- Pipeline code (ingest, clean, classify, cluster, storage, stats) lives in `pipeline/`
+- Pipeline code (ingest_reviews, ingest_patch_notes, clean, classify, cluster, retrieve, storage, stats) lives in `pipeline/`
 - Agent code (state, graph, nodes) lives in `agent/`
+- Shared agent helpers (accumulate_tokens, format_evidence_sources) live in `agent/utils.py`
 - All configuration lives in `config.py` at the project root
 - Shared utilities live in `utils.py` at the project root
 
@@ -30,11 +31,14 @@ SYSTEM_PROMPT = load_skill("classify-review")
 # Pipeline modules — use the pipeline package
 from pipeline.storage import get_connection, save_reviews
 from pipeline.classify import run_classification
+from pipeline.retrieve import retrieve
+from pipeline.ingest_reviews import fetch_all_reviews
 
 # Agent modules
 from agent.state import AgentState
 from agent.graph import build_graph
 from agent.nodes.coordinator import coordinator_node
+from agent.utils import accumulate_tokens, format_evidence_sources
 ```
 
 ## Naming conventions

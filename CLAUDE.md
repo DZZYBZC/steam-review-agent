@@ -58,14 +58,18 @@ steam-review-agent/
 - Run pipeline (skip fetch): `python main.py <app_id> --skip-fetch`
 - Test agent (single review, real LLM calls): `python test_agent.py [--category <cat>] [--review-id <id>] [--list]`
 - Test graph compilation: `python test_graph.py`
+- Manage cluster notes: `python resolve_note.py {list <app_id> <category> | resolve <note_id> | reactivate <note_id>}`
 
 ## Agent graph flow
 - First pass (iteration 0): coordinator → investigator → responder → critic → (if approved) → **[interrupt]** → human_approval → END
-- Critic rejection: critic → coordinator → responder → critic → ... (revision loop, skips investigator)
-- Human rejection: human_approval → coordinator → responder → critic → ... (re-enters revision loop)
-- Terminates on: human approval, AGENT_MAX_ITERATIONS reached, or human approval after max iterations
+- Critic rejection — **drafting type**: critic → coordinator → responder → critic → ... (re-draft only, evidence_package unchanged)
+- Critic rejection — **evidence type**: critic → coordinator → investigator → responder → critic → ... (re-investigate using critic's `retrieval_hint` as query seed; falls back to default query construction if hint is empty)
+- Terminal LLM/parse errors: responder or critic → coordinator → END with stop_reason="llm_error" or "parse_error" (skips rest of graph; coordinator audit-logs the errored run)
+- Human rejection: human_approval → coordinator → responder → critic → ... (re-enters revision loop as drafting type)
+- Terminates on: human approval, AGENT_MAX_ITERATIONS reached, human approval after max iterations, or terminal LLM/parse error
 - The graph uses `interrupt_before=["human_approval"]` — pauses for human decision injection via `app.update_state()`
 - Evidence chain of custody: source_ids → relevant_ids → source_ids_cited → Critic verifies source_ids_cited ⊆ relevant_ids
+- Per-iteration observability: Critic writes one row per pass to `audit_log_iterations` (fire-and-forget), capturing draft, critique, rejection reason, and `reason_type`/`retrieval_hint` for eval analysis
 
 ## Human-in-the-loop
 - Human review gate sits between Critic approval and graph termination
@@ -81,13 +85,13 @@ steam-review-agent/
   - **Status lifecycle**: `active` (default) → `resolved` (manual). Statuses defined in `CLUSTER_NOTE_STATUSES` config.
   - **TTL**: notes older than `CLUSTER_NOTE_STALENESS_DAYS` (90d) are excluded at read time (not deleted)
   - **Dedup**: `find_recent_similar_note()` checks source_review_id first, then falls back to time-window (`CLUSTER_NOTE_DEDUP_WINDOW_HOURS`, 24h)
-  - **Write sources**: human_approval (human_feedback on reject, response_history on approve), investigator (known_issue when confidence >= `CLUSTER_NOTE_AUTO_CONFIDENCE`)
+  - **Write sources**: human_approval (human_feedback on reject, response_history on approve), investigator (known_issue when `is_sufficient` and `len(relevant_ids) >= CLUSTER_NOTE_AUTO_MIN_SOURCES` — deterministic gate; LLM-self-reported confidence is not used)
   - **Traceability**: `source_review_id` links notes to the review that triggered them
 - Responder loads approved examples from audit log as few-shot context in the user message
 - Investigator loads active, non-stale cluster notes as additional context in the LLM call
 
 ## Retrieval pipeline
-Hybrid RAG: vector (ChromaDB + all-MiniLM-L6-v2) + BM25 → RRF fusion (top 12) → cross-encoder rerank (top 5) → Investigator node (up to 2 self-RAG retries with query reformulation). Reranker scores are for ranking only — relevance judgment is left to the downstream agent, not a score threshold.
+Hybrid RAG: vector (ChromaDB + all-MiniLM-L6-v2) + BM25 → RRF fusion (top 12) → cross-encoder rerank (top 5) → Investigator node (up to 2 self-RAG retries with query reformulation). Reranker scores are internal to the retrieval pipeline — they order results but are not passed to the Investigator LLM (to avoid anchoring on uncalibrated floats).
 
 ## Proposed actions
 - **no_action** — fully addressed by patches, or subjective/design-level feedback (pricing, story, design direction)

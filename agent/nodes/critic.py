@@ -12,6 +12,7 @@ import anthropic
 
 from agent.state import AgentState
 from agent.utils import accumulate_tokens, format_evidence_sources
+from pipeline.storage import get_connection, save_audit_iteration
 from utils import load_skill, parse_llm_json
 from config import (
     CLAUDE_API_KEY,
@@ -132,32 +133,82 @@ def critic_node(state: AgentState) -> dict:
 
     try:
         data, tokens = _call_critic_llm(user_message)
+    except json.JSONDecodeError as e:
+        logger.error(f"Critic: LLM response parse failed: {e}")
+        return {
+            "critique": f"Critic parse failed: {e}",
+            "approved": False,
+            "stop_reason": "parse_error",
+            "node_log": [f"critic: parse_error — {e}"],
+        }
     except Exception as e:
         logger.error(f"Critic: LLM call failed: {e}")
         return {
             "critique": f"Critic failed: {e}",
             "approved": False,
-            "revision_reason": "Critic evaluation failed — auto-rejecting for manual review.",
-            "token_usage": state.get("token_usage", {}),
-            "node_log": [f"critic: failed — {e}"],
+            "stop_reason": "llm_error",
+            "node_log": [f"critic: llm_error — {e}"],
         }
 
     approved = data.get("approved", False)
     critique = data.get("critique", "")
     revision_reason = data.get("revision_reason", "")
+    reason_type = data.get("reason_type", "") or ""
+    retrieval_hint = data.get("retrieval_hint", "") or ""
+
+    # Defensive: approved drafts never carry a rejection reason_type or hint.
+    if approved:
+        reason_type = ""
+        retrieval_hint = ""
+    # Defensive: drafting-type rejections never carry a hint.
+    elif reason_type != "evidence":
+        retrieval_hint = ""
 
     if approved:
         logger.info("Critic: draft approved")
     else:
-        logger.info(f"Critic: draft rejected — {revision_reason[:100]}")
+        logger.info(
+            f"Critic: draft rejected ({reason_type or 'unclassified'}) — {revision_reason[:100]}"
+        )
+
+    # Fire-and-forget: record this critic pass to audit_log_iterations.
+    # iteration_count was incremented by the Responder before this call, so
+    # (iteration_count - 1) is the 0-indexed iteration number of the draft
+    # we're evaluating (iteration 0 = first draft).
+    iteration_idx = max(state.get("iteration_count", 1) - 1, 0)
+    try:
+        conn = get_connection()
+        try:
+            save_audit_iteration(
+                conn,
+                state=state,
+                iteration=iteration_idx,
+                approved=approved,
+                critique=critique,
+                revision_reason=revision_reason,
+                reason_type=reason_type or None,
+                retrieval_hint=retrieval_hint or None,
+                tokens=tokens,
+            )
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning(f"Critic: failed to save audit iteration: {e}")
+
+    if approved:
+        verdict = "approved"
+    else:
+        verdict = f"rejected ({reason_type or 'unclassified'})"
 
     return {
         "critique": critique,
         "approved": approved,
         "revision_reason": revision_reason,
+        "reason_type": reason_type,
+        "retrieval_hint": retrieval_hint,
         "token_usage": {**state.get("token_usage", {}), "critic": accumulate_tokens(state.get("token_usage", {}).get("critic"), tokens)},
         "node_log": [
-            f"critic: {'approved' if approved else 'rejected'}"
+            f"critic: {verdict}"
             + (f" — {revision_reason[:80]}" if not approved else "")
         ],
     }

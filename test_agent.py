@@ -125,6 +125,8 @@ def run(category: str | None = None, review_id: str | None = None):
         "iteration_count": 0,
         "approved": False,
         "revision_reason": "",
+        "reason_type": "",
+        "retrieval_hint": "",
         "stop_reason": "",
         "evidence_package": {},
         "drafted_response": "",

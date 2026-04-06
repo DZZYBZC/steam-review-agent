@@ -27,7 +27,7 @@ from config import (
     INVESTIGATOR_MAX_TOKENS,
     RETRIEVAL_CATEGORIES,
     SELF_RAG_MAX_RETRIES,
-    CLUSTER_NOTE_AUTO_CONFIDENCE,
+    CLUSTER_NOTE_AUTO_MIN_SOURCES,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,8 +52,7 @@ def _format_evidence_for_llm(results: list[dict]) -> str:
         lines.append(
             f"[{i}] chunk_id={r['chunk_id']} "
             f"version={meta.get('patch_version', 'unknown')} "
-            f"section={meta.get('section', 'unknown')} "
-            f"relevance={r.get('relevance_score', 0.0):.2f}"
+            f"section={meta.get('section', 'unknown')}"
         )
         lines.append(f'    "{r["text"]}"')
     return "\n".join(lines)
@@ -188,13 +187,26 @@ def investigator_node(state: AgentState) -> dict:
         return {
             "review_tone": review_tone,
             "evidence_package": evidence.to_dict(),
+            "retrieval_hint": "",
             "token_usage": {**state.get("token_usage", {}), "investigator": total_tokens},
             "node_log": [f"investigator: tone={review_tone}, skipped retrieval — category '{category}'", notes_log],
         }
 
+    # On a revision re-entry triggered by an evidence-type critic rejection,
+    # the Critic provides a retrieval_hint to seed the next search. If the hint
+    # is missing (Critic forgot, or reason_type was "drafting"), fall back to
+    # the default query construction. Bad hints are handled inside the self-RAG
+    # retry loop below (the sufficiency check will fail and reformulated_query
+    # will take over within the same invocation).
+    retrieval_hint = state.get("retrieval_hint", "") or ""
+
     try:
         # Stage 2: Hybrid retrieval
-        query = review_text
+        if retrieval_hint:
+            query = retrieval_hint
+            logger.info(f"Investigator: using critic retrieval_hint as query: {retrieval_hint!r}")
+        else:
+            query = review_text
         results = retrieve(query, app_id)
 
         logger.info(f"Investigator: retrieved {len(results)} chunks for initial query")
@@ -239,6 +251,7 @@ def investigator_node(state: AgentState) -> dict:
         return {
             "review_tone": review_tone,
             "evidence_package": evidence.to_dict(),
+            "retrieval_hint": "",
             "token_usage": {**state.get("token_usage", {}), "investigator": total_tokens},
             "node_log": [f"investigator: tone={review_tone}, failed — {e}", notes_log],
         }
@@ -266,11 +279,13 @@ def investigator_node(state: AgentState) -> dict:
         query_used=query,
     )
 
-    # Auto-save known_issue note if confidence is high enough
+    # Auto-save known_issue note when the investigator commits to sufficiency
+    # with enough relevant sources. Deterministic gate — the LLM-self-reported
+    # confidence float is not used here (see F3 in the design review).
     if (
         retrieval_decision == "retrieved"
-        and evidence.confidence >= CLUSTER_NOTE_AUTO_CONFIDENCE
-        and relevant_ids
+        and is_sufficient
+        and len(relevant_ids) >= CLUSTER_NOTE_AUTO_MIN_SOURCES
     ):
         try:
             conn = get_connection()
@@ -294,6 +309,7 @@ def investigator_node(state: AgentState) -> dict:
     return {
         "review_tone": review_tone,
         "evidence_package": evidence.to_dict(),
+        "retrieval_hint": "",  # consumed — do not reuse across cycles
         "token_usage": {**state.get("token_usage", {}), "investigator": total_tokens},
         "node_log": [
             f"investigator: tone={review_tone}, {retrieval_decision} — confidence={evidence.confidence:.2f}, "

@@ -14,6 +14,8 @@ from agent.nodes.critic import critic_node
 from agent.nodes.human_approval import human_approval_node, route_from_human_approval
 from config import CHECKPOINT_BACKEND, CHECKPOINT_DB_PATH
 
+TERMINAL_ERROR_STOP_REASONS = {"llm_error", "parse_error"}
+
 logger = logging.getLogger(__name__)
 
 def _create_checkpointer():
@@ -64,12 +66,27 @@ def build_graph():
     )
 
     graph.add_edge("investigator", "responder")
-    graph.add_edge("responder", "critic")
 
-    # Critic approved → human review gate; Critic rejected → coordinator for revision
+    # Responder → critic, unless Responder hit a terminal error (skip critic, go to coordinator for audit-log + END)
+    graph.add_conditional_edges(
+        "responder",
+        lambda state: "coordinator" if state.get("stop_reason") in TERMINAL_ERROR_STOP_REASONS else "critic",
+        {
+            "critic": "critic",
+            "coordinator": "coordinator",
+        },
+    )
+
+    # Critic approved → human review gate; Critic rejected → coordinator for revision.
+    # Terminal critic errors → coordinator (audit-log + END).
+    def _route_from_critic(state):
+        if state.get("stop_reason") in TERMINAL_ERROR_STOP_REASONS:
+            return "coordinator"
+        return "human_approval" if state.get("approved", False) else "coordinator"
+
     graph.add_conditional_edges(
         "critic",
-        lambda state: "human_approval" if state.get("approved", False) else "coordinator",
+        _route_from_critic,
         {
             "human_approval": "human_approval",
             "coordinator": "coordinator",

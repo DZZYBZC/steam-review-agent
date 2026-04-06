@@ -79,11 +79,11 @@ If the evidence is completely irrelevant, return low confidence, an empty releva
 <example index="1">
 <complaint>Game keeps crashing on startup after the latest update</complaint>
 <evidence>
-[0] chunk_id=patch_030_02_01_chunk_3 version=Update Summary (Ver.1.030.02.01) section=Major Additions and Changes relevance=0.82
+[0] chunk_id=patch_030_02_01_chunk_3 version=Update Summary (Ver.1.030.02.01) section=Major Additions and Changes
     "The crash report tool has been updated to send more detailed information to help us investigate crashes."
-[1] chunk_id=steam_client_fix_chunk_0 version=[Steam Client Beta Updated] section=General relevance=0.75
+[1] chunk_id=steam_client_fix_chunk_0 version=[Steam Client Beta Updated] section=General
     "Steam has fixed regression causing Monster Hunter Wilds to crash on startup."
-[2] chunk_id=patch_021_chunk_7 version=Update Summary (Ver.1.021) section=System relevance=0.68
+[2] chunk_id=patch_021_chunk_7 version=Update Summary (Ver.1.021) section=System
     "Fixed an issue where performing certain actions in the item bar could cause the game to crash."
 </evidence>
 <assessment>
@@ -101,9 +101,9 @@ If the evidence is completely irrelevant, return low confidence, an empty releva
 <example index="2">
 <complaint>Game is too expensive, not worth $70</complaint>
 <evidence>
-[0] chunk_id=patch_030_chunk_12 version=Update Summary (Ver.1.030) section=Charge Blade relevance=-0.3
+[0] chunk_id=patch_030_chunk_12 version=Update Summary (Ver.1.030) section=Charge Blade
     "Fixed an issue where the player would not receive Element Boost when successfully landing a Condensed Spinning Slash."
-[1] chunk_id=showcase_tu3_chunk_0 version=The Showcase for Free Title Update 3 section=Free Title Update Roadmap relevance=-0.4
+[1] chunk_id=showcase_tu3_chunk_0 version=The Showcase for Free Title Update 3 section=Free Title Update Roadmap
     "The newest entry in the series that takes the gameplay and world to the next level."
 </evidence>
 <assessment>
@@ -121,11 +121,11 @@ If the evidence is completely irrelevant, return low confidence, an empty releva
 <example index="3">
 <complaint>Textures look blurry and pop in constantly</complaint>
 <evidence>
-[0] chunk_id=patch_040_03_01_chunk_1 version=Update Summary (Ver.1.040.03.01) section=Major Additions and Changes relevance=0.71
+[0] chunk_id=patch_040_03_01_chunk_1 version=Update Summary (Ver.1.040.03.01) section=Major Additions and Changes
     "Adjusted texture streaming to improve visual quality while maintaining performance."
-[1] chunk_id=patch_040_03_01_chunk_2 version=Update Summary (Ver.1.040.03.01) section=Major Additions and Changes relevance=0.65
+[1] chunk_id=patch_040_03_01_chunk_2 version=Update Summary (Ver.1.040.03.01) section=Major Additions and Changes
     "Adjusted the High Resolution Texture Pack to reduce VRAM usage."
-[2] chunk_id=commitment_chunk_4 version=Our Commitment to Improving Stability and Performance section=General relevance=0.58
+[2] chunk_id=commitment_chunk_4 version=Our Commitment to Improving Stability and Performance section=General
     "Additionally, we will make further optimization improvements to address texture streaming and visual quality."
 </evidence>
 <assessment>
@@ -143,9 +143,9 @@ If the evidence is completely irrelevant, return low confidence, an empty releva
 <example index="4">
 <complaint>My character keeps falling through the floor in the Scarlet Forest area</complaint>
 <evidence>
-[0] chunk_id=patch_040_chunk_19 version=Update Summary (Ver.1.040) section=Monsters relevance=0.31
+[0] chunk_id=patch_040_chunk_19 version=Update Summary (Ver.1.040) section=Monsters
     "Fixed an issue with the High Purrformance Barrel Puncher where Focus Strikes were not hitting correctly."
-[1] chunk_id=patch_030_chunk_5 version=Update Summary (Ver.1.030) section=Player relevance=0.28
+[1] chunk_id=patch_030_chunk_5 version=Update Summary (Ver.1.030) section=Player
     "Fixed an issue where the player could get stuck in certain terrain during a mount."
 </evidence>
 <assessment>
@@ -180,9 +180,9 @@ If the evidence is completely irrelevant, return low confidence, an empty releva
 <example index="6">
 <complaint>Game still stutters badly in the hub area</complaint>
 <evidence>
-[0] chunk_id=patch_010_chunk_2 version=Update Summary (Ver.1.010) section=Performance relevance=0.72 date=2025-03-15
+[0] chunk_id=patch_010_chunk_2 version=Update Summary (Ver.1.010) section=Performance date=2025-03-15
     "Improved frame pacing in the Grand Hub to reduce stuttering during peak player counts."
-[1] chunk_id=patch_040_03_01_chunk_9 version=Update Summary (Ver.1.040.03.01) section=General relevance=0.55 date=2025-08-20
+[1] chunk_id=patch_040_03_01_chunk_9 version=Update Summary (Ver.1.040.03.01) section=General date=2025-08-20
     "This issue may cause the FPS to drop only in the Base Camp and Grand Hub."
 </evidence>
 <assessment>

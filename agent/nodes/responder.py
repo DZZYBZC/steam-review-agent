@@ -167,15 +167,19 @@ def responder_node(state: AgentState) -> dict:
 
     try:
         data, tokens = _call_responder_llm(user_message)
+    except json.JSONDecodeError as e:
+        logger.error(f"Responder: LLM response parse failed: {e}")
+        return {
+            "drafted_response": previous_draft or f"[Parse failed: {e}]",
+            "stop_reason": "parse_error",
+            "node_log": [f"responder: parse_error — {e}", feedback_log],
+        }
     except Exception as e:
         logger.error(f"Responder: LLM call failed: {e}")
         return {
             "drafted_response": previous_draft or f"[Draft failed: {e}]",
-            "proposed_action": "investigate",
-            "source_ids_cited": [],
-            "iteration_count": iteration + 1,
-            "token_usage": state.get("token_usage", {}),
-            "node_log": [f"responder: failed — {e}", feedback_log],
+            "stop_reason": "llm_error",
+            "node_log": [f"responder: llm_error — {e}", feedback_log],
         }
 
     return {

@@ -89,20 +89,27 @@ START → coordinator → investigator → responder → critic ──┐
               ↓                              [interrupt]    coordinator
               ↓                            human_approval      ↓
               ↓                          approved ↓  rejected ↓
-              ↓                             END    coordinator → responder
-              ↓                                         ↑
-              +————————————→ responder ————————————————→ critic
-                    (revision — skip investigator)
+              ↓                             END           (revision)
+              ↓                                         ↓
+              ↓                       reason_type == "evidence"?
+              ↓                         yes ↓           no ↓
+              +———→ investigator ←—————————+            responder
+                    (uses retrieval_hint)                 ↓
+                                                         critic
 ```
 - First pass (iteration 0): full pipeline through investigator
-- Critic rejection: routes back to coordinator → responder (skips investigator)
-- Human rejection: routes back to coordinator → responder (same revision loop)
+- Critic rejection — **drafting type** (tone, hallucination, overconfidence, bad citation, action): coordinator → responder (re-draft only, evidence_package unchanged)
+- Critic rejection — **evidence type** (insufficient or wrong coverage): coordinator → investigator → responder (re-investigate using Critic's `retrieval_hint` as query seed; investigator clears the hint on return)
+- Human rejection: coordinator → responder (treated as drafting type)
+- Terminal LLM/parse errors from responder or critic: routed directly to coordinator, which audit-logs and ends (`stop_reason="llm_error"` or `"parse_error"`, never reaches human_approval)
 - max_iterations is read from config.AGENT_MAX_ITERATIONS, not from state
 
 ## Side effects (not state updates)
 Some nodes write to SQLite as fire-and-forget side effects — these are NOT state updates:
 - **human_approval**: saves audit_log entry (always), cluster note of type `response_history` (on approve) or `human_feedback` (on reject with feedback). Uses dedup via `find_recent_similar_note`.
-- **investigator**: saves cluster note of type `known_issue` when evidence confidence >= `CLUSTER_NOTE_AUTO_CONFIDENCE`. Uses dedup.
+- **coordinator**: saves audit_log entry on terminal exits (`max_iterations_reached`, `llm_error`, `parse_error`).
+- **critic**: saves one row per pass to `audit_log_iterations` (draft, critique, approved, revision_reason, reason_type, retrieval_hint, tokens). This is the per-iteration observability surface for eval analysis.
+- **investigator**: saves cluster note of type `known_issue` when `is_sufficient` and `len(relevant_ids) >= CLUSTER_NOTE_AUTO_MIN_SOURCES`. Deterministic gate — does not use LLM-self-reported confidence. Uses dedup.
 - **responder**: reads feedback examples from audit_log (iteration 0 only). Reads cluster notes indirectly via investigator context.
 
 All side-effect writes are wrapped in try/except — a DB error never crashes the node or changes the return value.

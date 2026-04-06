@@ -7,6 +7,7 @@ import logging
 import pandas as pd
 import json
 from datetime import datetime, timedelta
+from typing import Any, Mapping
 from config import (
     DB_PATH,
     CONFIDENCE_THRESHOLD,
@@ -88,6 +89,25 @@ def create_tables(conn: sqlite3.Connection) -> None:
     """)
 
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS audit_log_iterations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id TEXT NOT NULL,
+            review_id TEXT NOT NULL,
+            iteration INTEGER NOT NULL,
+            drafted_response TEXT,
+            proposed_action TEXT,
+            source_ids_cited TEXT,
+            critique TEXT,
+            approved INTEGER NOT NULL,
+            revision_reason TEXT,
+            reason_type TEXT,
+            retrieval_hint TEXT,
+            token_usage TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS cluster_notes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             app_id TEXT NOT NULL,
@@ -118,6 +138,7 @@ def create_tables(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_notes_app_category ON cluster_notes(app_id, category)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_notes_status ON cluster_notes(app_id, category, status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_notes_review ON cluster_notes(source_review_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_iter_review ON audit_log_iterations(app_id, review_id, iteration)")
 
     conn.commit()
     logger.info("Database tables ready.")
@@ -348,6 +369,59 @@ def save_audit_entry(conn: sqlite3.Connection, state: dict) -> bool:
         return False
 
 
+def save_audit_iteration(
+    conn: sqlite3.Connection,
+    state: Mapping[str, Any],
+    iteration: int,
+    approved: bool,
+    critique: str,
+    revision_reason: str,
+    reason_type: str | None,
+    retrieval_hint: str | None,
+    tokens: dict | None,
+) -> bool:
+    """
+    Save one critic pass (one iteration) to audit_log_iterations.
+
+    Called fire-and-forget from the Critic node. Captures per-iteration
+    rejection reasons that audit_log (one-row-per-run) overwrites.
+
+    Returns:
+        True if inserted successfully, False on error.
+    """
+    try:
+        conn.execute("""
+            INSERT INTO audit_log_iterations
+            (app_id, review_id, iteration, drafted_response, proposed_action,
+             source_ids_cited, critique, approved, revision_reason,
+             reason_type, retrieval_hint, token_usage)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            state.get("app_id", ""),
+            state.get("review_id", ""),
+            iteration,
+            state.get("drafted_response", ""),
+            state.get("proposed_action", ""),
+            json.dumps(state.get("source_ids_cited", [])),
+            critique,
+            1 if approved else 0,
+            revision_reason,
+            reason_type,
+            retrieval_hint,
+            json.dumps(tokens or {}),
+        ))
+        conn.commit()
+        logger.debug(
+            f"Saved audit iteration {iteration} "
+            f"for review {state.get('review_id', '???')} "
+            f"(approved={approved})."
+        )
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Failed to save audit iteration: {e}")
+        return False
+
+
 def load_feedback_examples(
     conn: sqlite3.Connection,
     app_id: str,
@@ -499,12 +573,15 @@ def update_cluster_note_status(
         True if updated successfully, False on error.
     """
     try:
-        conn.execute("""
+        cursor = conn.execute("""
             UPDATE cluster_notes
             SET status = ?, updated_at = datetime('now')
             WHERE id = ?
         """, (status, note_id))
         conn.commit()
+        if cursor.rowcount == 0:
+            logger.warning(f"No cluster note with id={note_id} — nothing updated.")
+            return False
         logger.info(f"Updated cluster note {note_id} status to '{status}'.")
         return True
     except sqlite3.Error as e:

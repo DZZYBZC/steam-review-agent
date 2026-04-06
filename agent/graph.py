@@ -11,6 +11,7 @@ from agent.nodes.coordinator import coordinator_node, route_from_coordinator
 from agent.nodes.investigator import investigator_node
 from agent.nodes.responder import responder_node
 from agent.nodes.critic import critic_node
+from agent.nodes.human_approval import human_approval_node, route_from_human_approval
 from config import CHECKPOINT_BACKEND, CHECKPOINT_DB_PATH
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ def build_graph():
     graph.add_node("investigator", investigator_node)
     graph.add_node("responder", responder_node)
     graph.add_node("critic", critic_node)
+    graph.add_node("human_approval", human_approval_node)
 
     graph.set_entry_point("coordinator")
 
@@ -63,10 +65,31 @@ def build_graph():
 
     graph.add_edge("investigator", "responder")
     graph.add_edge("responder", "critic")
-    graph.add_edge("critic", "coordinator")
+
+    # Critic approved → human review gate; Critic rejected → coordinator for revision
+    graph.add_conditional_edges(
+        "critic",
+        lambda state: "human_approval" if state.get("approved", False) else "coordinator",
+        {
+            "human_approval": "human_approval",
+            "coordinator": "coordinator",
+        },
+    )
+
+    graph.add_conditional_edges(
+        "human_approval",
+        route_from_human_approval,
+        {
+            "coordinator": "coordinator",
+            "done": END,
+        },
+    )
 
     checkpointer = _create_checkpointer()
-    app = graph.compile(checkpointer=checkpointer)
+    app = graph.compile(
+        checkpointer=checkpointer,
+        interrupt_before=["human_approval"],
+    )
 
     logger.info("Agent graph compiled successfully.")
     return app

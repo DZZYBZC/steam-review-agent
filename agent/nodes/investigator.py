@@ -14,6 +14,11 @@ import anthropic
 from agent.state import AgentState
 from agent.models import EvidencePackage
 from pipeline.retrieve import retrieve
+from pipeline.classify import classify_tone
+from pipeline.storage import (
+    get_connection, load_cluster_notes,
+    save_cluster_note, find_recent_similar_note,
+)
 from utils import load_skill, parse_llm_json
 from config import (
     CLAUDE_API_KEY,
@@ -22,6 +27,7 @@ from config import (
     INVESTIGATOR_MAX_TOKENS,
     RETRIEVAL_CATEGORIES,
     SELF_RAG_MAX_RETRIES,
+    CLUSTER_NOTE_AUTO_CONFIDENCE,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,7 +60,8 @@ def _format_evidence_for_llm(results: list[dict]) -> str:
 
 
 def _call_investigator_llm(
-    review_text: str, evidence_text: str, category: str
+    review_text: str, evidence_text: str, category: str,
+    cluster_notes_text: str = "",
 ) -> tuple[dict, dict[str, int]]:
     """
     Call the LLM to assess evidence relevance and sufficiency.
@@ -67,6 +74,9 @@ def _call_investigator_llm(
         f"<complaint>{review_text}</complaint>\n\n"
         f"<evidence>\n{evidence_text}\n</evidence>"
     )
+
+    if cluster_notes_text:
+        user_message += f"\n\n{cluster_notes_text}"
 
     try:
         response = client.messages.create(
@@ -132,7 +142,41 @@ def investigator_node(state: AgentState) -> dict:
 
     logger.info(f"Investigator: processing review ({len(review_text)} chars), category={category}")
 
+    # Tone classification (before retrieval — independent of evidence)
+    if category == "other":
+        review_tone = "skipped"
+        logger.info("Investigator: skipped tone classification for category 'other'")
+    else:
+        review_tone = classify_tone(review_text)
+        if review_tone == "unknown":
+            logger.warning("Investigator: tone classification failed (API error fallback)")
+        else:
+            logger.info(f"Investigator: classified tone as '{review_tone}'")
+
     total_tokens = {"input": 0, "output": 0}
+
+    # Load cluster notes for additional context
+    cluster_notes_text = ""
+    notes_count = 0
+    if app_id and category:
+        try:
+            conn = get_connection()
+            try:
+                notes = load_cluster_notes(conn, app_id, category)
+                notes_count = len(notes)
+            finally:
+                conn.close()
+            if notes:
+                lines = ["<cluster_notes>"]
+                for n in notes:
+                    date = n.get("created_at", "")[:10]
+                    lines.append(f"[{n['note_type']}] ({date}): {n['note_text']}")
+                lines.append("</cluster_notes>")
+                cluster_notes_text = "\n".join(lines)
+        except Exception as e:
+            logger.warning(f"Investigator: failed to load cluster notes: {e}")
+
+    notes_log = f"investigator: loaded {notes_count} cluster notes"
 
     # Stage 1: Deterministic gate
     if not _should_retrieve(category):
@@ -142,9 +186,10 @@ def investigator_node(state: AgentState) -> dict:
             retrieval_reasoning=f"Category '{category}' is not in RETRIEVAL_CATEGORIES — no patch note evidence expected.",
         )
         return {
+            "review_tone": review_tone,
             "evidence_package": evidence.to_dict(),
             "token_usage": {**state.get("token_usage", {}), "investigator": total_tokens},
-            "node_log": [f"investigator: skipped retrieval — category '{category}'"],
+            "node_log": [f"investigator: tone={review_tone}, skipped retrieval — category '{category}'", notes_log],
         }
 
     try:
@@ -159,7 +204,7 @@ def investigator_node(state: AgentState) -> dict:
         while True:
             evidence_text = _format_evidence_for_llm(results)
             assessment, tokens = _call_investigator_llm(
-                review_text, evidence_text, category
+                review_text, evidence_text, category, cluster_notes_text
             )
             total_tokens["input"] += tokens["input"]
             total_tokens["output"] += tokens["output"]
@@ -192,9 +237,10 @@ def investigator_node(state: AgentState) -> dict:
             retrieval_reasoning=f"Retrieval or assessment failed: {e}",
         )
         return {
+            "review_tone": review_tone,
             "evidence_package": evidence.to_dict(),
             "token_usage": {**state.get("token_usage", {}), "investigator": total_tokens},
-            "node_log": [f"investigator: failed — {e}"],
+            "node_log": [f"investigator: tone={review_tone}, failed — {e}", notes_log],
         }
 
     # Build evidence package
@@ -220,11 +266,37 @@ def investigator_node(state: AgentState) -> dict:
         query_used=query,
     )
 
+    # Auto-save known_issue note if confidence is high enough
+    if (
+        retrieval_decision == "retrieved"
+        and evidence.confidence >= CLUSTER_NOTE_AUTO_CONFIDENCE
+        and relevant_ids
+    ):
+        try:
+            conn = get_connection()
+            try:
+                existing = find_recent_similar_note(
+                    conn, app_id, category, "known_issue",
+                )
+                if not existing:
+                    save_cluster_note(
+                        conn, app_id=app_id, category=category,
+                        note_type="known_issue",
+                        note_text=evidence.summary,
+                        source_review_id=state.get("review_id", ""),
+                    )
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"Investigator: failed to auto-save known_issue note: {e}")
+
     return {
+        "review_tone": review_tone,
         "evidence_package": evidence.to_dict(),
         "token_usage": {**state.get("token_usage", {}), "investigator": total_tokens},
         "node_log": [
-            f"investigator: {retrieval_decision} — confidence={evidence.confidence:.2f}, "
-            f"sources={len(sources)}, retries={retries}"
+            f"investigator: tone={review_tone}, {retrieval_decision} — confidence={evidence.confidence:.2f}, "
+            f"sources={len(sources)}, retries={retries}",
+            notes_log,
         ],
     }

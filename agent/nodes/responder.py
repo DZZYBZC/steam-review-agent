@@ -12,6 +12,7 @@ import anthropic
 
 from agent.state import AgentState
 from agent.utils import accumulate_tokens, format_evidence_sources
+from pipeline.storage import get_connection, load_feedback_examples
 from utils import load_skill, parse_llm_json
 from config import (
     CLAUDE_API_KEY,
@@ -125,7 +126,7 @@ def responder_node(state: AgentState) -> dict:
     Revision cycles: also reads revision_reason and previous draft.
     """
     review_text = state.get("review_text", "")
-    review_tone = state.get("review_tone", "neutral")
+    review_tone = state.get("review_tone", "")
     evidence = state.get("evidence_package", {})
     iteration = state.get("iteration_count", 0)
     revision_reason = state.get("revision_reason", "")
@@ -141,6 +142,29 @@ def responder_node(state: AgentState) -> dict:
         iteration, revision_reason, previous_draft,
     )
 
+    # Load feedback examples from audit log (first draft only — revision cycles don't need them)
+    feedback_examples = []
+    app_id = state.get("app_id", "")
+    category = state.get("cluster_summary", {}).get("category", "")
+    if iteration == 0 and app_id and category:
+        try:
+            conn = get_connection()
+            try:
+                feedback_examples = load_feedback_examples(conn, app_id, category)
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"Responder: failed to load feedback examples: {e}")
+
+    feedback_log = f"responder: loaded {len(feedback_examples)} feedback examples"
+    if feedback_examples:
+        lines = ["Here are examples of previously approved responses for this category. Match their style and approach:"]
+        for ex in feedback_examples:
+            lines.append("--- Approved example ---")
+            lines.append(f"Review: {ex['review_text'][:200]}")
+            lines.append(f"Response: {ex['drafted_response']}")
+        user_message += "\n\n" + "\n".join(lines)
+
     try:
         data, tokens = _call_responder_llm(user_message)
     except Exception as e:
@@ -151,7 +175,7 @@ def responder_node(state: AgentState) -> dict:
             "source_ids_cited": [],
             "iteration_count": iteration + 1,
             "token_usage": state.get("token_usage", {}),
-            "node_log": [f"responder: failed — {e}"],
+            "node_log": [f"responder: failed — {e}", feedback_log],
         }
 
     return {
@@ -163,6 +187,7 @@ def responder_node(state: AgentState) -> dict:
         "node_log": [
             f"responder: drafted (iteration {iteration + 1}), "
             f"action={data.get('proposed_action', 'monitor')}, "
-            f"cited={len(data.get('source_ids_cited', []))} sources"
+            f"cited={len(data.get('source_ids_cited', []))} sources",
+            feedback_log,
         ],
     }

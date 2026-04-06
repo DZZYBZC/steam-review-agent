@@ -21,7 +21,6 @@ import logging
 from agent.graph import build_graph
 from agent.state import AgentState
 from pipeline.storage import get_connection, load_classified_reviews
-from pipeline.classify import classify_tone
 from config import TEST_APP_ID
 
 logging.basicConfig(
@@ -108,25 +107,21 @@ def run(category: str | None = None, review_id: str | None = None):
     print(f">>> Category: {review['primary_category']}")
     print(f">>> Text: {review['review_text'][:150]}...")
 
-    # 2. Classify tone via LLM
-    logger.info("Classifying review tone...")
-    tone = classify_tone(review["review_text"])
-    print(f">>> Tone: {tone}")
-
-    # 3. Build graph
+    # 2. Build graph
     logger.info("Building agent graph...")
     app = build_graph()
 
     # 4. Build initial state
     test_state: AgentState = {
         "app_id": TEST_APP_ID,
+        "review_id": review["review_id"],
         "review_text": review["review_text"],
         "cluster_summary": {
             "category": review["primary_category"],
             "total_reviews": 1,
             "priority_score": 0.0,
         },
-        "review_tone": tone,
+        "review_tone": "",
         "iteration_count": 0,
         "approved": False,
         "revision_reason": "",
@@ -138,18 +133,47 @@ def run(category: str | None = None, review_id: str | None = None):
         "critique": "",
         "node_log": [],
         "token_usage": {},
+        "human_decision": "",
+        "human_feedback": "",
     }
 
-    # 5. Run
+    # 5. Run — graph pauses at human_approval interrupt
+    thread_config = {"configurable": {"thread_id": f"test-{review['review_id']}"}}
     logger.info(f"Running agent on review '{review['review_id']}'...")
     print()
 
-    result = app.invoke(
-        test_state,
-        config={"configurable": {"thread_id": f"test-{review['review_id']}"}},
-    )
+    result = app.invoke(test_state, config=thread_config)
 
-    # 6. Diagnostic report
+    # 6. Human review loop
+    while result.get("stop_reason") != "human_approved":
+        print("\n" + "-" * 60)
+        print("HUMAN REVIEW GATE")
+        print("-" * 60)
+        print(f"\nDrafted response:\n{result.get('drafted_response', 'none')}")
+        print(f"\nProposed action: {result.get('proposed_action', '???')}")
+        print(f"Critique: {result.get('critique', 'none')}")
+
+        decision = input("\nApprove this draft? [y/n/auto] (auto = approve without prompt): ").strip().lower()
+
+        if decision in ("y", "yes", "auto"):
+            app.update_state(thread_config, {"human_decision": "approved"})
+        elif decision in ("n", "no"):
+            feedback = input("Revision feedback (or Enter to skip): ").strip()
+            app.update_state(thread_config, {
+                "human_decision": "rejected",
+                "human_feedback": feedback,
+            })
+        else:
+            print("Invalid input, treating as approve.")
+            app.update_state(thread_config, {"human_decision": "approved"})
+
+        result = app.invoke(None, config=thread_config)
+
+        # If max iterations forced an end without reaching human gate, break
+        if result.get("stop_reason") in ("max_iterations_reached",):
+            break
+
+    # 7. Diagnostic report
     print("\n" + "=" * 60)
     print("AGENT DIAGNOSTIC REPORT")
     print("=" * 60)
@@ -157,13 +181,14 @@ def run(category: str | None = None, review_id: str | None = None):
     # -- Input --
     print(f"\nReview ID:       {review['review_id']}")
     print(f"Category:        {review['primary_category']}")
-    print(f"Tone:            {tone}")
+    print(f"Tone:            {result.get('review_tone', '???')}")
     print(f"Review:          {review['review_text'][:200]}")
 
     # -- Termination --
     print(f"\nStop reason:     {result.get('stop_reason', '???')}")
     print(f"Iterations:      {result.get('iteration_count', 0)}")
-    print(f"Approved:        {result.get('approved', False)}")
+    print(f"Critic approved: {result.get('approved', False)}")
+    print(f"Human decision:  {result.get('human_decision', '???')}")
 
     # -- Evidence --
     evidence = result.get("evidence_package", {})

@@ -41,6 +41,7 @@ Check each of the following. A draft must pass ALL checks to be approved.
    - Disappointed player getting a dismissive or overly cheerful response = fail.
    - Confused player getting empathy instead of a direct answer = fail.
    - Appreciative player getting a cold technical dump without acknowledging their praise = fail.
+   - If tone is "skipped", "unknown", or empty, the Responder should default to neutral/matter-of-fact. Do not fail the tone check for these values unless the response is clearly inappropriate for the review's content.
 
 5. **Completeness check**: Does the response address the player's main complaint? If the review raises a specific issue and the response ignores it, it fails. If the review raises multiple issues, approve only if the response addresses the main complaint and does not imply uncovered issues were also addressed.
 

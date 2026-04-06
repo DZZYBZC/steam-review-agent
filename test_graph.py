@@ -29,13 +29,14 @@ def test_graph():
     # 2. Create a test input state
     test_state: AgentState = {
         "app_id": TEST_APP_ID,
+        "review_id": "test-review-001",
         "review_text": "Game crashes every time I enter the second dungeon. Tried reinstalling, no fix.",
         "cluster_summary": {
             "category": "technical_issues",
             "total_reviews": 25,
             "priority_score": 72.0,
         },
-        "review_tone": "frustrated",
+        "review_tone": "",
         "iteration_count": 0,
         "approved": False,
         "revision_reason": "",
@@ -47,14 +48,19 @@ def test_graph():
         "critique": "",
         "node_log": [],
         "token_usage": {},
+        "human_decision": "",
+        "human_feedback": "",
     }
 
-    # 3. Invoke the graph
+    thread_config = {"configurable": {"thread_id": "test-001"}}
+
+    # 3. Invoke the graph — will pause at human_approval interrupt
     logger.info("=== Running graph on test review ===")
-    result = app.invoke(
-        test_state,
-        config={"configurable": {"thread_id": "test-001"}}
-    )
+    result = app.invoke(test_state, config=thread_config)
+
+    logger.info("Graph paused at human approval gate. Auto-approving for test.")
+    app.update_state(thread_config, {"human_decision": "approved"})
+    result = app.invoke(None, config=thread_config)
 
     # 4. Print the results
     print("\n" + "=" * 50)
@@ -72,7 +78,7 @@ def test_graph():
         print(f"  - {entry}")
 
     # 5. Basic assertions
-    assert result.get("stop_reason", "") != "", f"Expected non-empty stop_reason, got '{result.get('stop_reason', '')}'"
+    assert result.get("stop_reason") == "human_approved", f"Expected stop_reason='human_approved', got '{result.get('stop_reason', '')}'"
     assert result.get("iteration_count", 0) > 0, f"Expected iteration_count > 0, got {result.get('iteration_count', 0)}"
     assert result.get("drafted_response", "") != "", "Expected non-empty drafted_response"
     assert len(result.get("node_log", [])) > 0, "Expected non-empty node_log"

@@ -6,7 +6,13 @@ import sqlite3
 import logging
 import pandas as pd
 import json
-from config import DB_PATH, CONFIDENCE_THRESHOLD
+from datetime import datetime, timedelta
+from config import (
+    DB_PATH,
+    CONFIDENCE_THRESHOLD,
+    CLUSTER_NOTE_STALENESS_DAYS,
+    CLUSTER_NOTE_DEDUP_WINDOW_HOURS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +63,61 @@ def create_tables(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (review_id) REFERENCES reviews(review_id)
         )
     """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id TEXT NOT NULL,
+            review_id TEXT NOT NULL,
+            category TEXT NOT NULL,
+            review_text TEXT NOT NULL,
+            review_tone TEXT,
+            evidence_summary TEXT,
+            evidence_confidence REAL,
+            drafted_response TEXT NOT NULL,
+            proposed_action TEXT,
+            source_ids_cited TEXT,
+            critique TEXT,
+            human_decision TEXT NOT NULL,
+            human_feedback TEXT,
+            iteration_count INTEGER,
+            stop_reason TEXT,
+            token_usage TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cluster_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id TEXT NOT NULL,
+            category TEXT NOT NULL,
+            note_type TEXT NOT NULL,
+            tags TEXT,
+            note_text TEXT NOT NULL,
+            created_by TEXT DEFAULT 'system',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    # Schema migrations — ALTER TABLE has no IF NOT EXISTS in SQLite
+    for col_sql in [
+        "ALTER TABLE cluster_notes ADD COLUMN status TEXT DEFAULT 'active'",
+        "ALTER TABLE cluster_notes ADD COLUMN source_review_id TEXT",
+    ]:
+        try:
+            conn.execute(col_sql)
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_reviews_app_id ON reviews(app_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_classifications_app_id ON classifications(app_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_app_category ON audit_log(app_id, category)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_feedback ON audit_log(app_id, category, human_decision)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_notes_app_category ON cluster_notes(app_id, category)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_notes_status ON cluster_notes(app_id, category, status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_notes_review ON cluster_notes(source_review_id)")
 
     conn.commit()
     logger.info("Database tables ready.")
@@ -238,3 +299,292 @@ def load_classified_reviews(
     
     logger.info(f"Loaded {len(df)} classified reviews for app {app_id}.")
     return df
+
+
+def save_audit_entry(conn: sqlite3.Connection, state: dict) -> bool:
+    """
+    Save a completed agent run to the audit log.
+
+    Extracts evidence_summary and evidence_confidence from the
+    evidence_package dict. Serializes lists/dicts as JSON strings.
+
+    Returns:
+        True if inserted successfully, False on error.
+    """
+    evidence = state.get("evidence_package", {})
+    cluster = state.get("cluster_summary", {})
+
+    try:
+        conn.execute("""
+            INSERT INTO audit_log
+            (app_id, review_id, category, review_text, review_tone,
+             evidence_summary, evidence_confidence, drafted_response,
+             proposed_action, source_ids_cited, critique, human_decision,
+             human_feedback, iteration_count, stop_reason, token_usage)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            state.get("app_id", ""),
+            state.get("review_id", ""),
+            cluster.get("category", ""),
+            state.get("review_text", ""),
+            state.get("review_tone", ""),
+            evidence.get("summary", ""),
+            evidence.get("confidence", 0.0),
+            state.get("drafted_response", ""),
+            state.get("proposed_action", ""),
+            json.dumps(state.get("source_ids_cited", [])),
+            state.get("critique", ""),
+            state.get("human_decision", ""),
+            state.get("human_feedback", ""),
+            state.get("iteration_count", 0),
+            state.get("stop_reason", ""),
+            json.dumps(state.get("token_usage", {})),
+        ))
+        conn.commit()
+        logger.info(f"Saved audit entry for review {state.get('review_id', '???')}.")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Failed to save audit entry: {e}")
+        return False
+
+
+def load_feedback_examples(
+    conn: sqlite3.Connection,
+    app_id: str,
+    category: str,
+    n: int = 3,
+) -> list[dict]:
+    """
+    Load approved drafts from the audit log for few-shot examples.
+
+    Filters to human_decision='approved' only. Returns the fields
+    the Responder needs to learn from past approved responses.
+
+    Returns:
+        A list of dicts with: review_text, drafted_response,
+        human_decision, human_feedback, evidence_summary.
+    """
+    cursor = conn.execute("""
+        SELECT review_text, drafted_response, human_decision,
+               human_feedback, evidence_summary
+        FROM audit_log
+        WHERE app_id = ?
+          AND category = ?
+          AND human_decision = 'approved'
+        ORDER BY created_at DESC
+        LIMIT ?
+    """, (app_id, category, n))
+
+    rows = cursor.fetchall()
+    columns = ["review_text", "drafted_response", "human_decision",
+               "human_feedback", "evidence_summary"]
+
+    results = [dict(zip(columns, row)) for row in rows]
+    logger.debug(f"Loaded {len(results)} feedback examples for {app_id}/{category}.")
+    return results
+
+
+def save_cluster_note(
+    conn: sqlite3.Connection,
+    app_id: str,
+    category: str,
+    note_type: str,
+    note_text: str,
+    tags: list[str] | None = None,
+    created_by: str = "system",
+    source_review_id: str | None = None,
+) -> bool:
+    """
+    Save a note to the cluster_notes table.
+
+    Parameters:
+        note_type: One of "known_issue", "response_history",
+                   "investigation", "human_feedback".
+        tags: Optional list of tags for filtering.
+        created_by: "system" or "human".
+        source_review_id: Review ID that triggered this note.
+
+    Returns:
+        True if inserted successfully, False on error.
+    """
+    try:
+        conn.execute("""
+            INSERT INTO cluster_notes
+            (app_id, category, note_type, tags, note_text, created_by, source_review_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            app_id,
+            category,
+            note_type,
+            json.dumps(tags) if tags else None,
+            note_text,
+            created_by,
+            source_review_id,
+        ))
+        conn.commit()
+        logger.info(f"Saved {note_type} note for {app_id}/{category}.")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Failed to save cluster note: {e}")
+        return False
+
+
+def load_cluster_notes(
+    conn: sqlite3.Connection,
+    app_id: str,
+    category: str,
+    status: str | None = "active",
+    include_stale: bool = False,
+) -> list[dict]:
+    """
+    Load notes for a given app and category cluster.
+
+    Parameters:
+        status: Filter by status ("active", "resolved"), or None for all.
+        include_stale: If False, exclude notes older than CLUSTER_NOTE_STALENESS_DAYS.
+
+    Returns:
+        A list of dicts with all cluster_notes columns,
+        with tags parsed from JSON back into a list.
+    """
+    query = """
+        SELECT id, app_id, category, note_type, tags, note_text,
+               created_by, created_at, updated_at, status, source_review_id
+        FROM cluster_notes
+        WHERE app_id = ?
+          AND category = ?
+    """
+    params: list = [app_id, category]
+
+    if status is not None:
+        query += " AND status = ?"
+        params.append(status)
+
+    if not include_stale:
+        cutoff = datetime.utcnow() - timedelta(days=CLUSTER_NOTE_STALENESS_DAYS)
+        query += " AND updated_at >= ?"
+        params.append(cutoff.strftime("%Y-%m-%d %H:%M:%S"))
+
+    query += " ORDER BY updated_at DESC"
+
+    cursor = conn.execute(query, params)
+
+    rows = cursor.fetchall()
+    columns = ["id", "app_id", "category", "note_type", "tags", "note_text",
+               "created_by", "created_at", "updated_at", "status", "source_review_id"]
+
+    results = []
+    for row in rows:
+        entry = dict(zip(columns, row))
+        entry["tags"] = json.loads(entry["tags"]) if entry["tags"] else []
+        results.append(entry)
+
+    logger.debug(f"Loaded {len(results)} cluster notes for {app_id}/{category}.")
+    return results
+
+
+def update_cluster_note_status(
+    conn: sqlite3.Connection,
+    note_id: int,
+    status: str,
+) -> bool:
+    """
+    Update the status of a cluster note.
+
+    Parameters:
+        note_id: The note's primary key.
+        status: New status ("active" or "resolved").
+
+    Returns:
+        True if updated successfully, False on error.
+    """
+    try:
+        conn.execute("""
+            UPDATE cluster_notes
+            SET status = ?, updated_at = datetime('now')
+            WHERE id = ?
+        """, (status, note_id))
+        conn.commit()
+        logger.info(f"Updated cluster note {note_id} status to '{status}'.")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Failed to update cluster note {note_id}: {e}")
+        return False
+
+
+def find_recent_similar_note(
+    conn: sqlite3.Connection,
+    app_id: str,
+    category: str,
+    note_type: str,
+    source_review_id: str | None = None,
+    window_hours: int | None = None,
+) -> dict | None:
+    """
+    Find a recent active note that matches the given criteria.
+
+    Two-tier dedup:
+    1. If source_review_id is provided, check for an exact match first.
+    2. Fall back to time-window dedup within window_hours.
+
+    Returns:
+        The most recent matching note dict, or None.
+    """
+    # Tier 1: exact match by source_review_id
+    if source_review_id:
+        cursor = conn.execute("""
+            SELECT id, note_text, updated_at
+            FROM cluster_notes
+            WHERE app_id = ? AND category = ? AND note_type = ?
+              AND source_review_id = ? AND status = 'active'
+            ORDER BY updated_at DESC
+            LIMIT 1
+        """, (app_id, category, note_type, source_review_id))
+        row = cursor.fetchone()
+        if row:
+            return {"id": row[0], "note_text": row[1], "updated_at": row[2]}
+
+    # Tier 2: time-window dedup
+    hours = window_hours or CLUSTER_NOTE_DEDUP_WINDOW_HOURS
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    cursor = conn.execute("""
+        SELECT id, note_text, updated_at
+        FROM cluster_notes
+        WHERE app_id = ? AND category = ? AND note_type = ?
+          AND status = 'active'
+          AND created_at >= ?
+        ORDER BY updated_at DESC
+        LIMIT 1
+    """, (app_id, category, note_type, cutoff.strftime("%Y-%m-%d %H:%M:%S")))
+    row = cursor.fetchone()
+    if row:
+        return {"id": row[0], "note_text": row[1], "updated_at": row[2]}
+
+    return None
+
+
+def update_cluster_note_text(
+    conn: sqlite3.Connection,
+    note_id: int,
+    note_text: str,
+) -> bool:
+    """
+    Update the text of an existing cluster note (refreshes updated_at).
+
+    Used by the dedup path to refresh an existing note instead of duplicating.
+
+    Returns:
+        True if updated successfully, False on error.
+    """
+    try:
+        conn.execute("""
+            UPDATE cluster_notes
+            SET note_text = ?, updated_at = datetime('now')
+            WHERE id = ?
+        """, (note_text, note_id))
+        conn.commit()
+        logger.info(f"Updated cluster note {note_id} text.")
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Failed to update cluster note {note_id} text: {e}")
+        return False

@@ -70,22 +70,42 @@ All graph building happens in `agent/graph.py`:
 
 ## Checkpointing
 - Configured in `config.py` (CHECKPOINT_BACKEND, CHECKPOINT_DB_PATH)
-- MemorySaver for development, SqliteSaver for persistence
+- Uses SqliteSaver with persistent storage at CHECKPOINT_DB_PATH
 - Every invoke needs a thread_id: `config={"configurable": {"thread_id": "..."}}`
 - State is saved automatically after every node execution
 
+## Human-in-the-loop
+- `interrupt_before=["human_approval"]` pauses the graph before the human gate
+- Caller injects decision via `app.update_state(config, {"human_decision": "approved"})` then resumes with `app.invoke(None, config)`
+- human_approval node is plain Python (no LLM) — reads human_decision/human_feedback, routes accordingly
+- On rejection, coordinator clears human_decision/human_feedback before re-entering the loop
+
 ## Graph flow
 ```
-START → coordinator → investigator → responder → critic → coordinator → ...
-              ↓              (first pass)                       ↓
-              ↓                                       (approved or max_iterations)
-              ↓                                                 ↓
-              +————————————→ responder                         END
+START → coordinator → investigator → responder → critic ──┐
+              ↓              (first pass)                  │
+              ↓                                   critic approved?
+              ↓                                    yes ↓      no ↓
+              ↓                              [interrupt]    coordinator
+              ↓                            human_approval      ↓
+              ↓                          approved ↓  rejected ↓
+              ↓                             END    coordinator → responder
+              ↓                                         ↑
+              +————————————→ responder ————————————————→ critic
                     (revision — skip investigator)
 ```
 - First pass (iteration 0): full pipeline through investigator
-- Revision cycles (iteration > 0): skip straight to responder
+- Critic rejection: routes back to coordinator → responder (skips investigator)
+- Human rejection: routes back to coordinator → responder (same revision loop)
 - max_iterations is read from config.AGENT_MAX_ITERATIONS, not from state
+
+## Side effects (not state updates)
+Some nodes write to SQLite as fire-and-forget side effects — these are NOT state updates:
+- **human_approval**: saves audit_log entry (always), cluster note of type `response_history` (on approve) or `human_feedback` (on reject with feedback). Uses dedup via `find_recent_similar_note`.
+- **investigator**: saves cluster note of type `known_issue` when evidence confidence >= `CLUSTER_NOTE_AUTO_CONFIDENCE`. Uses dedup.
+- **responder**: reads feedback examples from audit_log (iteration 0 only). Reads cluster notes indirectly via investigator context.
+
+All side-effect writes are wrapped in try/except — a DB error never crashes the node or changes the return value.
 
 ## Evidence chain of custody
 ```

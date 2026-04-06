@@ -17,6 +17,7 @@ class AgentState(TypedDict):
 
     # Input
     app_id: str
+    review_id: str
     review_text: str
     cluster_summary: dict # cluster.py
     review_tone: str
@@ -35,3 +36,7 @@ class AgentState(TypedDict):
     stop_reason: str        # Why the graph stopped
     node_log: Annotated[list[str], operator.add]
     token_usage: dict  # Per-node token tracking: {"node_name": {"input": N, "output": N}}
+
+    # Human-in-the-loop
+    human_decision: str     # "approved", "rejected", or "" (empty = awaiting)
+    human_feedback: str     # Free-text feedback from human reviewer

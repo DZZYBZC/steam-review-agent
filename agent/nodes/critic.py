@@ -110,13 +110,13 @@ def critic_node(state: AgentState) -> dict:
     """
     Evaluate the drafted response against the evidence package.
 
-    Reads: review_text, review_tone, evidence_package, drafted_response, proposed_action.
-    Does not read: app_id, token_usage, iteration_count.
+    Reads: review_text, review_tone, evidence_package, drafted_response, proposed_action, source_ids_cited, token_usage.
+    Does not read: app_id, iteration_count.
 
     Returns approved/rejected with critique and revision_reason.
     """
     review_text = state.get("review_text", "")
-    review_tone = state.get("review_tone", "neutral")
+    review_tone = state.get("review_tone", "")
     evidence = state.get("evidence_package", {})
     drafted_response = state.get("drafted_response", "")
     proposed_action = state.get("proposed_action", "monitor")
@@ -155,7 +155,6 @@ def critic_node(state: AgentState) -> dict:
         "critique": critique,
         "approved": approved,
         "revision_reason": revision_reason,
-        "stop_reason": "approved" if approved else "",
         "token_usage": {**state.get("token_usage", {}), "critic": accumulate_tokens(state.get("token_usage", {}).get("critic"), tokens)},
         "node_log": [
             f"critic: {'approved' if approved else 'rejected'}"

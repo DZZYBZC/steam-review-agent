@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 _model: SentenceTransformer | None = None
 _reranker: CrossEncoder | None = None
+_chroma_client: chromadb.ClientAPI | None = None
 _bm25_cache: dict[str, tuple[BM25Okapi, list[dict]]] = {}
 
 def _get_model() -> SentenceTransformer:
@@ -48,9 +49,12 @@ def _get_reranker() -> CrossEncoder:
     return _reranker
 
 
-def _get_client():
-    """Create a persistent ChromaDB client."""
-    return chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+def _get_client() -> chromadb.ClientAPI:
+    """Get or create a persistent ChromaDB client (cached)."""
+    global _chroma_client
+    if _chroma_client is None:
+        _chroma_client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+    return _chroma_client
 
 
 def _get_or_create_collection(
@@ -109,6 +113,17 @@ def embed_chunks(
             embeddings=embeddings,
             metadatas=metadatas, # type: ignore[arg-type]
         )
+
+    # Remove stale chunks no longer in the current batch
+    current_ids = {c.chunk_id for c in chunks}
+    existing_ids = set(collection.get(include=[])["ids"])
+    stale_ids = list(existing_ids - current_ids)
+    if stale_ids:
+        collection.delete(ids=stale_ids)
+        logger.info(f"Removed {len(stale_ids)} stale chunks from collection patches_{app_id}.")
+
+    # Invalidate BM25 cache so it rebuilds from the updated collection
+    _bm25_cache.pop(app_id, None)
 
     logger.info(f"Embedded {total} chunks into collection patches_{app_id}.")
     return collection

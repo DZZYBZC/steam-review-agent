@@ -58,58 +58,57 @@ def run_pipeline(app_id: str, max_reviews: int = 500, skip_fetch: bool = False) 
     """
     # Step 0: Set up the database
     conn = get_connection()
-    create_tables(conn)
+    try:
+        create_tables(conn)
 
-    if not skip_fetch:
-        # Step 1: Fetch reviews from Steam
-        logger.info(f"=== STEP 1: Fetching reviews for app {app_id} ===")
-        try:
-            raw_reviews = fetch_all_reviews(app_id=app_id, max_reviews=max_reviews)
-        except Exception as e:
-            logger.error(f"Failed to fetch reviews: {e}")
-            logger.info("You can re-run with skip_fetch=True if you have data in the DB.")
-            conn.close()
+        if not skip_fetch:
+            # Step 1: Fetch reviews from Steam
+            logger.info(f"=== STEP 1: Fetching reviews for app {app_id} ===")
+            try:
+                raw_reviews = fetch_all_reviews(app_id=app_id, max_reviews=max_reviews)
+            except Exception as e:
+                logger.error(f"Failed to fetch reviews: {e}")
+                logger.info("You can re-run with skip_fetch=True if you have data in the DB.")
+                return
+
+            if not raw_reviews:
+                logger.error("No reviews fetched. Check the app ID and your internet connection.")
+                return
+
+            # Step 2: Clean and deduplicate
+            logger.info("=== STEP 2: Cleaning and deduplicating ===")
+            df = clean_pipeline(raw_reviews, app_id)
+
+            # Step 3: Store in database
+            logger.info("=== STEP 3: Saving to database ===")
+            save_reviews(conn, df)
+
+            # Step 3.5: Classify reviews
+            logger.info("=== STEP 3.5: Classifying reviews ===")
+            run_classification(conn, app_id, limit=CLASSIFICATION_LIMIT)
+
+        else:
+            logger.info("Skipping fetch — loading from database.")
+            logger.info("Classifying any unclassified reviews")
+            run_classification(conn, app_id, limit=CLASSIFICATION_LIMIT)
+
+        _run_clustering(conn, app_id)
+
+        # Step 4: Load from DB and compute stats
+        logger.info("=== STEP 4: Computing statistics ===")
+        df = load_reviews(conn, app_id=app_id, exclude_duplicates=True)
+
+        if len(df) == 0:
+            logger.warning("No reviews in database. Run without skip_fetch first.")
             return
 
-        if not raw_reviews:
-            logger.error("No reviews fetched. Check the app ID and your internet connection.")
-            conn.close()
-            return
+        stats = compute_basic_stats(df)
+        keywords = compute_keyword_frequency(df)
+        print_stats_report(stats, keywords)
 
-        # Step 2: Clean and deduplicate
-        logger.info("=== STEP 2: Cleaning and deduplicating ===")
-        df = clean_pipeline(raw_reviews, app_id)
-
-        # Step 3: Store in database
-        logger.info("=== STEP 3: Saving to database ===")
-        save_reviews(conn, df)
-
-        # Step 3.5: Classify reviews
-        logger.info("=== STEP 3.5: Classifying reviews ===")
-        run_classification(conn, app_id, limit=CLASSIFICATION_LIMIT)
-
-    else:
-        logger.info("Skipping fetch — loading from database.")
-        logger.info("Classifying any unclassified reviews")
-        run_classification(conn, app_id, limit=CLASSIFICATION_LIMIT)
-
-    _run_clustering(conn, app_id)
-
-    # Step 4: Load from DB and compute stats
-    logger.info("=== STEP 4: Computing statistics ===")
-    df = load_reviews(conn, app_id=app_id, exclude_duplicates=True)
-
-    if len(df) == 0:
-        logger.warning("No reviews in database. Run without skip_fetch first.")
+        logger.info("Pipeline complete.")
+    finally:
         conn.close()
-        return
-
-    stats = compute_basic_stats(df)
-    keywords = compute_keyword_frequency(df)
-    print_stats_report(stats, keywords)
-
-    conn.close()
-    logger.info("Pipeline complete.")
 
 
 if __name__ == "__main__":

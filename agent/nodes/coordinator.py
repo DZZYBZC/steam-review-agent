@@ -22,9 +22,15 @@ def coordinator_node(state: AgentState) -> dict:
         f"Coordinator: iteration={iteration}, approved={approved}, max_iterations={AGENT_MAX_ITERATIONS}"
     )
 
-    if iteration > 0 and not approved:
+    human_decision = state.get("human_decision", "")
+
+    if human_decision == "rejected":
         logger.info(
-            f"Coordinator: revision cycle {iteration}, reason: {state.get('revision_reason', 'unknown')}"
+            f"Coordinator: human rejected at iteration {iteration}, reason: {state.get('revision_reason', 'unknown')}"
+        )
+    elif iteration > 0 and not approved:
+        logger.info(
+            f"Coordinator: critic revision cycle {iteration}, reason: {state.get('revision_reason', 'unknown')}"
         )
 
     if approved:
@@ -41,6 +47,8 @@ def coordinator_node(state: AgentState) -> dict:
 
     return {
         "stop_reason": "revising",
+        "human_decision": "",
+        "human_feedback": "",
         "node_log": [f"coordinator: iteration={iteration}, routing next"],
     }
 

@@ -214,8 +214,9 @@ def classify_tone(review_text: str) -> str:
     """
     Classify the emotional tone of a review.
 
-    Returns one of: frustrated, angry, sarcastic, constructive, neutral.
-    Falls back to "neutral" on any failure.
+    Returns one of: frustrated, angry, sarcastic, constructive, neutral,
+    disappointed, confused, appreciative.
+    Falls back to "unknown" on any failure.
     """
     try:
         response = client.messages.create(
@@ -227,16 +228,16 @@ def classify_tone(review_text: str) -> str:
         )
     except anthropic.APIError as e:
         logger.error(f"Tone classifier API call failed: {e}")
-        return "neutral"
+        return "unknown"
 
     if not response.content:
         logger.error("Tone classifier returned empty response")
-        return "neutral"
+        return "unknown"
     content_block = response.content[0]
     if not hasattr(content_block, "text"):
         logger.error("Tone classifier returned non-text response")
-        return "neutral"
-    raw_text = content_block.text.strip()
+        return "unknown"
+    raw_text = content_block.text.strip() # type: ignore[union-attr]
 
     try:
         data = parse_llm_json(raw_text)
@@ -248,11 +249,11 @@ def classify_tone(review_text: str) -> str:
             decoder = json.JSONDecoder()
             data, _ = decoder.raw_decode(raw_text)
         except (json.JSONDecodeError, ValueError):
-            return "neutral"
+            return "unknown"
 
-    tone = data.get("tone", "neutral")
+    tone = data.get("tone", "unknown")
     if tone not in VALID_TONES:
-        logger.warning(f"Tone classifier returned invalid tone '{tone}', defaulting to neutral")
-        return "neutral"
+        logger.warning(f"Tone classifier returned invalid tone '{tone}', defaulting to unknown")
+        return "unknown"
 
     return tone

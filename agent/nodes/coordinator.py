@@ -55,13 +55,6 @@ def coordinator_node(state: AgentState) -> dict:
             f"Coordinator: critic revision cycle {iteration}, reason: {state.get('revision_reason', 'unknown')}"
         )
 
-    if approved:
-        return {
-            "run_id": run_id,
-            "stop_reason": "approved",
-            "node_log": [f"coordinator: iteration={iteration}, approved — ending"],
-        }
-
     if iteration >= AGENT_MAX_ITERATIONS:
         stop_reason = "max_iterations_reached"
         try:
@@ -94,16 +87,11 @@ def route_from_coordinator(state: AgentState) -> str:
     Returns:
         A string key that maps to a node name in the graph's conditional edge configuration.
     """
-    approved = state.get("approved", False)
     iteration = state.get("iteration_count", 0)
     stop_reason = state.get("stop_reason", "")
 
     if stop_reason in TERMINAL_ERROR_STOP_REASONS:
         logger.warning(f"Coordinator: terminal error ({stop_reason}), ending.")
-        return "done"
-
-    if approved:
-        logger.info("Coordinator: draft approved, end.")
         return "done"
 
     if iteration >= AGENT_MAX_ITERATIONS:

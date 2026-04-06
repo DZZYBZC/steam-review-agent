@@ -4,6 +4,7 @@ Routes the graph based on state fields.
 
 import logging
 from agent.state import AgentState
+from pipeline.storage import get_connection, save_audit_entry
 from config import AGENT_MAX_ITERATIONS
 
 logger = logging.getLogger(__name__)
@@ -40,8 +41,17 @@ def coordinator_node(state: AgentState) -> dict:
         }
 
     if iteration >= AGENT_MAX_ITERATIONS:
+        stop_reason = "max_iterations_reached"
+        try:
+            conn = get_connection()
+            try:
+                save_audit_entry(conn, {**state, "stop_reason": stop_reason})
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"Coordinator: failed to save audit entry on max_iterations: {e}")
         return {
-            "stop_reason": "max_iterations_reached",
+            "stop_reason": stop_reason,
             "node_log": [f"coordinator: iteration={iteration}, max iterations reached — ending"],
         }
 

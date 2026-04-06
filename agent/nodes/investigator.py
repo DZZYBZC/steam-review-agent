@@ -277,6 +277,7 @@ def investigator_node(state: AgentState) -> dict:
             try:
                 existing = find_recent_similar_note(
                     conn, app_id, category, "known_issue",
+                    source_review_id=state.get("review_id", ""),
                 )
                 if not existing:
                     save_cluster_note(

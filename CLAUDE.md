@@ -70,6 +70,7 @@ steam-review-agent/
 - The graph uses `interrupt_before=["human_approval"]` — pauses for human decision injection via `app.update_state()`
 - Evidence chain of custody: source_ids → relevant_ids → source_ids_cited → Critic verifies source_ids_cited ⊆ relevant_ids
 - Per-iteration observability: Critic writes one row per pass to `audit_log_iterations` (fire-and-forget), capturing draft, critique, rejection reason, and `reason_type`/`retrieval_hint` for eval analysis
+- Run identity: Coordinator mints a UUID `run_id` on first entry and threads it through state; both `audit_log` and `audit_log_iterations` carry it so per-iteration rows can be joined back to the completed run (same `review_id` can have multiple runs). Filter `WHERE run_id IS NOT NULL` in eval queries to exclude pre-fix legacy rows.
 
 ## Human-in-the-loop
 - Human review gate sits between Critic approval and graph termination

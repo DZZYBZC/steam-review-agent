@@ -36,6 +36,7 @@ class AgentState(TypedDict):
     reason_type: str        # Critic's rejection category: "evidence" | "drafting" | "" (empty when approved)
     retrieval_hint: str     # Critic's suggested search query for the Investigator (only set when reason_type=="evidence"); Investigator clears after use
     stop_reason: str        # Why the graph stopped
+    run_id: str             # UUID generated once per run by Coordinator on first entry; threaded through state for audit_log ↔ audit_log_iterations join
     node_log: Annotated[list[str], operator.add]
     token_usage: dict  # Per-node token tracking: {"node_name": {"input": N, "output": N}}
 

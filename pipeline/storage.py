@@ -18,6 +18,36 @@ from config import (
 logger = logging.getLogger(__name__)
 
 
+def _apply_migration(
+    conn: sqlite3.Connection,
+    version: int,
+    description: str,
+    sql_statements: list[str],
+) -> None:
+    """
+    Apply a numbered schema migration if not already applied.
+
+    Each statement is wrapped in try/except OperationalError to make
+    re-application safe on existing DBs that already have the column —
+    preserving the semantics of the previous ad-hoc ALTER pattern.
+
+    Records the migration in schema_version after all statements run.
+    """
+    cur = conn.execute("SELECT 1 FROM schema_version WHERE version = ?", (version,))
+    if cur.fetchone():
+        return
+    for sql in sql_statements:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError as e:
+            logger.debug(f"Migration {version} statement skipped (likely already applied): {e}")
+    conn.execute(
+        "INSERT INTO schema_version (version, description) VALUES (?, ?)",
+        (version, description),
+    )
+    logger.info(f"Applied schema migration {version}: {description}")
+
+
 def get_connection() -> sqlite3.Connection:
     """
     Open a connection to the SQLite database.
@@ -84,6 +114,7 @@ def create_tables(conn: sqlite3.Connection) -> None:
             iteration_count INTEGER,
             stop_reason TEXT,
             token_usage TEXT,
+            run_id TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         )
     """)
@@ -103,6 +134,7 @@ def create_tables(conn: sqlite3.Connection) -> None:
             reason_type TEXT,
             retrieval_hint TEXT,
             token_usage TEXT,
+            run_id TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         )
     """)
@@ -121,15 +153,35 @@ def create_tables(conn: sqlite3.Connection) -> None:
         )
     """)
 
-    # Schema migrations — ALTER TABLE has no IF NOT EXISTS in SQLite
-    for col_sql in [
-        "ALTER TABLE cluster_notes ADD COLUMN status TEXT DEFAULT 'active'",
-        "ALTER TABLE cluster_notes ADD COLUMN source_review_id TEXT",
-    ]:
-        try:
-            conn.execute(col_sql)
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+    # Schema version tracking — bookkeeping table for numbered migrations.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY,
+            description TEXT NOT NULL,
+            applied_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    # Numbered schema migrations. Each runs at most once per DB.
+    _apply_migration(
+        conn,
+        version=1,
+        description="cluster_notes: add status and source_review_id",
+        sql_statements=[
+            "ALTER TABLE cluster_notes ADD COLUMN status TEXT DEFAULT 'active'",
+            "ALTER TABLE cluster_notes ADD COLUMN source_review_id TEXT",
+        ],
+    )
+
+    _apply_migration(
+        conn,
+        version=2,
+        description="audit_log + audit_log_iterations: add run_id for join correctness",
+        sql_statements=[
+            "ALTER TABLE audit_log ADD COLUMN run_id TEXT",
+            "ALTER TABLE audit_log_iterations ADD COLUMN run_id TEXT",
+        ],
+    )
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_reviews_app_id ON reviews(app_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_classifications_app_id ON classifications(app_id)")
@@ -139,6 +191,8 @@ def create_tables(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_notes_status ON cluster_notes(app_id, category, status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_notes_review ON cluster_notes(source_review_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_iter_review ON audit_log_iterations(app_id, review_id, iteration)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_run ON audit_log(run_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_iter_run ON audit_log_iterations(run_id)")
 
     conn.commit()
     logger.info("Database tables ready.")
@@ -341,8 +395,8 @@ def save_audit_entry(conn: sqlite3.Connection, state: dict) -> bool:
             (app_id, review_id, category, review_text, review_tone,
              evidence_summary, evidence_confidence, drafted_response,
              proposed_action, source_ids_cited, critique, human_decision,
-             human_feedback, iteration_count, stop_reason, token_usage)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             human_feedback, iteration_count, stop_reason, token_usage, run_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             state.get("app_id", ""),
             state.get("review_id", ""),
@@ -360,6 +414,7 @@ def save_audit_entry(conn: sqlite3.Connection, state: dict) -> bool:
             state.get("iteration_count", 0),
             state.get("stop_reason", ""),
             json.dumps(state.get("token_usage", {})),
+            state.get("run_id", ""),
         ))
         conn.commit()
         logger.info(f"Saved audit entry for review {state.get('review_id', '???')}.")
@@ -394,8 +449,8 @@ def save_audit_iteration(
             INSERT INTO audit_log_iterations
             (app_id, review_id, iteration, drafted_response, proposed_action,
              source_ids_cited, critique, approved, revision_reason,
-             reason_type, retrieval_hint, token_usage)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             reason_type, retrieval_hint, token_usage, run_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             state.get("app_id", ""),
             state.get("review_id", ""),
@@ -409,6 +464,7 @@ def save_audit_iteration(
             reason_type,
             retrieval_hint,
             json.dumps(tokens or {}),
+            state.get("run_id", ""),
         ))
         conn.commit()
         logger.debug(

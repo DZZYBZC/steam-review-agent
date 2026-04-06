@@ -3,6 +3,7 @@ Routes the graph based on state fields.
 """
 
 import logging
+import uuid
 from agent.state import AgentState
 from pipeline.storage import get_connection, save_audit_entry
 from config import AGENT_MAX_ITERATIONS
@@ -21,6 +22,8 @@ def coordinator_node(state: AgentState) -> dict:
     iteration = state.get("iteration_count", 0)
     approved = state.get("approved", False)
     stop_reason = state.get("stop_reason", "")
+    # Mint a run_id on first entry; subsequent entries pass the existing one through.
+    run_id = state.get("run_id", "") or str(uuid.uuid4())
 
     logger.info(
         f"Coordinator: iteration={iteration}, approved={approved}, stop_reason={stop_reason!r}, max_iterations={AGENT_MAX_ITERATIONS}"
@@ -31,12 +34,13 @@ def coordinator_node(state: AgentState) -> dict:
         try:
             conn = get_connection()
             try:
-                save_audit_entry(conn, state)
+                save_audit_entry(conn, {**state, "run_id": run_id})
             finally:
                 conn.close()
         except Exception as e:
             logger.warning(f"Coordinator: failed to save audit entry on {stop_reason}: {e}")
         return {
+            "run_id": run_id,
             "node_log": [f"coordinator: terminal error stop_reason={stop_reason} — ending"],
         }
 
@@ -53,6 +57,7 @@ def coordinator_node(state: AgentState) -> dict:
 
     if approved:
         return {
+            "run_id": run_id,
             "stop_reason": "approved",
             "node_log": [f"coordinator: iteration={iteration}, approved — ending"],
         }
@@ -62,17 +67,19 @@ def coordinator_node(state: AgentState) -> dict:
         try:
             conn = get_connection()
             try:
-                save_audit_entry(conn, {**state, "stop_reason": stop_reason})
+                save_audit_entry(conn, {**state, "run_id": run_id, "stop_reason": stop_reason})
             finally:
                 conn.close()
         except Exception as e:
             logger.warning(f"Coordinator: failed to save audit entry on max_iterations: {e}")
         return {
+            "run_id": run_id,
             "stop_reason": stop_reason,
             "node_log": [f"coordinator: iteration={iteration}, max iterations reached — ending"],
         }
 
     return {
+        "run_id": run_id,
         "stop_reason": "revising",
         "human_decision": "",
         "human_feedback": "",

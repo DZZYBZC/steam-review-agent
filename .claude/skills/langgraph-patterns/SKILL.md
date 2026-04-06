@@ -108,7 +108,7 @@ START → coordinator → investigator → responder → critic ──┐
 Some nodes write to SQLite as fire-and-forget side effects — these are NOT state updates:
 - **human_approval**: saves audit_log entry (always), cluster note of type `response_history` (on approve) or `human_feedback` (on reject with feedback). Uses dedup via `find_recent_similar_note`.
 - **coordinator**: saves audit_log entry on terminal exits (`max_iterations_reached`, `llm_error`, `parse_error`).
-- **critic**: saves one row per pass to `audit_log_iterations` (draft, critique, approved, revision_reason, reason_type, retrieval_hint, tokens). This is the per-iteration observability surface for eval analysis.
+- **critic**: saves one row per pass to `audit_log_iterations` (draft, critique, approved, revision_reason, reason_type, retrieval_hint, tokens, run_id). This is the per-iteration observability surface for eval analysis. The `run_id` is minted by the Coordinator on first entry (UUID, threaded via state) and also stamped onto the final `audit_log` row so per-iteration rows join back to their completed run.
 - **investigator**: saves cluster note of type `known_issue` when `is_sufficient` and `len(relevant_ids) >= CLUSTER_NOTE_AUTO_MIN_SOURCES`. Deterministic gate — does not use LLM-self-reported confidence. Uses dedup.
 - **responder**: reads feedback examples from audit_log (iteration 0 only). Reads cluster notes indirectly via investigator context.
 

@@ -10,7 +10,7 @@ Files land in evals/snapshots/snapshot_<timestamp>.json (gitignored — see
 D7 for the snapshots_archive/ pattern used at milestones).
 
 Public surface:
-  - write_snapshot(scored, gating, records, run_file, filters) -> Path
+  - write_snapshot(scored, gating, judge, records, run_file, filters) -> Path
   - load_latest_snapshot(exclude=None) -> dict | None
   - diff_snapshots(prev, curr) -> list[str]   # one line per changed metric
 """
@@ -36,7 +36,10 @@ SNAPSHOTS_DIR = Path(__file__).resolve().parent / "snapshots"
 #   v2: low_conf_with_cite demoted to a diagnostic flag (not a failure).
 #       grounding.compliant_rate replaced with grounding.n_hard_violations
 #       (count, not rate). New diagnostics.low_conf_with_cite_flag_count.
-SNAPSHOT_SCHEMA_VERSION = 2
+#   v3: V1.5 LLM judge layer added. New top-level "judge" block with
+#       low_conf_with_cite ruling counts (honest_hedge / misleading_fix_claim
+#       / unclear). DIFF_METRICS gets three new judge_lc_* entries.
+SNAPSHOT_SCHEMA_VERSION = 3
 
 # Metrics surfaced in the snapshot summary AND used for the one-line diff.
 # Order is preserved in the diff output. Each entry is a dotted path into
@@ -51,6 +54,10 @@ DIFF_METRICS: list[tuple[str, str, str]] = [
     # parallel diagnostic count for the low_conf_with_cite flag.
     ("grounding_band_hard_violations","grounding.n_hard_violations",       "d"),
     ("low_conf_with_cite_flag_count","diagnostics.low_conf_with_cite_flag_count", "d"),
+    # Schema v3: LLM judge rulings on the low_conf_with_cite flagged cases.
+    ("judge_lc_honest_hedge",        "judge.low_conf_with_cite.n_honest_hedge",         "d"),
+    ("judge_lc_misleading_fix_claim","judge.low_conf_with_cite.n_misleading_fix_claim", "d"),
+    ("judge_lc_unclear",             "judge.low_conf_with_cite.n_unclear",              "d"),
     ("critic_approval_overall",      "critic_health.approval_rate_overall",".3f"),
     ("critic_iter0_approval",        "critic_health.iter0_approval",       ".3f"),
     ("gating_accuracy",              "gating.accuracy",                    ".3f"),
@@ -85,11 +92,37 @@ def _git_sha() -> str:
     return f"{sha[:12]}+unstaged" if dirty else sha[:12]
 
 
+# ---------- Judge aggregate (schema v3) -----------------------------------
+
+def _build_judge_aggregate(judge: dict[str, Any] | None) -> dict[str, Any]:
+    """
+    Build the `judge` block of the aggregates dict. If the judge layer was
+    not run (judge is None), return zero counts so the schema shape is
+    stable across runs — downstream diff readers prefer "0/0/0" over
+    missing keys.
+    """
+    if judge is None:
+        rulings: dict[str, int] = {}
+        n_flagged = 0
+    else:
+        rulings = judge.get("rulings", {}) or {}
+        n_flagged = judge.get("n_flagged", 0)
+    return {
+        "low_conf_with_cite": {
+            "n_flagged":              n_flagged,
+            "n_honest_hedge":         rulings.get("honest_hedge", 0),
+            "n_misleading_fix_claim": rulings.get("misleading_fix_claim", 0),
+            "n_unclear":              rulings.get("unclear", 0),
+        },
+    }
+
+
 # ---------- Aggregate builder ---------------------------------------------
 
 def _build_aggregates(
     scored: dict[str, Any],
     gating: dict[str, Any],
+    judge: dict[str, Any] | None,
     records: list[dict],
 ) -> dict[str, Any]:
     """
@@ -202,6 +235,7 @@ def _build_aggregates(
         "diagnostics": {
             "low_conf_with_cite_flag_count": n_low_conf_with_cite_flag,
         },
+        "judge": _build_judge_aggregate(judge),
         "critic_health": {
             "approval_rate_overall": ch["approval_rate_overall"],
             "iter0_approval": iter0,
@@ -226,6 +260,7 @@ def _build_aggregates(
 def write_snapshot(
     scored: dict[str, Any],
     gating: dict[str, Any],
+    judge: dict[str, Any] | None,
     records: list[dict],
     run_file: Path | str,
     filters: dict,
@@ -239,7 +274,7 @@ def write_snapshot(
         "git_sha": _git_sha(),
         "run_file": str(run_file),
         "filters": filters,
-        "aggregates": _build_aggregates(scored, gating, records),
+        "aggregates": _build_aggregates(scored, gating, judge, records),
     }
     out = SNAPSHOTS_DIR / f"snapshot_{timestamp}.json"
     with out.open("w") as f:
@@ -298,9 +333,16 @@ def diff_snapshots(prev: dict, curr: dict) -> list[str]:
     prev_v = prev.get("schema_version", 1)
     curr_v = curr.get("schema_version", 1)
     if prev_v != curr_v:
+        # Per-transition annotations. New entries get added as the schema
+        # bumps; older transitions remain interpretable forever.
+        annotations = {
+            (1, 2): "grounding metric split: low_conf_with_cite is now a flag, not a violation",
+            (2, 3): "judge layer added: low_conf_with_cite cases now ruled by LLM",
+            (1, 3): "grounding metric split (v1→v2) AND judge layer added (v2→v3)",
+        }
+        note = annotations.get((prev_v, curr_v), "schema shape changed")
         lines.append(
-            f"  ⚠ schema_version changed: {prev_v} → {curr_v} "
-            f"(grounding metric split: low_conf_with_cite is now a flag, not a violation)"
+            f"  ⚠ schema_version changed: {prev_v} → {curr_v} ({note})"
         )
 
     for label, path, spec in DIFF_METRICS:

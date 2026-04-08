@@ -10,12 +10,14 @@ Sections:
   2. Per-category breakdown (action correctness + recall@k)
   3. Action confusion matrix
   4. Deterministic failure-mode tally (derived from scorer outputs)
-  5. Critic health
-  6. Gating accuracy (confusion matrix + load-bearing case lists)
+  5. Diagnostic flags (low_conf_with_cite, etc.)
+  6. LLM judge — low_conf_with_cite rulings (V1.5)
+  7. Critic health
+  8. Gating accuracy (confusion matrix + load-bearing case lists)
 
 Usage:
     from evals.reporter import print_report
-    print_report(cases, records, scored, gating)
+    print_report(cases, records, scored, gating, judge)
 """
 
 from __future__ import annotations
@@ -242,6 +244,54 @@ def _diagnostic_flags_section(scored: dict) -> list[str]:
     return lines
 
 
+def _judge_grounding_section(judge: dict | None) -> list[str]:
+    """
+    LLM judge rulings on `low_conf_with_cite` flagged cases (V1.5).
+
+    Each row is a ruling category. The cache hit count is reported ONCE at
+    the section header — per-row cache annotations are confusing because
+    rows are aggregates, not individual cached objects.
+    """
+    lines = ["", _hr()]
+    if not judge or not judge.get("n_flagged"):
+        lines.append("LLM JUDGE — low_conf_with_cite rulings")
+        lines.append(_hr())
+        lines.append("  (no flagged cases to judge)")
+        return lines
+
+    model = judge.get("model", "?")
+    n_flagged = judge["n_flagged"]
+    n_cached = judge.get("n_from_cache", 0)
+    rulings = judge.get("rulings", {})
+    per_case = judge.get("per_case", {})
+
+    lines.append(f"LLM JUDGE — low_conf_with_cite rulings  (model: {model})")
+    lines.append(f"  cache: {n_cached}/{n_flagged} hit")
+    lines.append(_hr())
+    lines.append(f"  n_flagged                       {n_flagged:>3}")
+    for ruling in ("honest_hedge", "misleading_fix_claim", "unclear"):
+        n = rulings.get(ruling, 0)
+        # Show case_ids inline for the non-honest_hedge categories so the
+        # report points at exactly which drafts the judge flagged.
+        if ruling != "honest_hedge" and n > 0:
+            ids = [cid for cid, r in per_case.items() if r["ruling"] == ruling]
+            id_hint = f"   ← {', '.join(ids[:5])}{' …' if len(ids) > 5 else ''}"
+        else:
+            id_hint = ""
+        lines.append(f"  {ruling:<32}{n:>3}{id_hint}")
+
+    if per_case:
+        lines.append("")
+        lines.append("  Per-case rulings:")
+        for case_id in sorted(per_case):
+            r = per_case[case_id]
+            rationale = r.get("rationale", "")
+            if len(rationale) > 80:
+                rationale = rationale[:77] + "..."
+            lines.append(f"    {case_id:<28} {r['ruling']:<22} {rationale}")
+    return lines
+
+
 def _critic_health_section(scored: dict) -> list[str]:
     ch = scored["batch"]["critic_health"]
     lines = ["", _hr(), "CRITIC HEALTH (from audit_log_iterations)", _hr()]
@@ -291,6 +341,7 @@ def build_report(
     records: list[dict],
     scored: dict[str, Any],
     gating: dict[str, Any],
+    judge: dict[str, Any] | None = None,
 ) -> str:
     """
     Assemble the full stratified report as a single string.
@@ -300,6 +351,8 @@ def build_report(
         records: list of run_evals output records
         scored:  output of deterministic.score_records(cases, records)
         gating:  output of gating_accuracy.gating_accuracy_batch(cases, records)
+        judge:   output of judge_grounding.judge_grounding_batch(...) — None
+                 means the judge layer was not run for this report
     """
     sections = [
         _overall_section(records, scored),
@@ -307,6 +360,7 @@ def build_report(
         _confusion_matrix_section(scored),
         _failure_mode_section(scored),
         _diagnostic_flags_section(scored),
+        _judge_grounding_section(judge),
         _critic_health_section(scored),
         _gating_section(gating),
     ]
@@ -319,5 +373,6 @@ def print_report(
     records: list[dict],
     scored: dict[str, Any],
     gating: dict[str, Any],
+    judge: dict[str, Any] | None = None,
 ) -> None:
-    print(build_report(cases, records, scored, gating))
+    print(build_report(cases, records, scored, gating, judge))

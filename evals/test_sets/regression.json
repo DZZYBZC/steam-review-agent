@@ -1,0 +1,25 @@
+{
+  "_comment": "Regression seeds: failure patterns the eval has caught and that must not silently re-enter the codebase. Each entry references a case_id that already lives in golden.json (so the case is exercised by the standard eval run). This file is a SEMANTIC marker — run_evals.py does not yet load it. Wiring the loader is a deferred follow-up; until then, removal of these cases from golden.json without review must be caught manually. See plan: hidden-herding-manatee.md.",
+  "seeds": [
+    {
+      "case_id": "civ7_gameplay_002",
+      "added": "2026-04-08",
+      "added_in_iteration": "Option B — multi_part_complaint rule for draft-response",
+      "failure_pattern": "multi_part_misleading_fix_claim",
+      "description": "Multi-part complaint where the responder honestly hedges some sub-issues but makes an assertive fix-like claim about another sub-issue at low overall confidence (< 0.4). The judge ruled this misleading_fix_claim. The multi_part_complaint rule added to draft-response targets exactly this pattern.",
+      "judge_ruling_before_fix": "misleading_fix_claim",
+      "expected_judge_ruling_after_fix": "honest_hedge",
+      "in_golden": true
+    },
+    {
+      "case_id": "civ7_monetize_001",
+      "added": "2026-04-08",
+      "added_in_iteration": "Option B — multi_part_complaint rule for draft-response",
+      "failure_pattern": "multi_part_misleading_fix_claim",
+      "description": "Same multi-part pattern as civ7_gameplay_002. The judge's ruling on this case has been borderline across recent runs (sometimes honest_hedge, sometimes misleading_fix_claim). Locked here so future regressions on the same pattern are caught.",
+      "judge_ruling_before_fix": "borderline (honest_hedge or misleading_fix_claim depending on prompt revision)",
+      "expected_judge_ruling_after_fix": "honest_hedge",
+      "in_golden": true
+    }
+  ]
+}

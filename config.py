@@ -92,6 +92,13 @@ CRITIC_MODEL = "claude-haiku-4-5-20251001"
 CRITIC_TEMPERATURE = 0.1
 CRITIC_MAX_TOKENS = 1000
 
+# Judge scorer (evals/scorers/judge_grounding.py).
+# Narrow single-question classifier; Haiku is fine. If rulings look unreliable
+# on the two-sided acceptance gate, upgrade in a follow-up iteration.
+JUDGE_MODEL = "claude-haiku-4-5-20251001"
+JUDGE_TEMPERATURE = 0.0
+JUDGE_MAX_TOKENS = 300
+
 RETRIEVAL_CATEGORIES = [
     "technical_issues",
     "performance_optimization",

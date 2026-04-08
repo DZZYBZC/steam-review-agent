@@ -36,6 +36,7 @@ from agent.state import AgentState
 from evals.reporter import print_report
 from evals.scorers.deterministic import score_records
 from evals.scorers.gating_accuracy import gating_accuracy_batch
+from evals.scorers.judge_grounding import judge_grounding_batch
 from evals.snapshot import diff_snapshots, load_latest_snapshot, write_snapshot
 
 logging.basicConfig(
@@ -267,13 +268,18 @@ def main():
     # raw-output path and snapshot info afterward.
     scored = score_records(cases, records)
     gating = gating_accuracy_batch(cases, records)
+    judge = judge_grounding_batch(
+        cases, records, scored, run_file_basename=out_path.stem
+    )
     print()
-    print_report(cases, records, scored, gating)
+    print_report(cases, records, scored, gating, judge)
 
     # Snapshot. Look up the previous snapshot BEFORE writing the new one so
     # we don't compare it against itself.
     prev_snapshot = load_latest_snapshot()
-    snap_path = write_snapshot(scored, gating, records, run_file=out_path, filters=filters)
+    snap_path = write_snapshot(
+        scored, gating, judge, records, run_file=out_path, filters=filters
+    )
     print(f"Raw run file: {out_path}")
     print(f"Snapshot:     {snap_path}")
     if prev_snapshot is not None:

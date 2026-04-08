@@ -119,9 +119,9 @@ See the [annotated file tree](#9-project-layout) for exact file locations.
      │    │    [interrupt]     │             │
      │    └──┬─────────────┬───┘             │
      │       │             └── approved ─────┤
-     └──◄────┘                                │
-                                              ▼
-                                             END
+     └──◄────┘                               │
+                                             ▼
+                                            END
 
   Back-edges (◄) = critic / human rejection → revision loop.
   * skipped and error paths route back through the

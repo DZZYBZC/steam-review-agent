@@ -1,56 +1,18 @@
 """
-evals/_remedial_rerun.py — One-shot partial-rerun harness for the Iter 1
-remedial round (the "Option 2" path documented in the session log).
+evals/_remedial_rerun.py — Partial-rerun harness for the Iter 1 remedial
+round. Reruns only the 19 critical case_ids, merges fresh records over the
+frozen prior run, re-scores the merged set through every scorer + judge,
+and prints a focused gate report.
 
-Why this exists
----------------
-The Iter 1 lock allows ONE remedial round if the gate fails. The strict
-"one rerun of run_evals.py" reading of the stop rule = full-set rerun =
-~1.3M tokens. The user explicitly accepted the cost/audit tradeoff of
-running only the cases that actually carry the gate, in exchange for
-~30-40% of the full-rerun token cost.
+Caveats (documented in `evals/_negative_controls_locked.md`):
+  - Aggregate metric is NOT apples-to-apples with the locked 56-case
+    baseline — the merged count is informative, not gate-eligible.
+  - Drift in the 37 unrun cases is invisible (non-zero temperature).
 
-That tradeoff has two costs you must understand before reading this output:
+Does NOT edit scorers/skills and does NOT write a snapshot — mixing fresh
+and frozen records would pollute the diff history.
 
-1. **The aggregate metric is forfeit.** The locked aggregate gate is
-   `n_missed_escalation + n_over_escalation` measured over all 56 cases.
-   This script reruns only 19 of them, so the resulting count is NOT
-   apples-to-apples with the locked baseline of 9. The script reports a
-   merged-set count (fresh records for the 19 + frozen records for the
-   other 37) — that merged count is *informative* but not gate-eligible.
-
-2. **Drift in the unrun cases is invisible.** Responder/critic LLM calls
-   are non-zero temperature. Rerunning only 19 cases assumes the other 37
-   would have produced identical drafts post-edit, which is not strictly
-   true. A regression hiding in the unrun set would silently ship.
-
-Both caveats are documented in `evals/_negative_controls_locked.md`
-under the Iteration 1 stop-rule section. The user's "option 2" message
-is the explicit on-record acceptance of these caveats.
-
-What this script does NOT do
-----------------------------
-- Edit any scorer or skill file. Skill edits live in the `skills/`
-  directory; scorer edits would require their own iteration.
-- Write a snapshot to `evals/snapshots/`. Mixing 19 fresh + 37 frozen
-  records produces snapshot metrics that would pollute the diff history
-  forever. Snapshot writing is intentionally suppressed — verification
-  is by focused report only.
-
-What this script DOES do
-------------------------
-- Loads the prior post-iter1 (failing) run JSON.
-- Reruns only the 19 critical case_ids through the agent graph.
-- Merges fresh records over the frozen prior records (matched by case_id).
-- Re-scores the merged record list through every scorer + judge in the
-  same order as `run_evals.py:main`. Judge cache hit rate should be ~70%
-  (the 37 frozen cases hit cache; the 19 fresh cases miss).
-- Prints a focused gate-verification report against the locked targets:
-  positives, negatives, canary, direction reversals, the 8 over-escalation
-  cases that need to flip back, and the merged ruling counts.
-
-Usage:
-    python evals/_remedial_rerun.py
+Usage: python evals/_remedial_rerun.py
 """
 from __future__ import annotations
 

@@ -1,11 +1,9 @@
 """
-evals/failure_modes.py — v0 failure mode taxonomy for agent eval annotation.
+evals/failure_modes.py — Failure mode taxonomy for agent eval annotation.
 
-v0 hypothesis, expect to revise after first 10 golden runs. Tags are
-categorical (not scalar): an output either exhibits the mode or doesn't.
-Annotators apply zero or more tags per case. Scorers in evals/scorers/
-emit these tags from deterministic checks where possible; the rest are
-hand-applied during golden review.
+Tags are categorical: an output either exhibits the mode or doesn't.
+Scorers in evals/scorers/ emit these tags from deterministic checks where
+possible; the rest are hand-applied during golden review.
 """
 
 from dataclasses import dataclass

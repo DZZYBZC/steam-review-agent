@@ -114,11 +114,7 @@ def _cache_key(
     case_id: str,
     user_message: str,
 ) -> str:
-    """
-    Same component list as judge_action._cache_key — different skill_sha
-    cleanly partitions cache files by judge dimension even though all three
-    judges write to JUDGE_CACHE_DIR.
-    """
+    """See judge_grounding._cache_key for the component list."""
     skill_sha = _skill_sha()
     user_msg_sha = _sha8(user_message.encode("utf-8"))
     model_safe = JUDGE_MODEL.replace("/", "_")

@@ -31,9 +31,44 @@ For the full data pipeline, eval suite, runtime/cost estimates, and other entry 
 
 Player feedback on Steam is high-volume, noisy, and emotionally loaded. Manual triage doesn't scale; tone-deaf automated responses are worse than no response. The interesting problem isn't generation — it's *evidence-grounded* generation that can be defended back to the player.
 
-This project takes a stream of Steam reviews and pushes each one through a pipeline that classifies it, clusters it against recent reviews of the same kind, retrieves patch notes that might address the underlying complaint, drafts a player-facing reply that cites only what the retriever actually found, has a separate critic evaluate the draft against an evidence-chain checklist, and finally pauses for a human to approve or reject. Approved drafts feed forward as few-shot examples for future runs; rejected drafts feed forward as cluster notes that warn the next investigator about known issues.
+This project ingests Steam reviews and routes each one through a multi-agent workflow: classify, retrieve patch notes that might address the underlying complaint, draft a player-facing reply grounded in what the retriever actually found, and pause for human approval before anything ships.
+
+Every approved or rejected draft feeds back into the system — approvals become few-shot examples for future runs, rejections become cluster notes that warn the next investigator about known issues in the same complaint category.
 
 This is **not** a chatbot and **not** a customer-service autoresponder. The human-in-the-loop gate is non-negotiable. The agent's job is to do the research and produce a defensible draft — the human's job is to ship it.
+
+<details>
+<summary><strong>Worked example — one real review through the full graph</strong></summary>
+
+An actual approved run pulled from `audit_log` (app `2246340`, review `222426809`, run `e6d61c72`). Classifier → `technical_issues`, confidence 0.7. Retrieval hit 5 chunks across 5 different patch versions; the critic approved on the first iteration.
+
+**Review (input):**
+
+> Enjoyable, but fiancee cant play because shes using an AMD card this needs to be fixed (because people with AMD cards deserve to play games too)
+
+**Evidence package (investigator output — what the retriever actually found):**
+
+- `[Ver.1.030.02.02] Bug Fixes: Fixed an issue where the game might fail to launch on certain PCs using AMD Radeon graphics cards.`
+- `[Ver.1.040.03.02] Video Driver Version: Some issues have been identified with AMD Radeon drivers versions 25.10.2 and higher on certain PCs using AMD Radeon graphics cards such as the AMD Radeon RX 5500 XT/7800 XT.`
+- `[Ver.1.041.00.00] Video Driver Version: (same note, repeated)`
+- `[Ver.1.041.01.00] Video Driver Version: (same note, repeated)`
+- `[Ver.1.041.02.00] Video Driver Version: (same note, repeated)`
+
+**Investigator summary:** Ver.1.030.02.02 fixed a launch failure, but subsequent patches flag ongoing driver-compatibility issues on specific AMD cards that remain unresolved. Partial fix + persistent unresolved issue → confidence 0.7.
+
+**Draft response (responder output, Sonnet 4.6):**
+
+> Your fiancée absolutely deserves to play — AMD compatibility is something we've been actively working on. Ver.1.030.02.02 fixed a launch failure affecting certain AMD Radeon cards, but we've since identified ongoing issues with AMD Radeon driver versions 25.10.2 and higher on specific cards including the RX 5500 XT and RX 7800 XT, flagged across several recent patch updates. If her card falls into that category, rolling back to a driver version below 25.10.2 may help in the meantime. We don't have a confirmed permanent fix for the newer driver compatibility issue yet, but the team is aware and it's being tracked.
+
+**Proposed action:** `monitor` — known area, partially addressed, no confirmed fix yet.
+
+**Critic verdict (approved, iteration 0):**
+
+> Cites specific patches and driver versions directly from the evidence, appropriately hedges the unresolved issue, offers a practical workaround (driver rollback). All claims trace to the evidence package. Tone matches the review's constructive nature. `monitor` is appropriate given 0.7 confidence and an ongoing, tracked issue without a confirmed fix.
+
+Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — `source_ids_cited ⊆ relevant_ids` verified deterministically by the critic. The responder cannot cite a patch the investigator did not retrieve.
+
+</details>
 
 ---
 
@@ -55,42 +90,44 @@ See the [annotated file tree](#9-project-layout) for exact file locations.
 ## Architecture
 
 ```
-              ┌─────────────────┐
-              │   coordinator   │ ◀──── (revise loop, skip_response)
-              │ (plain Python)  │
-              └────────┬────────┘
-                       │ route_from_coordinator
-            ┌──────────┼──────────┐
-            ▼          ▼          ▼
-        investigate  respond     done ─▶ END
-            │          │
-            │ route_after_investigator
-            │  ┌───────┴────────┐
-            │  │                │
-            │  ▼ skip_response  ▼ respond
-            │  coordinator      │
-            │                   ▼
-            │              ┌─────────┐
-            │              │responder│
-            │              └────┬────┘
-            │                   │ (terminal err? → coordinator)
-            │                   ▼
-            │              ┌─────────┐
-            │              │ critic  │
-            │              └────┬────┘
-            │                   │ approved? terminal err?
-            │           ┌───────┴────────┐
-            │           ▼                ▼
-            │    human_approval     coordinator
-            │      [interrupt]      (revise loop)
-            │           │
-            │           ▼ route_from_human_approval
-            │     ┌─────┴─────┐
-            │     ▼           ▼
-            │    done         coordinator
-            │     │           (rejected → revise)
-            │     ▼
-            │    END
+          ┌────────────────────┐
+     ┌──► │    coordinator     │── done ─────┐
+     │    │   (plain Python)   │             │
+     │    └─────────┬──────────┘             │
+     │              │ investigate            │
+     │              ▼                        │
+     │    ┌────────────────────┐             │
+     │    │    investigator    │             │
+     │    │       (LLM)        │             │
+     │    └─────────┬──────┬───┘             │
+     │              │      └── skipped* ─────┤
+     │              │ respond                │
+     │              ▼                        │
+     │    ┌────────────────────┐             │
+     │    │     responder      │             │
+     │    │       (LLM)        │             │
+     │    └─────────┬──────┬───┘             │
+     │              │      └── error* ───────┤
+     │              ▼                        │
+     │    ┌────────────────────┐             │
+     │    │       critic       │             │
+     │    │       (LLM)        │             │
+     │    └──┬──────┬──────┬───┘             │
+     │       │      │      └── error* ───────┤
+     ├──◄────┘      │ approved               │
+     │              ▼                        │
+     │    ┌────────────────────┐             │
+     │    │   human_approval   │             │
+     │    │    [interrupt]     │             │
+     │    └──┬─────────────┬───┘             │
+     │       │             └── approved ─────┤
+     └──◄────┘                                │
+                                              ▼
+                                             END
+
+  Back-edges (◄) = critic / human rejection → revision loop.
+  * skipped and error paths route back through the
+    coordinator, which then takes "done" → END.
 ```
 
 Five nodes — `coordinator`, `investigator`, `responder`, `critic`, `human_approval`. The coordinator is plain Python routing logic, never an LLM call. The graph compiles with `interrupt_before=["human_approval"]`, so every run pauses for a human decision before completing.
@@ -100,8 +137,9 @@ Five nodes — `coordinator`, `investigator`, `responder`, `critic`, `human_appr
 <details>
 <summary><strong>Key design decisions and alternatives rejected</strong></summary>
 
-Six choices that look like accidents until you know why:
+Seven choices that look like accidents until you know why:
 
+- **Deterministic graph orchestration, not model-side tool selection.** The workflow is fixed — classify, retrieve, draft, critique, human-review — and the branching is knowable in advance. Letting the model pick its next step via tool-use / function calling would trade a five-line Python router for a stochastic dispatcher that costs tokens on every hop, fails in ways that are harder to test, and makes the control flow impossible to lock down in evals. Deterministic orchestration is cheaper, more reliable, and actually testable. Model-side tool calling earns its place when the path isn't knowable in advance; this path is.
 - **Coordinator is plain Python, not an LLM.** Routing logic that decides "did the critic approve" or "are we past max iterations" is a five-line if-statement. Making it an LLM call would burn tokens and introduce non-determinism on the *control flow*, which is exactly where you want determinism.
 - **Cross-encoder rerank scores are not surfaced to the investigator LLM.** They're uncalibrated absolute floats — anchoring the LLM's reasoning on them would amplify reranker noise into draft quality. The reranker orders results; the investigator reasons about *content*.
 - **Pydantic at the LLM trust boundary, TypedDict inside the graph.** Pydantic validation on every state transition would be expensive and would catch nothing the LLM-output validators don't already catch. The boundary is where data crosses from LLM → Python; everything inside the graph is already Python.
@@ -202,7 +240,7 @@ The table below reports the latest fully comparable full-eval snapshot (`evals/s
 
 | Metric | Value |
 |---|---|
-| Cases evaluated | **56** |
+| Cases evaluated | **56** (across 5 games, 11–12 cases each) |
 | Stop reasons | 31 human_approved, 13 no_response_needed, 12 max_iterations_reached |
 | Gating accuracy | **94.6%** (10 true_skip / 43 true_retrieve / 3 false_skip / 0 false_retrieve) |
 | Action correctness | **48.8%** (21 / 43, excludes 13 no-response cases) |
@@ -342,7 +380,7 @@ The naming clash between `skills/` and `.claude/skills/` is a project gotcha. Th
 ### Prerequisites
 
 - Python 3.12 (developed against 3.12.7)
-- Anthropic API key (`CLAUDE_API_KEY`) — required for any agent run
+- Anthropic API key (`CLAUDE_API_KEY`) — required for any agent run. Note: this repo reads `CLAUDE_API_KEY` rather than Anthropic's default `ANTHROPIC_API_KEY`, to stay compatible with Claude Code's environment.
 - Steam Web API key (`STEAM_API_KEY`) — required only for fetching reviews and patch notes
 - HuggingFace token (`HF_TOKEN`) — required for downloading the embedding and reranker models on first use
 
@@ -396,9 +434,9 @@ Three things I'd carry into the next project of this shape:
 <details>
 <summary><strong>What's next</strong></summary>
 
-- Tighten the `monitor` escape-hatch definition in the responder skill (Iteration 1 follow-up — likely requires explicit volume language or a deterministic recurring-pattern signal rather than the responder's own judgment)
-- Extract `evals/scorers/_judge_base.py` from the three sibling judges
-- Re-baseline `recall@k` after either chunker or gold-standard tightening
-- Wire the pairwise judge's semantic spot checks on the next clean (non-remedial) full eval run
+- **Improve action selection on borderline subjective complaints.** The four Iteration 1 misses all shared one root cause: the `monitor` action is too easy for the responder to reach for. The fix is a tighter definition — likely a deterministic signal (volume language, recurring-pattern detection) rather than leaving the judgment to the LLM.
+- **Improve retrieval recall.** Recall@k of 0.187 is the weakest number on the board. Either the section-aware chunker needs tightening or the `must_include` sets in the gold standard are stricter than what the evidence actually supports — both worth investigating.
+- **Finish semantic verification for the pairwise revision judge.** The scorer ran clean structurally but hand-validated spot checks are deferred to the next clean (non-remedial) eval run.
+- **Extract shared judge infrastructure.** Three sibling judge files exist now (`judge_grounding.py`, `judge_action.py`, `pairwise.py`) — the right shape of a `_judge_base.py` abstraction is finally visible and ready to pull out.
 
 </details>

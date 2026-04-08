@@ -29,31 +29,7 @@ SNAPSHOTS_DIR = Path(__file__).resolve().parent / "snapshots"
 # Bump when the snapshot aggregates dict shape changes in a non-additive way
 # (field renamed, removed, or semantics changed). Visible in the snapshot
 # payload and in the diff print path so transitions are interpretable.
-#
-#   v1: original M5 schema (had grounding.compliant_rate as a single rate
-#       that conflated low_conf_with_cite + high_conf_no_cite into one
-#       "violations" bucket).
-#   v2: low_conf_with_cite demoted to a diagnostic flag (not a failure).
-#       grounding.compliant_rate replaced with grounding.n_hard_violations
-#       (count, not rate). New diagnostics.low_conf_with_cite_flag_count.
-#   v3: V1.5 LLM judge layer added. New top-level "judge" block with
-#       low_conf_with_cite ruling counts (honest_hedge / misleading_fix_claim
-#       / unclear). DIFF_METRICS gets three new judge_lc_* entries.
-#   v4: V1.5 LLM judge action layer added. The top-level "judge" block now
-#       contains both "low_conf_with_cite" (from v3) AND a new "action" sub-
-#       block with wrong_action_severity ruling counts (over_escalation /
-#       missed_escalation / category_drift / tolerable_disagreement /
-#       judge_error). DIFF_METRICS gets five new judge_act_* entries. The
-#       judge_error count is reported as its own field, NEVER collapsed into
-#       a substantive ruling, so judge infrastructure misfires stay visible.
-#   v5: V1.5 pairwise revision-improvement judge added. The top-level "judge"
-#       block now contains a third "pairwise" sub-block with revision_improved
-#       / revision_neutral / revision_regressed / judge_error counts plus
-#       n_deterministic (subset of n_revision_neutral labeled by the
-#       deterministic normalize-equal shortcut). DIFF_METRICS gets six new
-#       judge_pw_* entries including judge_pw_n_deterministic — a sudden jump
-#       or drop in the deterministic-shortcut count is itself a signal that
-#       the responder is changing more (or fewer) drafts in revision.
+# See git log for the per-version history.
 SNAPSHOT_SCHEMA_VERSION = 5
 
 # Metrics surfaced in the snapshot summary AND used for the one-line diff.

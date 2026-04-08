@@ -33,7 +33,7 @@ def extract_review_fields(raw_reviews: list[dict], app_id: str) -> pd.DataFrame:
                 "app_id": app_id,
                 "steam_id": author.get("steamid"),
                 "review_text": r.get("review", ""),
-                "voted_up": r.get("voted_up"),  # True = positive, False = negative
+                "voted_up": r.get("voted_up"),
                 "timestamp": r.get("timestamp_created"),
                 "playtime_hours": round(author.get("playtime_forever", 0) / 60, 1),
                 "votes_up": r.get("votes_up", 0),
@@ -55,10 +55,10 @@ def clean_reviews(df: pd.DataFrame) -> pd.DataFrame:
     """
     original_count = len(df)
 
-    df = df.dropna(subset=["review_text"]) # Reviews NA
-    df = df[df["review_text"].str.len() >= REVIEW_MIN_CHARS] # Review too short
-    df = df[df["review_text"].str.split().str.len() >= REVIEW_MIN_WORDS] # Review too short
-    df = df.drop_duplicates(subset=["review_id"]) # Duplicated reviews
+    df = df.dropna(subset=["review_text"])
+    df = df[df["review_text"].str.len() >= REVIEW_MIN_CHARS]
+    df = df[df["review_text"].str.split().str.len() >= REVIEW_MIN_WORDS]
+    df = df.drop_duplicates(subset=["review_id"])
 
     removed = original_count - len(df)
     logger.info(f"Cleaned reviews: removed {removed} junk rows, {len(df)} remaining.")
@@ -124,7 +124,7 @@ def detect_near_duplicates(
             if candidate_idx <= idx or candidate_idx in duplicate_indices:
                 continue
 
-            similarity = minhashes[idx].jaccard(minhashes[candidate_idx]) # Jaccard similarity between two singnatures
+            similarity = minhashes[idx].jaccard(minhashes[candidate_idx])
 
             if similarity >= similarity_threshold:
                 duplicate_indices.add(candidate_idx)

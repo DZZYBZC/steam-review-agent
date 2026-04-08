@@ -74,23 +74,13 @@ JUDGE_CACHE_DIR = Path(__file__).resolve().parents[1] / "judge_cache"
 SKILL_NAME = "judge-action"
 SKILL_PATH = Path(__file__).resolve().parents[2] / "skills" / SKILL_NAME / "SKILL.md"
 
-# Lazy module-level — load_skill reads from disk, the client opens an HTTP
-# session. Both are cheap on import but make tests harder if they fail at
-# import time, so wrap minimally.
 client = anthropic.Anthropic(api_key=CLAUDE_API_KEY, max_retries=5)
 SYSTEM_PROMPT = load_skill(SKILL_NAME)
 
 
-# ---------- Pydantic ruling model (LOCAL — trust boundary) ----------------
-#
-# Per project invariants, anything crossing a trust boundary (LLM output)
-# needs Pydantic validation. The judge is in evals/, never enters the agent
-# path, so the model is local to this module — NOT in agent/models.py.
-#
-# Note: judge_error is in the regex pattern even though the LLM should never
-# emit it. The fallback path constructs a JudgeActionRuling with ruling=
-# "judge_error" when the LLM call itself fails — including it in the regex
-# keeps the validator path uniform between the success and failure branches.
+# Local trust-boundary model — judge never enters the agent path.
+# judge_error is in the regex so the success and fallback branches share one
+# validator path; the LLM itself is not allowed to emit it (see _call_judge_llm).
 
 class JudgeActionRuling(BaseModel):
     ruling: str = Field(
@@ -116,21 +106,7 @@ def _cache_key(
     case_id: str,
     user_message: str,
 ) -> str:
-    """
-    Build the cache filename. Every component that affects the ruling is in
-    the key, so any change invalidates the cached entry. Mirror of
-    judge_grounding._cache_key — same component list, different skill_sha
-    means cache files cleanly partition by judge dimension even though both
-    judges write to the same JUDGE_CACHE_DIR.
-
-      1. run_file_basename — different runs have different drafts
-      2. case_id           — obvious
-      3. JUDGE_MODEL       — model swap is a behavior change
-      4. skill_sha         — prompt text change
-      5. JUDGE_INPUT_VERSION — manual bump for input/output shape changes
-      6. user_message_sha  — belt-and-suspenders: catches changes the dev
-                              forgot to bump JUDGE_INPUT_VERSION for
-    """
+    """See judge_grounding._cache_key for the component list."""
     skill_sha = _skill_sha()
     user_msg_sha = _sha8(user_message.encode("utf-8"))
     model_safe = JUDGE_MODEL.replace("/", "_")
@@ -286,13 +262,8 @@ def _call_judge_llm(user_message: str) -> tuple[dict, dict[str, int]]:
         logger.error(f"Raw response was: {raw_text[:500]}")
         raise
 
-    # Validate at the trust boundary. The LLM should never emit "judge_error"
-    # itself — that string is reserved for the fallback path below — but the
-    # regex permits it so the success and failure branches use the same model.
     ruling = JudgeActionRuling.model_validate(data)
     if ruling.ruling == "judge_error":
-        # Defense in depth: if the LLM somehow returns judge_error, treat it
-        # as a validation failure so the fallback bucket is unambiguous.
         raise ValueError("LLM returned reserved 'judge_error' string")
     return ruling.model_dump(), tokens
 
@@ -373,8 +344,6 @@ def judge_action(
         "ruling": ruling_data["ruling"],
         "rationale": ruling_data.get("rationale", ""),
         "cached_at": dt.datetime.now().isoformat(),
-        # Echo the cache-key components so a human inspecting the file can
-        # see exactly what produced this entry.
         "cache_key_components": {
             "run_file_basename": run_file_basename,
             "case_id": case_id,

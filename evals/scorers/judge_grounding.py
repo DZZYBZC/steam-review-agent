@@ -58,18 +58,11 @@ JUDGE_CACHE_DIR = Path(__file__).resolve().parents[1] / "judge_cache"
 SKILL_NAME = "judge-grounding"
 SKILL_PATH = Path(__file__).resolve().parents[2] / "skills" / SKILL_NAME / "SKILL.md"
 
-# Lazy module-level — load_skill reads from disk, the client opens an HTTP
-# session. Both are cheap on import but make tests harder if they fail at
-# import time, so wrap minimally.
 client = anthropic.Anthropic(api_key=CLAUDE_API_KEY, max_retries=5)
 SYSTEM_PROMPT = load_skill(SKILL_NAME)
 
 
-# ---------- Pydantic ruling model (LOCAL — trust boundary) ----------------
-#
-# Per project invariants, anything crossing a trust boundary (LLM output)
-# needs Pydantic validation. The judge is in evals/, never enters the agent
-# path, so the model is local to this module — NOT in agent/models.py.
+# Local trust-boundary model — judge never enters the agent path.
 
 class JudgeRuling(BaseModel):
     ruling: str = Field(..., pattern="^(honest_hedge|misleading_fix_claim|unclear)$")
@@ -106,7 +99,6 @@ def _cache_key(
     """
     skill_sha = _skill_sha()
     user_msg_sha = _sha8(user_message.encode("utf-8"))
-    # Sanitize model name for filenames (haiku ids contain dashes — fine).
     model_safe = JUDGE_MODEL.replace("/", "_")
     return (
         f"{run_file_basename}__{case_id}__{model_safe}"
@@ -302,8 +294,6 @@ def judge_grounding(
         "ruling": ruling_data["ruling"],
         "rationale": ruling_data.get("rationale", ""),
         "cached_at": dt.datetime.now().isoformat(),
-        # Echo the cache-key components so a human inspecting the file can
-        # see exactly what produced this entry.
         "cache_key_components": {
             "run_file_basename": run_file_basename,
             "case_id": case_id,

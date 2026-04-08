@@ -1,13 +1,9 @@
 """
-Section-aware chunking for Steam game news.
-
-Design decisions:
-    1. Each individual fix/change line becomes its own chunk.
-    2. The patch version header is prepended to every chunk so it's self-contained.
-    3. Section headers (Bug Fixes, Performance, etc.) are stored as metadata.
-    4. Source metadata (patch ID, URL, date, news_type) travels with every chunk.
-    5. BBCode, HTML, and image markup are stripped before chunking.
-       Image URLs are preserved as metadata for potential dashboard display.
+Section-aware chunking for Steam game news. One chunk per fix/change line,
+with the patch version header prepended so each chunk is self-contained.
+Section headers and source metadata (patch ID, URL, date, news_type) travel
+with every chunk; BBCode/HTML/image markup is stripped first (image URLs
+preserved as metadata).
 """
 
 import re

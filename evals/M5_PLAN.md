@@ -163,19 +163,12 @@ All 5 games now exceed the ~100-per-game floor needed for golden set sampling. M
 
 ---
 
-**0e. Move reference docs into `evals/`, copy plan, verify ChromaDB**:
-   ```
-   mkdir -p evals
-   git mv m5_plan.md evals/m5_prompt_original.md
-   git mv m5_plan_claude_written.md evals/m5_plan_v0_reference.md
-   ```
-   These are checked in as historical references. The live plan is `evals/M5_PLAN.md`. Then copy this plan to `evals/M5_PLAN.md` — from here forward, edit `evals/M5_PLAN.md`, not `~/.claude/plans/hidden-herding-manatee.md`.
-
-   - Verify ChromaDB intact: `python -c "import chromadb; c=chromadb.PersistentClient(path='chroma_db'); print([col.name for col in c.list_collections()])"` — expect 5 `patches_*` collections.
+**0e. Verify ChromaDB**:
+   - `python -c "import chromadb; c=chromadb.PersistentClient(path='chroma_db'); print([col.name for col in c.list_collections()])"` — expect 5 `patches_*` collections.
 
 ## V1 build steps (deterministic, free beyond agent cost)
 
-Numbering aligned with `evals/m5_plan_v0_reference.md` after move. Defer to that file for full step internals; this section calls out only what's NEW or CHANGED post-rewind.
+This section calls out only what's NEW or CHANGED post-rewind.
 
 | Step | Artifact | New/Changed? |
 |---|---|---|
@@ -301,10 +294,6 @@ Living record of eval-driven changes that shipped after the V1 verification gate
 - `pipeline/storage.py` — add `include_other: bool = False` flag to existing `load_classified_reviews(conn, app_id)` (D8)
 - `config.py` — add `EVAL_JUDGE_MODEL`, `EVAL_JUDGE_TEMPERATURE`, `EVAL_JUDGE_MAX_TOKENS` (V1.5)
 - `.gitignore` — add `evals/snapshots/`, `evals/logs/` (preserve `.gitkeep`)
-
-### Moved (Step 0)
-- `m5_plan.md` → `evals/m5_prompt_original.md`
-- `m5_plan_claude_written.md` → `evals/m5_plan_v0_reference.md`
 
 ## Existing utilities to reuse (do not reimplement)
 - `test_agent.py` — auto-approve interrupt pattern (Step 4 runner)

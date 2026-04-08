@@ -6,14 +6,7 @@ from typing import Annotated, TypedDict
 import operator
 
 class AgentState(TypedDict):
-    """
-    The shared state object passed between all agent nodes.
-
-    Fields are grouped by purpose:
-    - Input: data that enters the graph at the start
-    - Node outputs: results produced by each node
-    - Control flow: fields that govern routing and termination
-    """
+    """The shared state object passed between all agent nodes."""
 
     # Input
     app_id: str

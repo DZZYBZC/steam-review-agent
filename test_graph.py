@@ -1,7 +1,6 @@
 """
-test_graph.py — Quick verification that the LangGraph agent compiles and runs.
-
-This is not a production file — it's a one-off test to verify Milestone 1 setup.
+test_graph.py — End-to-end smoke test that the LangGraph agent compiles and
+runs against a hardcoded review (auto-approves at the human gate).
 Run it with: python test_graph.py
 """
 

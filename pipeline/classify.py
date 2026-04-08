@@ -23,7 +23,6 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# Pydantic for data validation
 class ClassificationResult(BaseModel):
     """
     The structured output from the review classifier.

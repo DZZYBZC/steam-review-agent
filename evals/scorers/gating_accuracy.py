@@ -20,11 +20,8 @@ Per-case scorer takes (case, result). Batch scorer takes the full record list.
 from __future__ import annotations
 
 
-# Map raw retrieval_decision strings → boolean "did the gate skip?"
-# - "skipped"      → gate skipped retrieval (True)
-# - "retrieved"    → gate ran retrieval (False)
-# - "insufficient" → gate ran retrieval but Self-RAG gave up (False — still ran)
-# - missing/empty  → treat as "unknown" and bail with not_applicable
+# "insufficient" maps to False (not None) because the gate DID run retrieval —
+# Self-RAG just gave up afterward.
 def _gate_skipped(retrieval_decision: str | None) -> bool | None:
     if not retrieval_decision:
         return None

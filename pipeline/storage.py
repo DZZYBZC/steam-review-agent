@@ -485,6 +485,52 @@ def save_audit_iteration(
         return False
 
 
+def get_iteration_drafts_batch(
+    conn: sqlite3.Connection,
+    run_ids: list[str],
+    iteration: int = 0,
+) -> dict[str, dict]:
+    """
+    Batch-fetch one iteration's row per run_id from audit_log_iterations.
+
+    Used by evals/scorers/pairwise.py to reconstruct iter-0 drafts so the
+    pairwise judge can compare against the final approved draft. Filtering
+    by run_id (not app_id+review_id) is critical: the same review may have
+    multiple historical runs, and joining without run_id would pull stale
+    rows from a previous run.
+
+    Returns a dict {run_id: row_dict}. Missing run_ids simply absent from
+    the result — caller treats absence as "no iter-0 to compare against."
+    """
+    if not run_ids:
+        return {}
+    placeholders = ",".join("?" * len(run_ids))
+    cursor = conn.execute(
+        f"""
+        SELECT run_id, drafted_response, proposed_action, source_ids_cited,
+               critique, reason_type
+        FROM audit_log_iterations
+        WHERE iteration = ? AND run_id IN ({placeholders})
+        """,
+        (iteration, *run_ids),
+    )
+    out: dict[str, dict] = {}
+    for row in cursor.fetchall():
+        rid = row[0]
+        try:
+            cited = json.loads(row[3]) if row[3] else []
+        except (json.JSONDecodeError, TypeError):
+            cited = []
+        out[rid] = {
+            "drafted_response": row[1] or "",
+            "proposed_action": row[2] or "",
+            "source_ids_cited": cited,
+            "critique": row[4] or "",
+            "reason_type": row[5] or "",
+        }
+    return out
+
+
 def load_feedback_examples(
     conn: sqlite3.Connection,
     app_id: str,

@@ -10,7 +10,7 @@ Files land in evals/snapshots/snapshot_<timestamp>.json (gitignored — see
 D7 for the snapshots_archive/ pattern used at milestones).
 
 Public surface:
-  - write_snapshot(scored, gating, judge, records, run_file, filters) -> Path
+  - write_snapshot(scored, gating, judge, judge_action, pairwise, records, run_file, filters) -> Path
   - load_latest_snapshot(exclude=None) -> dict | None
   - diff_snapshots(prev, curr) -> list[str]   # one line per changed metric
 """
@@ -39,7 +39,22 @@ SNAPSHOTS_DIR = Path(__file__).resolve().parent / "snapshots"
 #   v3: V1.5 LLM judge layer added. New top-level "judge" block with
 #       low_conf_with_cite ruling counts (honest_hedge / misleading_fix_claim
 #       / unclear). DIFF_METRICS gets three new judge_lc_* entries.
-SNAPSHOT_SCHEMA_VERSION = 3
+#   v4: V1.5 LLM judge action layer added. The top-level "judge" block now
+#       contains both "low_conf_with_cite" (from v3) AND a new "action" sub-
+#       block with wrong_action_severity ruling counts (over_escalation /
+#       missed_escalation / category_drift / tolerable_disagreement /
+#       judge_error). DIFF_METRICS gets five new judge_act_* entries. The
+#       judge_error count is reported as its own field, NEVER collapsed into
+#       a substantive ruling, so judge infrastructure misfires stay visible.
+#   v5: V1.5 pairwise revision-improvement judge added. The top-level "judge"
+#       block now contains a third "pairwise" sub-block with revision_improved
+#       / revision_neutral / revision_regressed / judge_error counts plus
+#       n_deterministic (subset of n_revision_neutral labeled by the
+#       deterministic normalize-equal shortcut). DIFF_METRICS gets six new
+#       judge_pw_* entries including judge_pw_n_deterministic — a sudden jump
+#       or drop in the deterministic-shortcut count is itself a signal that
+#       the responder is changing more (or fewer) drafts in revision.
+SNAPSHOT_SCHEMA_VERSION = 5
 
 # Metrics surfaced in the snapshot summary AND used for the one-line diff.
 # Order is preserved in the diff output. Each entry is a dotted path into
@@ -58,6 +73,27 @@ DIFF_METRICS: list[tuple[str, str, str]] = [
     ("judge_lc_honest_hedge",        "judge.low_conf_with_cite.n_honest_hedge",         "d"),
     ("judge_lc_misleading_fix_claim","judge.low_conf_with_cite.n_misleading_fix_claim", "d"),
     ("judge_lc_unclear",             "judge.low_conf_with_cite.n_unclear",              "d"),
+    # Schema v4: LLM judge rulings on the wrong_action_severity flagged cases.
+    # judge_error is in the diff so any future regression in judge infra
+    # (model deprecation, schema drift, prompt-driven parse failure) shows up
+    # as movement in this row rather than hiding inside a substantive bucket.
+    ("judge_act_over_escalation",       "judge.action.n_over_escalation",       "d"),
+    ("judge_act_missed_escalation",     "judge.action.n_missed_escalation",     "d"),
+    ("judge_act_category_drift",        "judge.action.n_category_drift",        "d"),
+    ("judge_act_tolerable_disagreement","judge.action.n_tolerable_disagreement","d"),
+    ("judge_act_judge_error",           "judge.action.n_judge_error",           "d"),
+    # Schema v5: pairwise revision-improvement judge rulings. judge_pw_judge_error
+    # belongs in DIFF_METRICS for the same reason as the action equivalent —
+    # infrastructure misfires must be visible immediately. judge_pw_n_deterministic
+    # belongs because a jump/drop in the shortcut count is itself a signal:
+    # a drop means the responder is changing more drafts; a spike means it's
+    # becoming a no-op revision-loop tax.
+    ("judge_pw_revision_improved",   "judge.pairwise.n_revision_improved",   "d"),
+    ("judge_pw_revision_neutral",    "judge.pairwise.n_revision_neutral",    "d"),
+    ("judge_pw_revision_regressed",  "judge.pairwise.n_revision_regressed",  "d"),
+    ("judge_pw_judge_error",         "judge.pairwise.n_judge_error",         "d"),
+    ("judge_pw_n_judged",            "judge.pairwise.n_judged",              "d"),
+    ("judge_pw_n_deterministic",     "judge.pairwise.n_deterministic",       "d"),
     ("critic_approval_overall",      "critic_health.approval_rate_overall",".3f"),
     ("critic_iter0_approval",        "critic_health.iter0_approval",       ".3f"),
     ("gating_accuracy",              "gating.accuracy",                    ".3f"),
@@ -92,14 +128,14 @@ def _git_sha() -> str:
     return f"{sha[:12]}+unstaged" if dirty else sha[:12]
 
 
-# ---------- Judge aggregate (schema v3) -----------------------------------
+# ---------- Judge aggregates (schema v3 + v4) -----------------------------
 
-def _build_judge_aggregate(judge: dict[str, Any] | None) -> dict[str, Any]:
+def _build_judge_grounding_block(judge: dict[str, Any] | None) -> dict[str, Any]:
     """
-    Build the `judge` block of the aggregates dict. If the judge layer was
-    not run (judge is None), return zero counts so the schema shape is
-    stable across runs — downstream diff readers prefer "0/0/0" over
-    missing keys.
+    Build the `low_conf_with_cite` sub-block of the judge aggregate. If the
+    grounding judge was not run (judge is None), return zero counts so the
+    schema shape is stable across runs — downstream diff readers prefer
+    "0/0/0" over missing keys.
     """
     if judge is None:
         rulings: dict[str, int] = {}
@@ -108,12 +144,60 @@ def _build_judge_aggregate(judge: dict[str, Any] | None) -> dict[str, Any]:
         rulings = judge.get("rulings", {}) or {}
         n_flagged = judge.get("n_flagged", 0)
     return {
-        "low_conf_with_cite": {
-            "n_flagged":              n_flagged,
-            "n_honest_hedge":         rulings.get("honest_hedge", 0),
-            "n_misleading_fix_claim": rulings.get("misleading_fix_claim", 0),
-            "n_unclear":              rulings.get("unclear", 0),
-        },
+        "n_flagged":              n_flagged,
+        "n_honest_hedge":         rulings.get("honest_hedge", 0),
+        "n_misleading_fix_claim": rulings.get("misleading_fix_claim", 0),
+        "n_unclear":              rulings.get("unclear", 0),
+    }
+
+
+def _build_judge_action_block(judge_action: dict[str, Any] | None) -> dict[str, Any]:
+    """
+    Build the `action` sub-block of the judge aggregate (schema v4). Mirrors
+    _build_judge_grounding_block. n_judge_error is reported alongside the
+    four semantic buckets so judge infrastructure misfires are visible
+    immediately and never get silently absorbed into a substantive ruling.
+    """
+    if judge_action is None:
+        rulings: dict[str, int] = {}
+        n_flagged = 0
+    else:
+        rulings = judge_action.get("rulings", {}) or {}
+        n_flagged = judge_action.get("n_flagged", 0)
+    return {
+        "n_flagged":                n_flagged,
+        "n_over_escalation":        rulings.get("over_escalation", 0),
+        "n_missed_escalation":      rulings.get("missed_escalation", 0),
+        "n_category_drift":         rulings.get("category_drift", 0),
+        "n_tolerable_disagreement": rulings.get("tolerable_disagreement", 0),
+        "n_judge_error":            rulings.get("judge_error", 0),
+    }
+
+
+def _build_pairwise_block(pairwise: dict[str, Any] | None) -> dict[str, Any]:
+    """
+    Build the `pairwise` sub-block of the judge aggregate (schema v5). Mirrors
+    the other two judge blocks. n_judge_error stays isolated. n_deterministic
+    is the count of revision_neutral rulings that came from the deterministic
+    normalize-equal shortcut (a subset of n_revision_neutral, NOT a separate
+    bucket — surfaced so the snapshot diff can track shortcut firing rate
+    over time).
+    """
+    if pairwise is None:
+        rulings: dict[str, int] = {}
+        n_judged = 0
+        n_deterministic = 0
+    else:
+        rulings = pairwise.get("rulings", {}) or {}
+        n_judged = pairwise.get("n_judged", 0)
+        n_deterministic = pairwise.get("n_deterministic", 0)
+    return {
+        "n_judged":             n_judged,
+        "n_revision_improved":  rulings.get("revision_improved", 0),
+        "n_revision_neutral":   rulings.get("revision_neutral", 0),
+        "n_revision_regressed": rulings.get("revision_regressed", 0),
+        "n_judge_error":        rulings.get("judge_error", 0),
+        "n_deterministic":      n_deterministic,
     }
 
 
@@ -123,6 +207,8 @@ def _build_aggregates(
     scored: dict[str, Any],
     gating: dict[str, Any],
     judge: dict[str, Any] | None,
+    judge_action: dict[str, Any] | None,
+    pairwise: dict[str, Any] | None,
     records: list[dict],
 ) -> dict[str, Any]:
     """
@@ -235,7 +321,11 @@ def _build_aggregates(
         "diagnostics": {
             "low_conf_with_cite_flag_count": n_low_conf_with_cite_flag,
         },
-        "judge": _build_judge_aggregate(judge),
+        "judge": {
+            "low_conf_with_cite": _build_judge_grounding_block(judge),
+            "action":             _build_judge_action_block(judge_action),
+            "pairwise":           _build_pairwise_block(pairwise),
+        },
         "critic_health": {
             "approval_rate_overall": ch["approval_rate_overall"],
             "iter0_approval": iter0,
@@ -261,6 +351,8 @@ def write_snapshot(
     scored: dict[str, Any],
     gating: dict[str, Any],
     judge: dict[str, Any] | None,
+    judge_action: dict[str, Any] | None,
+    pairwise: dict[str, Any] | None,
     records: list[dict],
     run_file: Path | str,
     filters: dict,
@@ -274,7 +366,7 @@ def write_snapshot(
         "git_sha": _git_sha(),
         "run_file": str(run_file),
         "filters": filters,
-        "aggregates": _build_aggregates(scored, gating, judge, records),
+        "aggregates": _build_aggregates(scored, gating, judge, judge_action, pairwise, records),
     }
     out = SNAPSHOTS_DIR / f"snapshot_{timestamp}.json"
     with out.open("w") as f:
@@ -339,6 +431,13 @@ def diff_snapshots(prev: dict, curr: dict) -> list[str]:
             (1, 2): "grounding metric split: low_conf_with_cite is now a flag, not a violation",
             (2, 3): "judge layer added: low_conf_with_cite cases now ruled by LLM",
             (1, 3): "grounding metric split (v1→v2) AND judge layer added (v2→v3)",
+            (3, 4): "judge_action layer added: wrong_action_severity cases now ruled by LLM",
+            (2, 4): "judge_grounding (v2→v3) AND judge_action (v3→v4) layers added",
+            (1, 4): "grounding metric split (v1→v2), judge_grounding (v2→v3), AND judge_action (v3→v4) layers added",
+            (4, 5): "pairwise revision-improvement judge added: multi-iteration approved cases now ruled by LLM (with deterministic normalize-equal shortcut)",
+            (3, 5): "judge_action (v3→v4) AND pairwise revision-improvement (v4→v5) layers added",
+            (2, 5): "judge_grounding (v2→v3), judge_action (v3→v4), AND pairwise (v4→v5) layers added",
+            (1, 5): "grounding metric split (v1→v2), judge_grounding (v2→v3), judge_action (v3→v4), AND pairwise (v4→v5) layers added",
         }
         note = annotations.get((prev_v, curr_v), "schema shape changed")
         lines.append(

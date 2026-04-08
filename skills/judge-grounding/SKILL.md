@@ -21,7 +21,7 @@ You will receive:
 The rule under inspection: when confidence is low (< 0.4), the responder is supposed to avoid citing patches at all. But the responder sometimes cites them anyway. Your job is to decide whether that citation is **honest hedging** (showing the player what was found while disowning it as a fix) or a **misleading fix claim** (citing as if it addresses the player's complaint without proper hedging).
 </task>
 
-<rulings>
+<ruling_labels>
 Choose exactly one:
 
 - **honest_hedge** — The draft cites the chunks but explicitly tells the player the cited patch does NOT address their issue, OR that the agent cannot confirm it does. The citation is presented as the closest available evidence the agent found, accompanied by clear denial language. Phrases that indicate honest hedging: "we don't have evidence that…", "we can't confirm…", "this doesn't address the core of…", "the patch evidence we have doesn't address…", "this is a separate bug we don't have a confirmed fix for."
@@ -29,9 +29,9 @@ Choose exactly one:
 - **misleading_fix_claim** — The draft cites the chunks and frames them as if they fix or substantially address the player's problem, without the hedging language a low-confidence case requires. The reader walks away thinking "oh, they fixed it" when the evidence does not actually support that. Phrases that indicate misleading framing: "this should be resolved by…", "the recent patch addresses this…", "fixed in update X" — *without* a counterbalancing disclaimer.
 
 - **unclear** — Neither pattern fits cleanly, the draft is internally contradictory (hedges in one sentence, claims a fix in another), or the draft is too short or too vague to rule on.
-</rulings>
+</ruling_labels>
 
-<rules>
+<judgment_rules>
 - Read the WHOLE draft, not just the first sentence. A draft that opens with a cite and then disowns it three sentences later is honest_hedge, not misleading.
 - **Multi-part drafts:** if the draft addresses multiple sub-issues from the player's complaint, judge the **strongest implied fix claim anywhere in the draft**. Hedging one sub-issue does NOT automatically convert a separate assertive fix-like claim into `honest_hedge`. Each sub-issue is evaluated on its own framing — if any one sub-issue is presented as a fix without hedging, the draft as a whole is `misleading_fix_claim` (or `unclear` if the framing is genuinely borderline).
 - Hedging language must be present. Citation alone — even with no fix claim — is not honest_hedge unless the draft explicitly tells the player the patch does not (or may not) resolve their issue.
@@ -39,7 +39,7 @@ Choose exactly one:
 - Do not penalize the draft for citing patches per se. The question is HOW the citation is framed, not WHETHER it appears.
 - Do not rule on draft quality, tone, length, or anything other than the citation-honesty question.
 - **Low confidence makes assertive framing a failure regardless of how relevant the patch looks.** This case was flagged for judging because the agent's confidence was below 0.4 — meaning the agent does NOT have strong evidence that the cited patch addresses the player's issue. If the draft presents the patch as a fix without hedging, that is `misleading_fix_claim` even when the patch text superficially looks relevant. Do not give credit for "the patch is probably right anyway" — at this confidence band, assertive framing is the failure mode this judge exists to catch.
-</rules>
+</judgment_rules>
 
 <output_format>
 Respond with ONLY a valid JSON object. Your entire response must be parseable by JSON.parse() with no preprocessing.

@@ -45,10 +45,13 @@ Check each of the following. A draft must pass ALL checks to be approved.
 
 5. **Completeness check**: Does the response address the player's main complaint? If the review raises a specific issue and the response ignores it, it fails. If the review raises multiple issues, approve only if the response addresses the main complaint and does not imply uncovered issues were also addressed.
 
-6. **Action check**: Is the proposed_action appropriate given the evidence confidence and complaint severity?
+6. **Action check**: Is the proposed_action appropriate given the evidence confidence and complaint severity? Apply the subjectivity ceiling FIRST, then the severity rule.
    - High confidence + minor issue with "escalate" = fail.
    - Low confidence + severe issue (crashes, data loss) with "no_action" = fail.
    - Pure design/subjective feedback (story preferences, pricing opinions, design direction) with "investigate" = fail. Use "no_action" or "monitor" instead — "investigate" is for technical issues only.
+   - **Subjectivity ceiling (HARD, applies first):** Pure design/balance/pricing/story/monetization opinion with `escalate` or `investigate` = fail, **even if the player uses dramatic words like "unplayable" or "broken" metaphorically**. Subjective complaints cannot escalate regardless of phrasing. `monitor` is acceptable only when the complaint is recurring and trackable as a product signal; otherwise default to `no_action`. The existence of related patches does NOT raise the rung by itself.
+   - **Severity-overrides-confidence (applies only after the subjectivity ceiling clears):** A complaint that describes a **concrete technical defect** AND uses hard-blocker language AND frames it as persistent / widespread / pattern-like ("crashing constantly", "every time", "hundreds of crashes in N hours", "all my saves are gone", "consistently reproducible", "not an isolated issue") with anything below `escalate` = fail, even at low evidence confidence. The hedging belongs in the response prose, not in the action.
+   - **Single-incident hard-blocker word ≠ escalate:** A player saying "pretty much unplayable" once, "the game crashed" once, or "broken" once without explicit persistence / volume / pattern framing is normal isolated frustration. Action `monitor` (or `investigate` if the incident is concrete and reproducible enough) is correct — do NOT fail those drafts for not picking `escalate`. The Severity-overrides-confidence rule needs BOTH the concrete technical defect AND the persistence signal. One or the other is not enough.
 </evaluation_checklist>
 
 <decision_rules>

@@ -61,71 +61,71 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
 </output_format>
 
 <examples>
-<example>
+<example index = "1">
 <review>Game crashes every time I enter the second dungeon. Tried reinstalling, verifying files, nothing works. This is really frustrating.</review>
 {"tone": "frustrated"}
 </example>
 
-<example>
+<example index = "2">
 <review>This game is absolute garbage. Worst $70 I've ever spent. The devs should be ashamed.</review>
 {"tone": "angry"}
 </example>
 
-<example>
+<example index = "3">
 <review>Love how the game crashes every 30 minutes. Really adds to the immersion. 10/10 experience.</review>
 {"tone": "sarcastic"}
 </example>
 
-<example>
+<example index = "4">
 <review>The hit detection feels off in melee combat. Swings that visually connect don't register damage. Would be great if the hitboxes were tightened up in a future patch.</review>
 {"tone": "constructive"}
 </example>
 
-<example>
+<example index = "5">
 <review>Runs okay on my system. Some frame drops in busy areas but nothing too bad. Story is decent.</review>
 {"tone": "neutral"}
 </example>
 
-<example>
+<example index = "6">
 <review>I really wanted to like this game. The art direction is beautiful and the concept is great, but the execution just falls flat. Had so much potential.</review>
 {"tone": "disappointed"}
 </example>
 
-<example>
+<example index = "7">
 <review>Is the multiplayer supposed to disconnect this often? I can't tell if it's my connection or a server issue. Sometimes it works fine, sometimes I get kicked every 10 minutes.</review>
 {"tone": "confused"}
 </example>
 
-<example>
+<example index = "8">
 <review>Fantastic game, easily one of the best this year. My only gripe is the camera in tight spaces can be really annoying. Other than that, highly recommend.</review>
 {"tone": "appreciative"}
 </example>
 
-<example type="mixed-tone">
+<example index = "9" type="mixed-tone">
 <review>Great game overall, but the camera and performance in towns are getting really frustrating. I love the combat but I can barely play when it drops to 15fps.</review>
 {"tone": "appreciative"}
 <!-- Why: praise leads ("great game", "love the combat"), complaints are secondary. The frustration is about a specific issue, not the dominant frame of the review. -->
 </example>
 
-<example type="ultra-short">
+<example index = "10" type="ultra-short">
 <review>trash</review>
 {"tone": "angry"}
 <!-- Why: single hostile word with no context = anger, not frustration (no problem description or desire for a fix). -->
 </example>
 
-<example type="ultra-short">
+<example index = "11" type="ultra-short">
 <review>meh</review>
 {"tone": "neutral"}
 <!-- Why: minimal engagement, no emotion, no complaint — just indifference. -->
 </example>
 
-<example type="subtle-sarcasm">
+<example index = "12" type="subtle-sarcasm">
 <review>Awesome, another disconnect right before extraction. Love losing 30 minutes of progress. Really keeps me coming back.</review>
 {"tone": "sarcastic"}
 <!-- Why: "awesome" and "love" are used sarcastically — the player clearly means the opposite. No overt hostility or constructive feedback. -->
 </example>
 
-<example type="ambiguous-frustrated-vs-angry">
+<example index = "13" type="ambiguous-frustrated-vs-angry">
 <review>I'm so sick of this game crashing. Every damn update breaks something new. I just want to play the game I paid for.</review>
 {"tone": "frustrated"}
 <!-- Why: intense wording ("so sick", "damn") but directed at the issue, not the developers. The player wants a fix ("I just want to play"), not to attack anyone. -->

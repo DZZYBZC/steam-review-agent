@@ -36,7 +36,9 @@ from agent.state import AgentState
 from evals.reporter import print_report
 from evals.scorers.deterministic import score_records
 from evals.scorers.gating_accuracy import gating_accuracy_batch
+from evals.scorers.judge_action import judge_action_batch
 from evals.scorers.judge_grounding import judge_grounding_batch
+from evals.scorers.pairwise import pairwise_batch
 from evals.snapshot import diff_snapshots, load_latest_snapshot, write_snapshot
 
 logging.basicConfig(
@@ -50,6 +52,7 @@ logger = logging.getLogger(__name__)
 
 EVALS_DIR = Path(__file__).parent
 GOLDEN_PATH = EVALS_DIR / "test_sets" / "golden.json"
+REGRESSION_PATH = EVALS_DIR / "test_sets" / "regression.json"
 RUNS_DIR = EVALS_DIR / "runs"
 
 TERMINAL_STOP_REASONS = {
@@ -67,14 +70,37 @@ def load_cases(
     category: str | None = None,
     case_id: str | None = None,
 ) -> list[dict]:
-    """Load and filter golden.json cases."""
+    """
+    Load and filter cases. Merges golden.json with regression.json seeds:
+    each regression seed references a case_id; if that case_id is present
+    in golden.json (the common case today), no-op. If it is NOT in golden
+    — meaning a case was dropped from the golden set since the seed was
+    locked — log a warning so the orphaned regression seed is visible.
+    The regression seeds are how we guard the golden set from silently
+    losing cases that were locked as failure patterns we must not regress.
+    """
     if not GOLDEN_PATH.exists():
         raise FileNotFoundError(f"Golden set not found at {GOLDEN_PATH}")
 
     with GOLDEN_PATH.open() as f:
         data = json.load(f)
+    cases: list[dict] = data.get("cases", [])
 
-    cases = data.get("cases", [])
+    # Merge regression seeds. Today every seed has in_golden=true so this is
+    # a no-op on the merged list, but the loader now surfaces drift loudly.
+    if REGRESSION_PATH.exists():
+        with REGRESSION_PATH.open() as f:
+            regression_data = json.load(f)
+        seed_ids = {s["case_id"] for s in regression_data.get("seeds", [])}
+        case_ids = {c.get("case_id") for c in cases}
+        orphaned = sorted(seed_ids - case_ids)
+        if orphaned:
+            logger.warning(
+                "regression.json seed(s) reference case_id(s) NOT in golden.json: "
+                f"{orphaned}. These regression patterns are no longer being "
+                "exercised. Either re-add the cases to golden.json or remove "
+                "the seeds."
+            )
 
     if case_id:
         cases = [c for c in cases if c.get("case_id") == case_id]
@@ -271,14 +297,18 @@ def main():
     judge = judge_grounding_batch(
         cases, records, scored, run_file_basename=out_path.stem
     )
+    judge_action = judge_action_batch(
+        cases, records, scored, run_file_basename=out_path.stem
+    )
+    pairwise = pairwise_batch(cases, records, run_file_basename=out_path.stem)
     print()
-    print_report(cases, records, scored, gating, judge)
+    print_report(cases, records, scored, gating, judge, judge_action, pairwise)
 
     # Snapshot. Look up the previous snapshot BEFORE writing the new one so
     # we don't compare it against itself.
     prev_snapshot = load_latest_snapshot()
     snap_path = write_snapshot(
-        scored, gating, judge, records, run_file=out_path, filters=filters
+        scored, gating, judge, judge_action, pairwise, records, run_file=out_path, filters=filters
     )
     print(f"Raw run file: {out_path}")
     print(f"Snapshot:     {snap_path}")

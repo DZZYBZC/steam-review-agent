@@ -1,5 +1,5 @@
 {
-  "_comment": "Regression seeds: failure patterns the eval has caught and that must not silently re-enter the codebase. Each entry references a case_id that already lives in golden.json (so the case is exercised by the standard eval run). This file is a SEMANTIC marker — run_evals.py does not yet load it. Wiring the loader is a deferred follow-up; until then, removal of these cases from golden.json without review must be caught manually. See plan: hidden-herding-manatee.md.",
+  "_comment": "Regression seeds: failure patterns the eval has caught and that must not silently re-enter the codebase. Each entry references a case_id that already lives in golden.json (so the case is exercised by the standard eval run). run_evals.load_cases() reads this file at runtime and emits a warning if any seeded case_id has been removed from golden.json — that's the drift guard. To add a new regression seed: add the entry here AND ensure the corresponding case is present in golden.json with full annotation.",
   "seeds": [
     {
       "case_id": "civ7_gameplay_002",
@@ -19,6 +19,36 @@
       "description": "Same multi-part pattern as civ7_gameplay_002. The judge's ruling on this case has been borderline across recent runs (sometimes honest_hedge, sometimes misleading_fix_claim). Locked here so future regressions on the same pattern are caught.",
       "judge_ruling_before_fix": "borderline (honest_hedge or misleading_fix_claim depending on prompt revision)",
       "expected_judge_ruling_after_fix": "honest_hedge",
+      "in_golden": true
+    },
+    {
+      "case_id": "poe2_tech_001",
+      "added": "2026-04-08",
+      "added_in_iteration": "Iteration 1 — action_severity_precedence rules for draft-response + critique-draft",
+      "failure_pattern": "missed_escalation_severity_language",
+      "description": "Two-rung downward action swap (escalate → monitor) on a review explicitly using hard-blocker language ('unplayable', 'crashing constantly', 'pervasive'). Pre-fix the responder defaulted DOWN the action ladder under low patch confidence. Rule 1 (severity-overrides-confidence) targets exactly this — hard-blocker language must produce escalate regardless of patch evidence confidence.",
+      "judge_ruling_before_fix": "missed_escalation",
+      "expected_outcome_after_fix": "action_correctness.correct == True (proposed_action == 'escalate')",
+      "in_golden": true
+    },
+    {
+      "case_id": "payday3_monetize_001",
+      "added": "2026-04-08",
+      "added_in_iteration": "Iteration 1 — action_severity_precedence rules for draft-response + critique-draft",
+      "failure_pattern": "over_escalation_subjective_feedback",
+      "description": "One-rung upward action swap (no_action → monitor) on a pure DLC-pricing opinion ('half the game locked behind dlcs'). Pre-fix the responder treated subjective monetization feedback as trackable. Rule 2 (subjectivity-caps-the-ladder) targets exactly this — pure pricing/design opinion defaults to no_action and the existence of related patches does not raise the rung.",
+      "judge_ruling_before_fix": "over_escalation",
+      "expected_outcome_after_fix": "action_correctness.correct == True (proposed_action == 'no_action')",
+      "in_golden": true
+    },
+    {
+      "case_id": "payday3_multi_002",
+      "added": "2026-04-08",
+      "added_in_iteration": "Iteration 1 — action_severity_precedence rules for draft-response + critique-draft",
+      "failure_pattern": "over_correction_guard_severity_canary",
+      "description": "Negative-direction guard for Rule 1. This case mentions hard-blocker language ('pretty much unplayable') but its ideal action is monitor, not escalate — the complaint is a multiplayer-server lag pattern, not a hard-blocker crash. Locked to catch future drift where Rule 1 over-fires on the bare presence of hard-blocker words. The case must STAY at proposed_action == 'monitor'; promotion to escalate is the regression this seed guards.",
+      "judge_ruling_before_fix": "n/a (was action-correct in baseline)",
+      "expected_outcome_after_fix": "action_correctness.correct == True (proposed_action == 'monitor')",
       "in_golden": true
     }
   ]

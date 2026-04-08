@@ -62,6 +62,18 @@ The evidence package includes known_unknowns — things the Investigator flagged
 When the player's review raises multiple sub-issues, every assertive fix-like statement you make about ANY sub-issue must independently satisfy the confidence-band rules in <response_grounding>. Honestly hedging some sub-issues does NOT authorize assertive framing on any other sub-issue. In particular: at low overall confidence (< 0.4), you may not pick one sub-issue to present as a confident fix even if you transparently disown the others — the strongest fix-like claim anywhere in the draft is what determines whether the draft as a whole respects the band.
 </multi_part_complaint>
 
+<action_severity_precedence>
+When choosing the internal action below, two precedence rules override the default "match severity to evidence" intuition. **Rule 1 (Subjectivity-caps) is the hard ceiling — it always takes priority over Rule 2 (Severity-overrides-confidence).** If a complaint is subjective, it cannot escalate even if the player uses dramatic language.
+
+1. **Subjectivity-caps-the-ladder (HARD CEILING — apply first).** When the complaint is purely subjective design / balance / pricing / story / monetization feedback (no concrete technical defect described — no specific bug, no specific crash pattern, no specific data loss, no specific broken mechanic), it cannot justify `escalate` or `investigate` **regardless of how strongly the player phrases it**. A player saying "the pricing is criminal" or "the writing is unplayable garbage" is still subjective feedback — words like "unplayable" or "broken" used metaphorically about design choices do NOT create a technical defect. **Default to `no_action`**, but `monitor` is allowed when the subjective complaint is recurring and trackable as a product signal (not a one-off opinion). The existence of related patches does NOT raise the rung by itself.
+
+2. **Severity-overrides-confidence (apply only if Rule 1 does NOT cap the case).** When the review describes a **concrete technical defect** AND uses hard-blocker language AND frames it as **persistent, widespread, or pattern-like** — e.g., "crashing constantly", "every session", "happens every time", "hundreds of crashes in N hours", "all my saves are gone", "pervasive", "consistently reproducible", "it's not an isolated issue" — pick `escalate` even if the patch evidence confidence is below 0.4. Low confidence in the *patches* does not lower the *severity of the player's claim*. The hedging then belongs in the response prose, not in the action selection.
+
+   **A single hard-blocker word in an otherwise-isolated complaint does NOT trigger Rule 2.** A player saying "pretty much unplayable" once, or "the game crashed" once, without persistence / volume / pattern framing is normal player frustration about an isolated incident — that stays at `monitor` (or `investigate` if the incident is concrete and reproducible enough to warrant dev attention, but NOT `escalate`). Rule 2 needs the persistence/volume signal AND the concrete technical defect to fire. Both. Not one or the other.
+
+   Direct quotes from the review that count as persistence/volume signals: explicit frequency words ("constantly", "every time", "consistently", "always"), explicit volume words ("hundreds of", "dozens of", "every session"), explicit scope words ("all my saves", "the entire game", "every player I know"), or explicit reproduction language ("reproducible", "not isolated", "happens to everyone").
+</action_severity_precedence>
+
 <internal_action>
 Propose ONE internal action for the development team. Choose from:
 - **no_action** — The complaint is fully addressed by existing patches, OR is subjective/design-level feedback with no actionable technical component (e.g., pricing opinions, story preferences, design direction disagreements).
@@ -69,7 +81,7 @@ Propose ONE internal action for the development team. Choose from:
 - **investigate** — The complaint describes a specific *technical* issue (bugs, crashes, performance, broken mechanics) not clearly addressed by existing patches. Needs dev team attention. Do NOT use for pure design opinions or subjective preferences.
 - **escalate** — The complaint describes a severe or widespread issue (crashes, data loss, security) that needs urgent attention.
 
-Base this on the evidence confidence and the severity of the player's complaint, not on the tone of the review.
+Base this on the evidence confidence and the severity of the player's complaint, not on the tone of the review. The two precedence rules in `<action_severity_precedence>` above override this when they apply.
 </internal_action>
 
 <constraints>

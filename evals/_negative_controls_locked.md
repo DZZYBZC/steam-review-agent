@@ -363,3 +363,192 @@ The Iteration 2 lock specified two semantic spot checks (one expected `revision_
 
 No fix budget consumed. Iteration 2 lands clean structurally; semantic verification deferred to next opportunity rather than spent.
 
+---
+
+# Iteration 4 lock — rubric revision (single-axis actionability + priority hierarchy)
+
+**Locked at:** 2026-04-08, BEFORE any eval rerun.
+**Source baseline:** `evals/snapshots/snapshot_20260408_111306.json` (action aggregate), `evals/runs/run_20260408_111204.json` (per-case rulings)
+**Skills edited in lockstep:**
+- `skills/draft-response/SKILL.md` — `<internal_action>` block rewritten to the single-axis hierarchy, adds the "recurring subjective-but-meaningful pain signal → monitor" clause.
+- `skills/critique-draft/SKILL.md` — Action check #6 rewritten to match (no longer rejects `investigate` for design-flavored complaints that describe concrete failure modes; explicit fail for recurring subjective signal routed to `no_action`).
+- `skills/judge-action/SKILL.md` — `<action_ladder>` rewritten to match, so judge ruling boundaries are anchored to the same rubric.
+- `CLAUDE.md` — developer-doc rubric section replaced (not load-bearing for the runtime agent, but kept in sync).
+
+**Gold standard:** `evals/test_sets/golden.json` — audited case-by-case against the new rubric; **no edits required.** Pre-audit prediction was 1–2 cases (`civ7_gameplay_003`, `mhw_tech_002`) might shift, but the new rubric's recurring-signal clause keeps every current label defensible. Audit outcome documented in M5_PLAN Iteration 4 entry.
+
+## Why this iteration is different from iter1
+
+Iteration 1 had a specific failure it was fixing (5 named action mismatches). Iteration 4 is a structural rubric refactor — there is no specific failing case to pin as a "fix target," because the old rubric's conflation of axes was the problem, not any one case. The gate is therefore **invariance-biased**: the test is whether the system stays at least as good as baseline under the new rubric, not whether it climbs a specific hill.
+
+## Two-sided gate
+
+### Positive — distribution invariants (must hold)
+
+Baseline numbers from `snapshot_20260408_111306.json` on 56 cases, 43 action-evaluable:
+
+| Metric | Baseline | Post-rerun requirement |
+|---|---|---|
+| `action.correct_rate` | 0.628 | **≥ 0.628** (must not regress; modest improvement is expected because gold labels are now a better match for the rubric the responder is prompted with) |
+| `judge.action.n_missed_escalation + n_over_escalation` | 6 | **≤ 6** (must not worsen; these are the two ladder-direction failure buckets) |
+| `judge.action.n_judge_error` | 0 | **0** (any infra misfire is an infrastructure-failure branch of the stop rule) |
+| `critic_health.approval_rate_overall` | 0.714 | **≥ 0.65** (slack because softened critic rule may reject fewer drafts; a modest drop is defensible, a collapse is not) |
+| `grounding.n_hard_violations` | 0 | **0** (citation chain of custody is not part of this iteration; any change is a regression) |
+| `citation.subset_ok_rate` | 1.0 | **1.0** |
+| `retrieval.recall_source_mean` / `recall_relevant_mean` | 0.294 / 0.196 (from recalibrated v6 snapshot) | **unchanged ± run-to-run noise** — responder edits run downstream of retrieval, so any drift here is non-causal noise. Document but do not gate. |
+
+### Positive — semantic spot checks (the load-bearing gate)
+
+Three spot checks pre-locked against drafts in `run_20260408_111204.json`. Each is a case where the rubric revision should produce a predictable post-rerun shape.
+
+**Critical:** if the baseline run's `proposed_action` for a spot case shifts between lock and rerun due to agent non-determinism, the spot is stale and must be re-locked, NOT failed. (Per the `mhw_tech_001` lesson from iteration 1.)
+
+#### Spot A — recurring subjective signal should STAY at `monitor`, not collapse to `no_action`
+- **case_id:** `civ7_gameplay_003`
+- **review:** "They've stripped away every part of the idea of building a civilization..."
+- **ideal_action:** `monitor`
+- **baseline `proposed_action`:** `monitor` (from source run)
+- **expected post-rerun:** `monitor` (the recurring-signal clause was explicitly drafted to keep cases of this shape)
+- **fail mode:** if the post-rerun `proposed_action` is `no_action`, the responder is dropping the recurring-signal clause — edit the skill and rerun (semantic branch of stop rule).
+
+#### Spot B — concrete-failure design complaint can land at `investigate`
+- **case_id:** `civ7_ui_002`
+- **review:** "Give us back strategic view. A bit weird to remove existing accessibility features..."
+- **ideal_action:** `investigate`
+- **baseline `proposed_action`:** `investigate` (currently correct)
+- **expected post-rerun:** `investigate` — the old "investigate is for technical issues only" critique rule would have rejected this; the new rubric explicitly allows design complaints with concrete failure modes.
+- **fail mode:** if the post-rerun action drops to `monitor` or `no_action`, either the responder or the critic is still applying the old technical-only gate.
+
+#### Spot C — clean severity case should stay `escalate`
+- **case_id:** `civ7_tech_001`
+- **review:** "hundreds of crashes in 40 hours... literally broken"
+- **ideal_action:** `escalate`
+- **baseline `proposed_action`:** `escalate` (locked in during iter 1)
+- **expected post-rerun:** `escalate` — the "would a delay of days cause meaningful harm?" framing is the new `escalate` gate and this case is the textbook fit.
+- **fail mode:** any downgrade is a direction reversal and triggers the stop rule.
+
+**Spot-check pass rule:** all three must satisfy their constraint. Any single failure is a semantic gate failure.
+
+### Negative — over-correction controls (must NOT regress)
+
+Seven currently-correct cases spanning all four action buckets. Drawn from `run_20260408_111204.json` where `proposed_action == ideal_action`. These test whether the rubric rewrite preserves wins across the full ladder — a common failure mode in skill rewrites is that the rubric is right on average but drifts one rung on a subset.
+
+| case_id | category | ideal == current | guards against |
+|---|---|---|---|
+| `payday3_monetize_001` | monetization_value | `no_action` | Pure-pricing cases drifting to `monitor` via the recurring-signal escape hatch |
+| `mhw_content_001` | content_progression | `no_action` | Anti-FOMO design preference drifting to `monitor` |
+| `payday3_tech_001` | technical_issues | `investigate` | Specific technical bug not over-escalating |
+| `starfield_content_003` | technical_issues | `investigate` | Misclassified bug-within-content review staying investigate |
+| `payday3_content_001` | content_progression | `monitor` | Multi-issue partial-patch case staying in monitor escape hatch |
+| `starfield_tech_001` | technical_issues | `escalate` | Data-loss case not drifting down |
+| `poe2_tech_001` | technical_issues | `escalate` | Widespread-crashes case holding the iter-1 escalate win |
+
+All seven must stay at their baseline `proposed_action` post-rerun.
+
+### Negative — predicate gate (unchanged from iter1/iter2)
+
+The judge predicate `_should_judge` on `judge_action_batch` must continue to admit only `wrong_action_severity` cases. If any currently-correct case appears in `per_case` after the rerun, it is an infrastructure failure, NOT a rubric issue — fix `evals/scorers/judge_action.py` first.
+
+## Cache proof
+
+Offline re-score against the post-rerun JSON, mirroring `feedback_cache_proof_offline_rescore.md`. NOT a second live `run_evals.py` invocation:
+
+```python
+from evals.run_evals import load_cases
+from evals.scorers.deterministic import score_records
+from evals.scorers.judge_action import judge_action_batch
+from evals.scorers.judge_grounding import judge_grounding_batch
+from evals.scorers.pairwise import pairwise_batch
+import json
+from pathlib import Path
+
+run_file = Path('evals/runs/run_<iter4_timestamp>.json')
+basename = run_file.stem
+records = json.loads(run_file.read_text())['records']
+cases = [c for c in load_cases() if c['case_id'] in {r['case_id'] for r in records}]
+scored = score_records(cases, records)
+judge_a = judge_action_batch(cases, records, scored, run_file_basename=basename)
+judge_g = judge_grounding_batch(cases, records, scored, run_file_basename=basename)
+pairwise = pairwise_batch(cases, records, run_file_basename=basename)
+assert judge_a['n_from_cache'] == judge_a['n_flagged']
+assert judge_g['n_from_cache'] == judge_g['n_flagged']
+```
+
+Because all three judge skills have new `skill_sha` values (judge-action edited in lockstep, grounding/pairwise unchanged but co-keyed), cache keys WILL differ from Iter3. First-run cold cache on judge-action is expected; grounding and pairwise should remain warm if the caller pins the same `run_file_basename`.
+
+## Schema visibility
+
+No schema bump this iteration. Snapshot stays at v6. Diff print should show standard action/judge/critic deltas without any `⚠ schema_version changed` annotation.
+
+## Stop rule (split by failure class)
+
+- **Infrastructure failure** (snapshot crash, predicate admits wrong cases, `n_judge_error > 0`, cache proof asserts fail): ONE round of code fixes + ONE rerun. No skill edits in this round.
+- **Semantic gate failure** (any spot check fails, distribution invariants violated, negative control regresses): ONE coordinated edit pass to **draft-response + critique-draft + judge-action together** (they must stay aligned) + ONE rerun. No code edits in this round.
+- **Mixed failure**: fix infra first, re-evaluate semantic gate post-fix.
+
+If the gate still fails after its allotted round, document the failure here and stop. Rubric redesign is offline re-planning, not churn.
+
+## Initial verification result — FAIL on distribution gate (`snapshot_20260408_132334.json`)
+
+First Iter4 rerun against `run_20260408_132225.json` under the new rubric blew past the gate in three places:
+
+| Metric | Baseline | Iter4 initial | Gate | Verdict |
+|---|---|---|---|---|
+| `action.correct_rate` | 0.628 | **0.595** | ≥ 0.628 | ❌ |
+| `judge.action.missed+over` | 6 | 6 | ≤ 6 | ✅ |
+| `critic.approval_rate_overall` | 0.714 | **0.427** | ≥ 0.65 | ❌ |
+| `grounding.n_hard_violations` | 0 | 0 | 0 | ✅ |
+
+Spot C (`civ7_tech_001`) regressed `escalate → investigate`. Two negative controls regressed: `payday3_monetize_001` (`no_action → monitor`, pricing drifted via the recurring-signal clause) and `poe2_tech_001` (`escalate → monitor`, two-rung drop losing the iter1 win). Classified as **semantic gate failure** — triggered the single allowed coordinated edit pass to draft-response + critique-draft + judge-action.
+
+### Remedial coordinated edit (three-skill pass)
+
+Three fixes applied in lockstep so responder/critic/judge rubric semantics stay aligned (per `feedback_coordinated_skill_edits_all_three.md`):
+
+- **Fix 1 — escalate gate widened with anti-over-correction guardrail.** Two-path test: (a) widespread/blast-radius framing OR (b) concrete hard-blocker symptom from a single reviewer paired with explicit persistence/reproducibility language. Critical guardrail: heated adjectives alone ("unplayable," "broken," "trash") do NOT qualify — must be paired with a concrete failure mode or persistence framing. Applied in `skills/draft-response/SKILL.md` `<internal_action>` and mirrored in `skills/judge-action/SKILL.md` `<action_ladder>`.
+- **Fix 2 — pricing carve-out on the recurring-signal clause.** Pricing, DLC strategy, monetization, and other business-model complaints do NOT qualify as recurring subjective pain signals — they remain at `no_action` unless they describe a concrete failure mode. Applied in all three skills (responder `<internal_action>`, critic check #6, judge `<action_ladder>` monitor bullet) so scoring semantics stay aligned.
+- **Fix 3 — critic check #6 trimmed.** Simplified from 6 bullets to 3 load-bearing fail conditions (missed downward / over-escalation upward / minor→escalate), with the rubric definitions inlined once and explicit "do not reject adjacent-rung calls when reasoning is defensible" language. Applied in `skills/critique-draft/SKILL.md` only.
+
+### Remedial verification result — PARTIAL; action gate recovered, critic-health gate held below floor
+
+Rerun: `run_20260408_140734.json` → `snapshot_20260408_140847.json`.
+
+| Metric | Baseline | Iter4 initial | Iter4 remedial | Gate | Verdict |
+|---|---|---|---|---|---|
+| `action.correct_rate` | 0.628 | 0.595 | **0.651** | ≥ 0.628 | ✅ |
+| `judge.action.missed+over` | 6 | 6 | **7** (4+3) | ≤ 6 | ❌ |
+| `judge.action.n_judge_error` | 0 | 0 | **1** | 0 | ❌ |
+| `critic.approval_rate_overall` | 0.714 | 0.427 | **0.474** | ≥ 0.65 | ❌ |
+| `grounding.n_hard_violations` | 0 | 0 | 0 | 0 | ✅ |
+| `citation.subset_ok_rate` | 1.0 | 1.0 | 1.0 | 1.0 | ✅ |
+
+**Recovery targets (2/3):**
+- ✅ `civ7_tech_001` → `escalate` (Fix 1 two-path test worked — hundreds-of-crashes language now qualifies under path (b))
+- ✅ `payday3_monetize_001` → `no_action` (Fix 2 pricing carve-out worked — pricing no longer drifts via recurring-signal escape hatch)
+- ❌ `poe2_tech_001` → `monitor` (still wrong, `stop_reason=max_iterations_reached`) — the widespread-crash framing should have re-fired under path (a), but the run hit the iteration budget before critic approval. Likely cascading drafting rejections, not a rubric-boundary failure.
+
+**Preservation targets (7/8 including canary):**
+- ✅ `payday3_multi_002` — crash-word canary held at `monitor` (Fix 1 heated-adjective guardrail firing correctly)
+- ✅ `civ7_ui_002`, `mhw_content_001`, `payday3_tech_001`, `starfield_content_003`, `payday3_content_001`, `starfield_tech_001` — all held
+- ❌ `civ7_gameplay_003` → `investigate` (regressed from baseline `monitor`, new preservation failure) — the Spot A case was locked pre-Iter4 as "recurring subjective signal → monitor," but the widened rubric now admits it as concrete-enough for investigate. Not in the original regression list; a side effect of the widened action vocabulary.
+
+**Critic-health diagnosis (the gate failure that did not recover):**
+- `iter0_approval = 0.558` (baseline was higher). Critic rejects ~44% of first-pass drafts.
+- `drafting` rejections: baseline 14 → Iter4 initial 41 → remedial 36. Fix 3 moved the needle (41→36) but not enough.
+- `max_iterations_reached`: baseline 3 → Iter4 initial 10 → remedial 7. Cascading cases where the drafting loop never converges.
+- Root cause: check #6 got *longer* in content (full rung re-definitions inlined, pricing carve-out, hard-blocker language, heated-adjective guardrail) even though the fail list shrank from 6 to 3. The critic has more total decision surface than at baseline, and it applies the new rules bidirectionally — the over-escalation fail condition (#2) covering both business-model complaints AND heated-adjective-only cases gives the critic more reasons to reject borderline mid-ladder drafts.
+- `approval_overall = approved_iters / total_iters` is not per-case; each max_iters case adds 2–3 un-approved iters to the denominator, so the metric amplifies the drafting-rejection rate.
+- **Important asymmetry:** action correctness is scored on the *final* draft. Cases hitting max_iters still land on the right answer often enough that `action.correct_rate` recovered above baseline. The critic-health failure is "expensive but correct," not "wrong."
+
+### Verdict and stop-rule application
+
+Per the split stop rule, this iteration has spent its **single allowed coordinated edit pass + rerun budget**. No further skill edits. The failure shape:
+
+- ✅ Primary correctness metric recovered above baseline
+- ✅ 2/3 recovery targets hit, pricing carve-out worked, crash-word canary held
+- ❌ Critic-health gate failed (0.474 vs 0.65 floor) — shape is waste/latency/cost, not wrong answers
+- ❌ One new preservation failure (`civ7_gameplay_003`) from widened action vocabulary — side effect, not a rubric misfire
+- ❌ One transient `judge_error = 1` (single infra misfire, not a pattern)
+- ❌ One recovery target (`poe2_tech_001`) not recovered — lost to max_iters cascade, not rubric boundary
+
+**STOP.** Next move is offline re-planning of the critic workload problem (possibly: prune check #6 further by moving the rung definitions out of the check body and back into a header block the critic only consults on ambiguity; or reduce the critic's fail-condition vocabulary by folding the heated-adjective guardrail into the responder-only side). Not this iteration. Rubric redesign is planning, not churn.

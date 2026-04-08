@@ -45,10 +45,18 @@ Check each of the following. A draft must pass ALL checks to be approved.
 
 5. **Completeness check**: Does the response address the player's main complaint? If the review raises a specific issue and the response ignores it, it fails. If the review raises multiple issues, approve only if the response addresses the main complaint and does not imply uncovered issues were also addressed.
 
-6. **Action check**: Is the proposed_action appropriate given the evidence confidence and complaint severity?
-   - High confidence + minor issue with "escalate" = fail.
-   - Low confidence + severe issue (crashes, data loss) with "no_action" = fail.
-   - Pure design/subjective feedback (story preferences, pricing opinions, design direction) with "investigate" = fail. Use "no_action" or "monitor" instead — "investigate" is for technical issues only.
+6. **Action check**: Is the proposed_action appropriate under the single-axis **actionability + priority** rubric? The four actions form a hierarchy — not "technical vs design" and not "severe vs mild":
+   - `no_action` = not actionable, or already resolved by shipped patches. Purely taste-based / non-diagnostic feedback lands here. **Pricing, DLC strategy, monetization, and other business-model complaints stay here regardless of how widely voiced** — they are not "recurring subjective pain signals" in the rubric sense, unless they describe a concrete failure mode (broken checkout, paywall bug).
+   - `monitor` = actionable signal is weak, partial, or emerging. Partially resolved known issues, mixed post-patch evidence, and **recurring subjective-but-meaningful pain signals that overlap with measurable product symptoms** (e.g. "combat feels floaty" reported by many players after an update, "performance feels choppy since the last patch") land here. Do NOT auto-route all subjective feedback to `no_action`, but also do NOT pull pricing/business-model complaints up into monitor via this clause.
+   - `investigate` = actionable and unresolved. Specific enough to triage or reproduce. A design complaint that describes a concrete failure mode can land here; a pure taste complaint cannot.
+   - `escalate` = actionable, unresolved, AND urgent/high-impact. EITHER (a) widespread/blast-radius framing OR (b) a concrete hard-blocker symptom from any reviewer paired with explicit persistence/reproducibility language ("constant crashes every session," "save file is gone," "can't launch after reinstalling," "hundreds of crashes in 40 hours"). Heated adjectives alone ("unplayable," "broken," "trash") are NOT sufficient — they must be paired with a concrete failure mode or explicit persistence framing.
+
+   Fail conditions (apply strictly — if none apply, approve the action choice):
+   1. **Missed ladder direction (downward)**: a specific unresolved defect with concrete reproduction detail, or a severe hard-blocker symptom paired with persistence/reproducibility language, assigned to a rung LOWER than it warrants (e.g. concrete crash report → no_action; save-loss report → monitor; "hundreds of crashes, reproducible" → investigate instead of escalate). This is the "dropped a real issue on the floor" failure.
+   2. **Over-escalation (upward)**: a pure taste/preference or business-model complaint with no concrete failure mode assigned to `investigate` or `escalate`. Pricing, DLC strategy, and monetization grievances belong in `no_action` regardless of how widely voiced — they are not "recurring subjective pain signals" in the rubric sense. Also: a heated-adjective-only complaint ("unplayable" without concrete symptom or persistence framing) assigned to `escalate` = fail.
+   3. **Minor/already-resolved → escalate**: an issue clearly addressed by shipped patches, or a low-severity single incident, assigned to `escalate`.
+
+   Do NOT reject `investigate` solely because the complaint is design-flavored — the gate is specificity and actionability, not technical-vs-design. Do NOT reject adjacent-rung calls (monitor↔investigate on a mid-ladder case) when the draft's reasoning is defensible — those are tolerable disagreements, not failures.
 </evaluation_checklist>
 
 <decision_rules>

@@ -25,16 +25,20 @@ This judge runs **only on cases where `ideal_action != predicted_action`**. The 
 </task>
 
 <action_ladder>
-The four actions form a severity ladder, lowest to highest:
+The four actions form a single-axis hierarchy along **actionability + priority** — not "technical vs design" and not "severe vs mild." From lowest to highest:
 
 ```
 no_action  <  monitor  <  investigate  <  escalate
 ```
 
-- **no_action** — fully addressed by patches, OR subjective/design feedback (pricing, story preference, design taste)
-- **monitor** — known area not fully resolved, OR design feedback overlapping with a trackable technical concern
-- **investigate** — specific *technical* issue (bug, crash, performance, broken mechanic) not addressed by patches; needs dev attention
-- **escalate** — severe or widespread issue (crashes, data loss, security); urgent attention
+- **no_action** — not actionable, or already resolved. Fully addressed/explained by shipped patches, OR too vague / purely emotional / taste-only / non-diagnostic to support a concrete next step. Pure preference complaints land here. Pricing complaints land here unless they describe a concrete failure mode.
+- **monitor** — actionable signal is weak, partial, or emerging. Partially resolved known issues, mixed post-patch evidence, weak-specificity repeat pain points, AND **recurring subjective-but-meaningful pain signals that overlap with measurable product symptoms** (e.g. "combat feels floaty" from many players after an update, "performance feels choppy since the last patch"). Do NOT auto-route all subjective feedback to `no_action` — recurrence itself is real product signal. **Exclusion: pricing, DLC strategy, monetization, and other business-model complaints are NOT recurring subjective pain signals in this clause — they remain at `no_action` unless they describe a concrete failure mode. A `no_action` ruling on a widely-voiced pricing complaint is correct, not a missed_escalation.**
+- **investigate** — actionable and unresolved. Specific enough to triage or reproduce, not clearly addressed by patches. The gate is "specific and actionable vs vague and preference-based" — a design complaint describing a concrete failure mode can land here; a pure taste complaint cannot. NOT restricted to technical issues.
+- **escalate** — actionable, unresolved, AND urgent/high-impact. The distinguishing feature versus `investigate` is "would a delay of days cause meaningful harm?" — and "harm" counts when it applies to the individual reviewer, not only when blast radius is explicit. Two paths qualify:
+  - **(a) Widespread/blast-radius framing.** Crashes "for everyone," post-patch regressions affecting many players, account lockouts, security/privacy/payment issues, save/data loss at scale.
+  - **(b) Concrete hard-blocker symptom from a single reviewer** — paired with explicit persistence, reproducibility, or blocker framing ("constant crashes every session," "save file is gone," "game won't launch after reinstalling," "can't progress past X after multiple attempts," "hundreds of crashes in 40 hours"). The symptom must be concrete AND the review must convey persistence/reproducibility (not a one-off).
+
+  **Critical guardrail: heated adjectives alone do NOT qualify for escalate.** Words like "unplayable," "broken," "trash," "terrible" in isolation are not enough — they must be paired with a concrete failure mode or explicit persistence/reproducibility language. A server-lag venting review that says "pretty much unplayable" without a specific reproducible hard blocker stays at `monitor`, not `escalate`. A `monitor` prediction on such a case is correct, not a missed_escalation.
 
 A "rung" is one step on this ladder. `monitor → investigate` is one rung. `no_action → escalate` is three rungs.
 </action_ladder>

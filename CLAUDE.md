@@ -95,10 +95,28 @@ steam-review-agent/
 Hybrid RAG: vector (ChromaDB + all-MiniLM-L6-v2) + BM25 → RRF fusion (top 12) → cross-encoder rerank (top 5) → Investigator node (up to 2 self-RAG retries with query reformulation). Reranker scores are internal to the retrieval pipeline — they order results but are not passed to the Investigator LLM (to avoid anchoring on uncalibrated floats).
 
 ## Proposed actions
-- **no_action** — fully addressed by patches, or subjective/design-level feedback (pricing, story, design direction)
-- **monitor** — known area not fully resolved, or design feedback overlapping with trackable technical concerns
-- **investigate** — specific *technical* issue (bugs, crashes, performance) not addressed by patches. NOT for design opinions
-- **escalate** — severe/widespread issue (crashes, data loss, security)
+
+The four actions form a clean hierarchy along a single axis: **actionability + priority**. Earlier versions of this rubric mixed "technical vs design" with "severe vs mild," which overlapped badly at the `investigate`/`monitor` and `no_action`/`monitor` boundaries. The current version separates them:
+
+- `no_action` = not actionable, or already resolved
+- `monitor` = actionable signal is weak / partial / emerging
+- `investigate` = actionable and unresolved
+- `escalate` = actionable, unresolved, and urgent/high-impact
+
+Full definitions:
+
+- **no_action** — no follow-up warranted: already addressed or explained by shipped patches, or the feedback is too vague / purely emotional / taste-only / non-diagnostic to support a concrete next step. Pure preference complaints ("I don't like the art style") land here. Pricing complaints land here unless they describe a concrete failure mode (e.g. a broken checkout flow).
+- **monitor** — plausible or recurring issue signal that is not yet specific or severe enough for immediate investigation. Includes partially resolved known issues, resurfacing complaints after a patch where the evidence is mixed, repeated pain points with weak specificity, and recurring subjective/product feedback that overlaps with measurable symptoms. Mental model: "keep eyes on this; don't ignore it, but don't open an urgent triage ticket yet."
+- **investigate** — specific unresolved issue with enough concrete detail to actively triage or reproduce, not clearly addressed by patches or known-issue notes. Usually bugs, crashes, performance regressions, progression blockers, broken UX flows, or other actionable defects. The gate is "specific and actionable vs vague and preference-based" — a design complaint that describes a concrete failure mode (e.g. "the crafting menu needs 4 clicks to exit, breaks keyboard nav") can land here; a pure taste complaint ("crafting feels clunky") cannot.
+- **escalate** — urgent high-priority issue requiring immediate attention because of severity, blast radius, or risk. The distinguishing feature versus `investigate` is not "technical vs design" — it's "would a delay of days cause meaningful harm?" — and "harm" counts when it applies to the individual reviewer, not only when blast radius is explicit. Two paths qualify:
+  - **(a) Widespread/blast-radius framing.** Widespread crash-on-launch, save/data loss at scale, security/privacy/payment issues, account lockouts, or major post-patch regressions affecting many users.
+  - **(b) Concrete hard-blocker symptom from a single reviewer** — paired with explicit persistence, reproducibility, or blocker framing. Examples: "constant crashes that reproduce every session," "save file is gone," "game won't launch after reinstalling," "can't progress past X after multiple attempts," "hundreds of crashes in 40 hours." The symptom must be concrete AND the review must convey persistence/reproducibility (not a one-off).
+
+  **Heated adjectives alone do NOT qualify for escalate.** Words like "unplayable," "broken," "trash," "terrible" in isolation are not enough — they must be paired with a concrete failure mode or explicit persistence/reproducibility language. A server-lag venting review that says "pretty much unplayable" without a specific reproducible hard blocker stays at `monitor`, not `escalate`.
+
+Important nuance on subjective feedback: **do not automatically route all subjective/design-level feedback to `no_action`.** Purely taste-based single-player comments go to `no_action`; recurring subjective-but-meaningful pain signals ("combat feels floaty" reported by many players after an update) go to `monitor` because the recurrence itself is a real product signal even when the individual comment is non-diagnostic.
+
+**Exclusion on the recurring-signal clause:** pricing, DLC strategy, monetization structure, and other business-model complaints do NOT qualify under this clause. They stay at `no_action` unless they describe a concrete failure mode (e.g. a broken checkout flow, a paywall bug). The clause is for subjective pain that overlaps with measurable product symptoms (combat feel, performance perception, difficulty feel, UI friction), not for value-judgment disagreements with the business model.
 
 ## Known gotchas
 - Agent skill files use YAML frontmatter — `load_skill()` strips it before sending to API

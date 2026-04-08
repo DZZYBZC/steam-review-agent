@@ -30,7 +30,7 @@ SNAPSHOTS_DIR = Path(__file__).resolve().parent / "snapshots"
 # (field renamed, removed, or semantics changed). Visible in the snapshot
 # payload and in the diff print path so transitions are interpretable.
 # See git log for the per-version history.
-SNAPSHOT_SCHEMA_VERSION = 5
+SNAPSHOT_SCHEMA_VERSION = 6
 
 # Metrics surfaced in the snapshot summary AND used for the one-line diff.
 # Order is preserved in the diff output. Each entry is a dotted path into
@@ -38,7 +38,14 @@ SNAPSHOT_SCHEMA_VERSION = 5
 DIFF_METRICS: list[tuple[str, str, str]] = [
     # (label, dotted_path, format_spec)
     ("action_correct_rate",          "action.correct_rate",                ".3f"),
-    ("recall_at_k_mean",             "retrieval.recall_at_k_mean",         ".3f"),
+    # Schema v6: recall_at_k_mean (which conflated raw-retriever output with
+    # investigator filtering) was split into source vs relevant recall, plus
+    # companion concept hit-rates and a filter-drop diagnostic.
+    ("recall_source_mean",           "retrieval.recall_source_mean",       ".3f"),
+    ("recall_relevant_mean",         "retrieval.recall_relevant_mean",     ".3f"),
+    ("concept_hit_source_rate",      "retrieval.concept_hit_source_rate",  ".3f"),
+    ("concept_hit_relevant_rate",    "retrieval.concept_hit_relevant_rate",".3f"),
+    ("n_lost_to_filter",             "retrieval.n_lost_to_filter",         "d"),
     ("citation_subset_ok_rate",      "citation.subset_ok_rate",            ".3f"),
     # Schema v2: grounding.compliant_rate (a rate that mixed two different
     # things) replaced by an explicit count of HARD violations only, plus a
@@ -220,12 +227,28 @@ def _build_aggregates(
         if s.get("stop_reason") == "no_response_needed"
     )
 
-    # Recall @ k (only over cases with non-empty must_include)
-    recall_vals = [
-        s["recall_at_k"]["recall"] for s in per_case.values()
-        if s["recall_at_k"]["recall"] is not None
+    # Retrieval (schema v6): slot-based recall with source vs relevant pools.
+    # Cases with empty must_include are not_applicable and excluded entirely.
+    # Cases where the gate skipped retrieval (source_ids empty) are surfaced
+    # as a separate count and excluded from the recall/concept-hit means —
+    # they're a gating failure mode, not a retrieval failure mode.
+    retrieval_scored = [
+        s["retrieval_recall"] for s in per_case.values()
+        if not s["retrieval_recall"].get("not_applicable")
     ]
-    recall_mean = (sum(recall_vals) / len(recall_vals)) if recall_vals else None
+    n_gate_false_skip = sum(1 for s in retrieval_scored if s.get("gate_false_skip"))
+    eligible = [s for s in retrieval_scored if not s.get("gate_false_skip")]
+
+    def _mean(vals: list[float]) -> float | None:
+        return round(sum(vals) / len(vals), 3) if vals else None
+
+    recall_source_mean = _mean([s["recall_source"] for s in eligible])
+    recall_relevant_mean = _mean([s["recall_relevant"] for s in eligible])
+    concept_hit_source_rate = _mean([1.0 if s["concept_hit_source"] else 0.0 for s in eligible])
+    concept_hit_relevant_rate = _mean([1.0 if s["concept_hit_relevant"] else 0.0 for s in eligible])
+    # Chunks the retriever surfaced but the investigator's Self-RAG filter dropped.
+    n_lost_to_filter = sum(len(s.get("dropped_by_filter") or []) for s in eligible)
+    n_cases_with_drops = sum(1 for s in eligible if s.get("dropped_by_filter"))
 
     # Citation subset
     n_cite_ok = sum(1 for s in per_case.values() if s["citation_audit"]["subset_ok"])
@@ -285,8 +308,15 @@ def _build_aggregates(
             "correct_rate": action_correct_rate,
         },
         "retrieval": {
-            "recall_at_k_mean": recall_mean,
-            "n_with_must_include": len(recall_vals),
+            "recall_source_mean": recall_source_mean,
+            "recall_relevant_mean": recall_relevant_mean,
+            "concept_hit_source_rate": concept_hit_source_rate,
+            "concept_hit_relevant_rate": concept_hit_relevant_rate,
+            "n_with_must_include": len(retrieval_scored),
+            "n_eligible_for_recall": len(eligible),
+            "n_gate_false_skip_in_recall_pool": n_gate_false_skip,
+            "n_lost_to_filter": n_lost_to_filter,
+            "n_cases_with_filter_drops": n_cases_with_drops,
         },
         "citation": {
             "subset_ok_rate": cite_rate,
@@ -414,6 +444,11 @@ def diff_snapshots(prev: dict, curr: dict) -> list[str]:
             (3, 5): "judge_action (v3→v4) AND pairwise revision-improvement (v4→v5) layers added",
             (2, 5): "judge_grounding (v2→v3), judge_action (v3→v4), AND pairwise (v4→v5) layers added",
             (1, 5): "grounding metric split (v1→v2), judge_grounding (v2→v3), judge_action (v3→v4), AND pairwise (v4→v5) layers added",
+            (5, 6): "retrieval block split into source vs relevant recall, concept hit-rate companion added, false-skip cases separated, lost-to-filter diagnostic added, recall_at_k_mean removed (was a conflation)",
+            (4, 6): "pairwise (v4→v5) AND retrieval recalibration (v5→v6)",
+            (3, 6): "judge_action (v3→v4), pairwise (v4→v5), AND retrieval recalibration (v5→v6)",
+            (2, 6): "judge_grounding (v2→v3), judge_action (v3→v4), pairwise (v4→v5), AND retrieval recalibration (v5→v6)",
+            (1, 6): "full schema evolution (v1→v6)",
         }
         note = annotations.get((prev_v, curr_v), "schema shape changed")
         lines.append(

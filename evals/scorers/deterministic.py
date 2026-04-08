@@ -37,31 +37,125 @@ NO_RESPONSE_STOP_REASONS = {"no_response_needed"}
 
 # ---------- Per-case scorers ----------------------------------------------
 
-def recall_at_k(case: dict, result: dict) -> dict:
+def _slot_label(slot: Any, idx: int) -> str:
     """
-    Fraction of golden must_include_chunk_ids that the Investigator surfaced
-    in evidence_package.relevant_ids.
+    Human-readable label for a requirement slot, used in diagnostic lists
+    (missing_from_source, dropped_by_filter).
+    """
+    if isinstance(slot, str):
+        return slot
+    if isinstance(slot, dict) and "any_of" in slot:
+        any_of = slot["any_of"]
+        if isinstance(any_of, list) and any_of:
+            return f"any_of[{'|'.join(str(x) for x in any_of)}]"
+    return f"slot_{idx}"
 
-    Empty must_include → not_applicable=True (subjective/no-evidence cases).
+
+def _slot_hit(slot: Any, pool: set[str], idx: int) -> bool:
+    """
+    A requirement slot is hit iff:
+      - string slot "X": X ∈ pool
+      - {"any_of": [...]}: at least one element ∈ pool
+    Raises ValueError on any other shape (including a bare list, which is
+    ambiguous — force callers to the explicit any_of object form).
+    """
+    if isinstance(slot, str):
+        return slot in pool
+    if isinstance(slot, dict):
+        if "any_of" in slot:
+            any_of = slot["any_of"]
+            if not isinstance(any_of, list) or not all(isinstance(x, str) for x in any_of):
+                raise ValueError(
+                    f"Slot {idx}: 'any_of' must be a list of chunk_id strings, got {type(any_of).__name__}"
+                )
+            return any(x in pool for x in any_of)
+        raise ValueError(
+            f"Slot {idx}: dict slot has no recognized key (expected 'any_of'), got keys={list(slot.keys())}"
+        )
+    raise ValueError(
+        f"Slot {idx}: must_include_chunk_ids entry must be a string or {{'any_of': [...]}} object, got {type(slot).__name__}"
+    )
+
+
+def retrieval_recall(case: dict, result: dict) -> dict:
+    """
+    Slot-based retrieval recall with both source-level and post-filter pools.
+
+    Each entry in must_include_chunk_ids is one requirement SLOT:
+      - flat string "chunkA" — one required chunk (legacy; scores identically
+        to the previous recall_at_k for cases using only flat strings)
+      - {"any_of": ["chunkA_v1", "chunkA_v2"]} — one required concept expressed
+        across equivalent chunks; the slot is hit if any element is retrieved
+
+    The recall denominator is the number of slots, not the total chunk count.
+    Equivalence groups never inflate the denominator.
+
+    Two pools are scored independently:
+      - source_ids:   raw retriever top-5 (pre-investigator filter)
+      - relevant_ids: post-Self-RAG filter (what the investigator kept)
+
+    Concept hit-rate is a companion metric: "did at least one required slot
+    land in the pool" — recall asks how much, concept_hit asks if we got into
+    the right neighborhood at all.
+
+    Empty must_include → not_applicable=True.
+    gate_false_skip=True when must_include is non-empty but source_ids is empty
+    (the runtime gate skipped retrieval — already counted as false_skip in
+    gating_accuracy; excluded from the recall mean in the aggregate).
     """
     must = list(case.get("must_include_chunk_ids", []) or [])
     if not must:
         return {
-            "recall": None,
-            "hits": 0,
-            "expected": 0,
-            "missing": [],
+            "recall_source": None,
+            "recall_relevant": None,
+            "hits_source": 0,
+            "hits_relevant": 0,
+            "concept_hit_source": None,
+            "concept_hit_relevant": None,
+            "n_required_slots": 0,
+            "missing_from_source": [],
+            "dropped_by_filter": [],
+            "gate_false_skip": False,
             "not_applicable": True,
         }
 
-    relevant = set((result.get("evidence_package") or {}).get("relevant_ids", []) or [])
-    hits = [m for m in must if m in relevant]
-    missing = [m for m in must if m not in relevant]
+    ep = result.get("evidence_package") or {}
+    source_pool = set(ep.get("source_ids", []) or [])
+    relevant_pool = set(ep.get("relevant_ids", []) or [])
+
+    n_slots = len(must)
+    hits_source = 0
+    hits_relevant = 0
+    missing_from_source: list[str] = []
+    dropped_by_filter: list[str] = []
+
+    for idx, slot in enumerate(must):
+        in_source = _slot_hit(slot, source_pool, idx)
+        in_relevant = _slot_hit(slot, relevant_pool, idx)
+        label = _slot_label(slot, idx)
+        if in_source:
+            hits_source += 1
+        else:
+            missing_from_source.append(label)
+        if in_relevant:
+            hits_relevant += 1
+        elif in_source:
+            # Retriever surfaced it, investigator filter dropped it.
+            dropped_by_filter.append(label)
+
+    gate_false_skip = (ep.get("retrieval_decision") == "skipped") or not source_pool
+
     return {
-        "recall": round(len(hits) / len(must), 3),
-        "hits": len(hits),
-        "expected": len(must),
-        "missing": missing,
+        "recall_source": round(hits_source / n_slots, 3),
+        "recall_relevant": round(hits_relevant / n_slots, 3),
+        "hits_source": hits_source,
+        "hits_relevant": hits_relevant,
+        "concept_hit_source": hits_source >= 1,
+        "concept_hit_relevant": hits_relevant >= 1,
+        "n_required_slots": n_slots,
+        "missing_from_source": missing_from_source,
+        "dropped_by_filter": dropped_by_filter,
+        "gate_false_skip": gate_false_skip,
         "not_applicable": False,
     }
 
@@ -333,7 +427,7 @@ def critic_health(records: list[dict]) -> dict:
 # ---------- Convenience: run all per-case scorers -------------------------
 
 PER_CASE_SCORERS = {
-    "recall_at_k": recall_at_k,
+    "retrieval_recall": retrieval_recall,
     "action_correctness": action_correctness,
     "citation_audit": citation_audit,
     "evidence_utilization": evidence_utilization,

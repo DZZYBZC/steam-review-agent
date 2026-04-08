@@ -112,10 +112,12 @@ def _per_category_section(cases: list[dict], scored: dict) -> list[str]:
         cat = case_by_id.get(case_id, {}).get("annotated_category", "?")
         grouped[cat].append((case_id, scores))
 
-    header = f"  {'category':<22} {'n':>3}  {'action✓':>10}  {'recall@k':>10}  {'cite⊆rel':>10}  {'bandH✓':>8}  {'lc⚑':>4}"
+    header = f"  {'category':<22} {'n':>3}  {'action✓':>10}  {'recall_src':>10}  {'recall_rel':>10}  {'cite⊆rel':>10}  {'bandH✓':>8}  {'lc⚑':>4}"
     lines.append(header)
     lines.append("  " + "-" * (len(header) - 2))
 
+    total_drops = 0
+    total_cases_with_drops = 0
     for cat in sorted(grouped):
         rows = grouped[cat]
         n = len(rows)
@@ -123,8 +125,18 @@ def _per_category_section(cases: list[dict], scored: dict) -> list[str]:
         action_rows = [s for _, s in rows if s["action_correctness"].get("applicable", True)]
         n_action_evaluable = len(action_rows)
         n_act = sum(1 for s in action_rows if s["action_correctness"]["correct"])
-        recall_vals = [s["recall_at_k"]["recall"] for _, s in rows if s["recall_at_k"]["recall"] is not None]
-        recall_avg = sum(recall_vals) / len(recall_vals) if recall_vals else None
+        # Retrieval: schema v6 slot-based recall. Exclude not_applicable AND
+        # gate_false_skip cases from the per-category means (they're surfaced
+        # in the aggregate retrieval block instead).
+        retrieval_eligible = [
+            s["retrieval_recall"] for _, s in rows
+            if not s["retrieval_recall"].get("not_applicable")
+            and not s["retrieval_recall"].get("gate_false_skip")
+        ]
+        src_vals = [r["recall_source"] for r in retrieval_eligible]
+        rel_vals = [r["recall_relevant"] for r in retrieval_eligible]
+        recall_src_avg = sum(src_vals) / len(src_vals) if src_vals else None
+        recall_rel_avg = sum(rel_vals) / len(rel_vals) if rel_vals else None
         n_cite_ok = sum(1 for _, s in rows if s["citation_audit"]["subset_ok"])
         # bandH✓ counts only HARD band violations (compliant=True under v2 schema).
         n_band_ok = sum(1 for _, s in rows if s["grounding_band_compliance"]["compliant"])
@@ -133,9 +145,19 @@ def _per_category_section(cases: list[dict], scored: dict) -> list[str]:
             1 for _, s in rows
             if s["grounding_band_compliance"].get("flag") == "low_conf_with_cite"
         )
+        # Filter drops rolled across the whole table.
+        for r in retrieval_eligible:
+            drops = r.get("dropped_by_filter") or []
+            total_drops += len(drops)
+            if drops:
+                total_cases_with_drops += 1
         lines.append(
-            f"  {cat:<22} {n:>3}  {_pct(n_act, n_action_evaluable):>10}  {_fmt_float(recall_avg, 2):>10}  {_pct(n_cite_ok, n):>10}  {_pct(n_band_ok, n):>8}  {n_lc_flag:>4}"
+            f"  {cat:<22} {n:>3}  {_pct(n_act, n_action_evaluable):>10}  {_fmt_float(recall_src_avg, 2):>10}  {_fmt_float(recall_rel_avg, 2):>10}  {_pct(n_cite_ok, n):>10}  {_pct(n_band_ok, n):>8}  {n_lc_flag:>4}"
         )
+    lines.append(
+        f"  source→relevant drops: {total_drops} chunks lost to investigator filter "
+        f"across {total_cases_with_drops} case(s)"
+    )
     return lines
 
 

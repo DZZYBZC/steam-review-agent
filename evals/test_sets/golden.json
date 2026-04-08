@@ -11,7 +11,7 @@
       "annotated_category": "human-corrected category \u2014 what the case should be treated as",
       "ideal_action": "no_action | monitor | investigate | escalate",
       "gate_should_skip": "true if Investigator's _should_retrieve gate should skip retrieval (used by gating_accuracy scorer)",
-      "must_include_chunk_ids": "chunk_ids retrieval MUST surface (recall@k scorer). Empty for subjective/no-evidence cases.",
+      "must_include_chunk_ids": "List of requirement slots for the retrieval_recall scorer. Each slot is either a chunk_id string (one exact required chunk) or an object of shape {\"any_of\": [chunk_id, ...]} (one required concept expressed across equivalent chunks — the slot is hit if any element of any_of is retrieved). Each slot counts as one unit in the recall denominator. Empty for subjective/no-evidence cases.",
       "forbidden_chunk_ids": "chunk_ids retrieval should NOT cite (anti-recall \u2014 cited_irrelevant_patch detection). Optional.",
       "expected_failure_modes": "failure-mode names the agent is likely to hit if mishandled \u2014 used to tune scorer thresholds, not as ground truth",
       "ideal_tone": "calm | empathetic | terse_acknowledgment | urgent_empathetic \u2014 guides judge dimension",
@@ -184,7 +184,7 @@
       "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [
-        "1823191198599924-0",
+        {"any_of": ["1823191198599924-0", "1823191198599924-1"]},
         "1802354289595370-5"
       ],
       "forbidden_chunk_ids": [],
@@ -802,8 +802,8 @@
       "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [
-        "1818752592127214-9",
-        "1818752592134338-37"
+        {"any_of": ["1818752592127214-9", "1818752592127214-15"]},
+        {"any_of": ["1818752592134338-37", "1825093633183688-24", "1825093633183688-20", "1823191198598921-7"]}
       ],
       "forbidden_chunk_ids": [],
       "expected_failure_modes": [

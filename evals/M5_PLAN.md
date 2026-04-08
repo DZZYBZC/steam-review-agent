@@ -207,6 +207,38 @@ Before V1.5:
 
 Living record of eval-driven changes that shipped after the V1 verification gate. Each entry: what landed, what gate it had to pass, what surprised us. New entries go at the top.
 
+### 2026-04-08 — Iteration 3: retrieval scorer + gold recalibration (scorer-only pass)
+- **Motivation:** The README headline `recall_at_k_mean = 0.196` was the weakest number on the board, and an audit showed it was three problems rolled into one: (a) it measured post-Self-RAG-filter recall, not raw retriever recall; (b) 2 false-skip cases (gate refused retrieval) depressed the denominator with hard zeros; (c) the gold was chunk-ID-strict, so when the same fact was split across patch versions the retriever got zero credit for finding an equivalent chunk. Goal: make the metric honest without touching the agent and without moving any other number in the README Results section.
+- **Shipped:**
+  - `evals/scorers/deterministic.py::retrieval_recall` — replaced `recall_at_k`. Returns `recall_source` (raw top-5), `recall_relevant` (post-Self-RAG filter), companion `concept_hit_source`/`concept_hit_relevant` ("did at least one required slot land in the pool at all"), `n_required_slots`, `missing_from_source`, `dropped_by_filter`, `gate_false_skip`, `not_applicable`. Each entry in `must_include_chunk_ids` is one requirement SLOT; slots can be a flat string or `{"any_of": [...]}`. Bare lists and unrecognized dict shapes raise a loud `ValueError` at score time.
+  - `evals/test_sets/golden.json` — surgical edits to 2 cases:
+    - `mhw_perf_003`: both slots widened. Slot 1 `1818752592127214-9` → `{any_of: [-9, -15]}` (both chunks of the "Our Commitment to Improving Stability and Performance" blog post, adjacent chunks in the same document). Slot 2 `1818752592134338-37` (Ver.1.040 CPU/GPU optimization commitment) → `{any_of: [1818752592134338-37, 1825093633183688-24, 1825093633183688-20, 1823191198598921-7]}` — the Ver.1.041.00.00 patch chunks and the Ver.1.040.03.01 verification chunk all deliver the same fact: CPU/GPU performance optimizations across the 1.040–1.041 patch sequence. This is the paradigm version-split case.
+    - `payday3_content_003`: slot `1823191198599924-0` (Blog #49 intro) → `{any_of: [-0, -1]}`. Chunk -1 is the Peer-to-Peer section of the same blog post and carries the fact-bearing content; requiring the intro chunk specifically was gold overspecification.
+  - 9 other zero-hit cases audited and left unchanged — they are legitimate retrieval misses where no retrieved chunk expresses the same fact as any required chunk. Stop-and-flag rule held: the audit surfaced 11 candidates, only 2 met the "clearly-justified equivalence" bar.
+  - `evals/snapshot.py` — schema **v5 → v6**. DIFF_METRICS: `recall_at_k_mean` row removed, replaced by 5 new rows (`recall_source_mean`, `recall_relevant_mean`, `concept_hit_source_rate`, `concept_hit_relevant_rate`, `n_lost_to_filter`). Retrieval aggregate block rewritten to report both recall numbers, both concept-hit rates, `n_gate_false_skip_in_recall_pool` (excluded from the mean), `n_lost_to_filter`, `n_cases_with_filter_drops`. v5→v6 annotation chain added.
+  - `evals/reporter.py` — per-category table now has `recall_src` and `recall_rel` columns; one-liner below the table reports "source→relevant drops: N chunks lost to investigator filter across M case(s)".
+  - `evals/_recalibrate_audit.py` — throwaway audit helper that loads the frozen run JSON, identifies zero-hit cases, and prints the required chunk text (fetched from ChromaDB) alongside the actual retrieved top-5 so a human can judge equivalence group candidates.
+  - `evals/_recalibrate_rescore.py` — standalone offline rescore helper (~140 lines). Reads `run_20260408_111204.json`, runs every scorer over the frozen records (judges hit disk cache, zero LLM calls), writes a `_RECALIBRATED` snapshot, then machine-asserts byte-identity on 38 guarded non-retrieval fields vs `snapshot_20260408_111306.json`. Exits with code 1 on any violation.
+- **Pre-recalibration state (for before/after comparison):** `recall_at_k_mean = 0.196` (28 cases); 16 zero-hit cases on the post-filter view (11 of which were zero-hit on the source view — the other 5 found at least 1 required chunk on raw retrieval but the filter dropped all of them).
+- **Post-recalibration results (offline rescore, frozen records):**
+  - `recall_source_mean`: 0.385 (was conflated as 0.196)
+  - `recall_relevant_mean`: 0.269
+  - `concept_hit_source_rate`: 0.654 (17 / 26 cases have ≥1 required concept in raw top-5)
+  - `concept_hit_relevant_rate`: 0.538 (14 / 26 post-filter)
+  - `n_lost_to_filter`: 6 chunks across 4 cases — investigator Self-RAG dropped these after retrieval
+  - `n_gate_false_skip_in_recall_pool`: 2 (excluded from the mean; already counted as gating false-skip)
+  - `n_eligible_for_recall`: 26 (28 - 2 gate false-skip)
+- **Verification (all 8 items from the plan passed):**
+  - Byte-identity: `_recalibrate_rescore.py` machine-asserted 38 non-retrieval fields identical to baseline. PASS.
+  - Retrieval-only diff: the only block that moved was `retrieval.*` (plus `schema_version`). Confirmed.
+  - Gold-edit audit trail: the 2 edited case_ids are named above with from/to shape + rationale.
+  - Scorer idempotence: ran the rescore twice; the two snapshots are byte-identical modulo the timestamp field.
+  - Schema-bump diff prints cleanly: new fields render as `(missing) -> X` against the v5 baseline.
+  - README self-consistency: `grep` for stale `0.196` returns 0 matches; all recall references are either source or post-filter with numbers matching the recalibrated snapshot.
+  - Reporter smoke: two-column per-category table prints within the width budget; the drops one-liner appears below the rows.
+  - Pre-edit state recorded in this log entry (above).
+- **What is NOT in this iteration:** no changes to `agent/**`, `pipeline/**`, `config.py`, `RERANKER_TOP_N`, or any retrieval parameter. No fresh full eval run. No changes to action/citation/grounding/critic/judge/gating/token numbers. No edits to `_negative_controls_locked.md` (this is scorer recalibration, not a prompt iteration — no action-level gates to lock). Recall@10 deferred: populating it would require either a pipeline behavior change or an offline retrieval replay, both of which carry risks that violate the "no impact on other Results stats" guardrail.
+
 ### 2026-04-08 — Iteration 2: pairwise revision-improvement scorer
 - **Motivation:** Step 12 of the original M5 plan was the highest insight value of any unbuilt step ("is the revision loop earning its tokens?") and remained unbuilt through V1.5 ship + Option A + Option B + Iteration 1. Now built. Three cleanly-cloned judge siblings (`judge_grounding.py`, `judge_action.py`, `pairwise.py`) is the artifact that makes the right shape of the future `_judge_base.py` extraction (Task #53) visible.
 - **Shipped:**

@@ -225,10 +225,11 @@ The story of how the eval system evolved through six iterations, each producing 
 2. **V1.5 grounding judge** — `judge_grounding.py` ruled the cases per run flagged `low_conf_with_cite`. Moved guesswork ("is this hedge dishonest?") into a labeled distribution (`honest_hedge | misleading_fix_claim | unclear`). Schema v2 → v3.
 3. **Option A: action judge** — `judge_action.py` split the `wrong_action_severity` cases into `over_escalation | missed_escalation | category_drift | tolerable_disagreement`. Schema v3 → v4. Concrete signal for the next iteration.
 4. **Option B: `multi_part_complaint` prompt edit** — first eval-driven prompt edit. The case `civ7_gameplay_002` flipped `misleading_fix_claim` → `honest_hedge`, all 3 negative controls held. Clean win. The discipline pattern: lock the gate before the edit.
-5. **Iteration 1 partial — `action_severity_precedence` rule edit.** First attempt over-fired the new severity rule and was caught immediately by the locked negative-control gate (over_escalation jumped from 4 to 11). A coordinated remedial edit reordered the rules so subjectivity caps the action ladder before severity overrides confidence; the partial rerun verified 3 of 5 named positives, 3 of 5 named negatives held, and the aggregate failure metric dropped 9 → 5. The `monitor` escape hatch remains too permissive — documented as the open lever.
-6. **Iteration 2 structural pass — pairwise revision-improvement scorer.** Answers "is the revision loop earning its tokens?" by comparing the iter-0 draft against the final approved draft per case. A deterministic normalize-equal shortcut handles cosmetic-identical revisions; the LLM judges the rest. Schema v4 → v5. Semantic spot checks deferred to the next clean (non-remedial) full eval run.
+5. **Iteration 1 reverted — `action_severity_precedence` rule edit.** Attempted to fix the over-escalation half of `wrong_action_severity` with a prompt-level severity-overrides-confidence rule. The full eval caught the tradeoff: the narrow locked metric improved 9 → 5, but aggregate action correctness regressed 65.1% → 48.8% and 12 runs hit `max_iterations_reached` where the pre-edit state had zero. The edit was reverted to the pre-Iter1 skill state; the current headline Results reflect the post-revert run. The failure is documented in the project log rather than papered over.
+6. **Iteration 2 structural pass — pairwise revision-improvement scorer.** Answers "is the revision loop earning its tokens?" by comparing the iter-0 draft against the final approved draft per case. A deterministic normalize-equal shortcut handles cosmetic-identical revisions; the LLM judges the rest. Schema v4 → v5. On the current run it surfaced a clear signal: 34 of 40 judged cases were byte-identical after normalization, meaning the revision loop is mostly cosmetic.
+7. **Iteration 3 — retrieval scorer + gold recalibration.** Split the old `recall_at_k_mean` into co-equal source-level and post-filter recall numbers (the old single number conflated retriever output with the investigator's Self-RAG filter), added a concept hit-rate companion metric (did the retriever land on the right patch family at all, independent of how many chunks it covered), separated out gate false-skip cases from the recall denominator, added a source→relevant drop diagnostic for the filter, and introduced explicit `{"any_of": [...]}` equivalence groups to the gold so chunk-ID-strict matching doesn't penalize the retriever for finding a semantically equivalent chunk from a different patch version. Labeled as a **scorer recalibration pass**: no agent or pipeline changes, offline rescore against the frozen run JSON, all non-retrieval metrics byte-identical to the prior snapshot (machine-asserted in `evals/_recalibrate_rescore.py`). Schema v5 → v6.
 
-The point of the arc: each iteration produced labeled signal *and* the discipline kept the failures visible. **Iteration 1 partial** is named as such in the project log, not papered over.
+The point of the arc: each iteration produced labeled signal *and* the discipline kept the failures visible. **Iteration 1 reverted** is named as such in the project log, not papered over — and the revert itself is a win, because the eval infrastructure is what made the revert obvious.
 
 </details>
 
@@ -236,42 +237,51 @@ The point of the arc: each iteration produced labeled signal *and* the disciplin
 
 ## Results
 
-The table below reports the latest fully comparable full-eval snapshot (`evals/snapshots/snapshot_20260408_073529.json`, 56 cases). Iteration 1's partial remedial rerun produced a different post-edit state — those findings are discussed separately in [Open gaps](#open-gaps). Numbers from the two states are not directly comparable and are kept apart on purpose.
+The table below reports the latest post-revert full-eval run (56 cases), with the retrieval rows shown from the Iteration 3 offline recalibration pass on that same frozen run. Provenance: non-retrieval metrics come from `evals/snapshots/snapshot_20260408_111306.json` (the schema-v5 snapshot written directly by the full eval); retrieval metrics come from `evals/snapshots/snapshot_20260408_121645_RECALIBRATED.json` (the schema-v6 offline rescore of the same run JSON, which is byte-identical to the v5 snapshot on every non-retrieval field — machine-asserted by `evals/_recalibrate_rescore.py`). The full run was executed after reverting the Iteration 1 `action_severity_precedence` prompt edit — that iteration improved a narrow locked metric but regressed aggregate action correctness, so it was reverted in favor of the pre-Iter1 skill state. The revert story is documented in [Open gaps](#open-gaps); the retrieval-metric split is documented in Iteration 3 of the iteration arc above.
 
 | Metric | Value |
 |---|---|
 | Cases evaluated | **56** (across 5 games, 11–12 cases each) |
-| Stop reasons | 31 human_approved, 13 no_response_needed, 12 max_iterations_reached |
+| Stop reasons | 40 human_approved, 13 no_response_needed, 3 max_iterations_reached |
 | Gating accuracy | **94.6%** (10 true_skip / 43 true_retrieve / 3 false_skip / 0 false_retrieve) |
-| Action correctness | **48.8%** (21 / 43, excludes 13 no-response cases) |
+| Action correctness | **62.8%** (27 / 43, excludes 13 no-response cases) |
 | Citation chain of custody (`subset_ok_rate`) | **100%** |
 | Hard grounding violations | **0** |
-| Recall@k mean | 0.187 (28 cases had `must_include_chunk_ids`) |
-| First-pass critic approval | 55.8% |
-| Approval after revision | 39.7% |
-| Mean iterations to approval | 0.355 |
-| `wrong_action_severity` failure mode | 22 → judge breakdown: **11 over_escalation**, 0 missed_escalation, 5 category_drift, 6 tolerable_disagreement |
-| Pairwise revision scorer | 31 judged → **5 improved**, 25 neutral (24 via deterministic shortcut), 1 regressed |
-| `judge_error` (both judges) | **0** |
-| Total tokens | 1,286,789 |
+| Retrieval — source recall@5 | **0.385** (raw retriever top-5, 26 cases eligible) |
+| Retrieval — post-filter recall@5 | **0.269** (after investigator's Self-RAG filter, same cases) |
+| Retrieval — concept hit-rate (source) | **17 of 26** cases (≥1 required concept in raw top-5) |
+| Chunks lost to investigator filter | **6** across 4 cases |
+| First-pass critic approval | 79.1% |
+| Approval after revision | 71.4% |
+| Mean iterations to approval | 0.175 |
+| `wrong_action_severity` failure mode | 16 → judge breakdown: **4 over_escalation**, 2 missed_escalation, 7 category_drift, 3 tolerable_disagreement |
+| Pairwise revision scorer | 40 judged → **6 improved**, 34 neutral (34 via deterministic shortcut), 0 regressed |
+| `judge_error` (all judges) | **0** |
+| Total tokens | 1,038,164 |
+
+Earlier snapshots reported a single `recall@k` number; this has been split into source-level and post-filter recall because the original metric conflated retriever output with investigator filtering. 2 cases are excluded from the recall denominator because the runtime gate skipped retrieval (already counted as a gating false-skip). See Iteration 3 in the iteration arc below for the full rationale.
+
+#### Why these weaker numbers look the way they do
+
+- **Retrieval recall (0.385 source / 0.269 post-filter).** The 0.116 source→post-filter gap is the investigator's Self-RAG filter being conservative — it drops 6 chunks across 4 cases where the retriever *did* surface the right evidence — and the hard-zero cases reflect section-aware chunking fragmenting a single fix description across multiple version-stamped patch chunks (e.g., the same AMD driver compat fix appears in Ver.1.030, Ver.1.040, and Ver.1.041 as separate IDs), so even after Iteration 3's `{any_of: [...]}` gold recalibration some cases stay at zero because the required fact lives in a chunk the retriever didn't rank into the top 5.
+- **Action correctness (62.8%).** The dominant error is category drift on the subjective `monitor` ↔ `investigate` boundary — 7 of the 16 wrong-severity cases are exactly that confusion — because the rule "is this specific enough to warrant a triage ticket or just worth watching?" is a judgment call the LLM has no calibrated signal for, and Iteration 1's attempt to codify a severity-precedence rule regressed the aggregate (see the revert bullet in Open gaps).
+- **Critic approvals (79.1% iter-0, 71.4% overall) and 3 `max_iterations_reached`.** Of the 16 first-pass rejections, 14 are `drafting`-type (tone/phrasing/structure) and only 2 are `evidence`-type, so the critic is mostly gatekeeping surface style rather than catching substantive grounding problems; the 3 max-iter cases are ones where the drafting-type loop never converges within the 3-iteration budget.
+- **Cosmetic revisions (34 of 40 neutral).** Because the critic's rejections are drafting-type, the responder's "revised" draft is frequently byte-identical to the original after whitespace normalization — the deterministic normalize-equal shortcut caught this — which means the revision loop is burning tokens on work the critic could have accepted the first time, not producing substantive improvements.
 
 ### Key takeaways
 
 - **Grounding and citation discipline are strong.** 100% citation chain-of-custody, zero hard grounding violations. The evidence-tracking design (`source_ids → relevant_ids → source_ids_cited`, critic verifies the subset relationship) is doing its job — the responder cannot fabricate citations.
-- **Action selection is the main weakness.** 48.8% action correctness with 22 cases flagged `wrong_action_severity`. The judge breakdown shows the bias is over-escalation (11 cases) rather than missed escalation (0 cases) — the agent leans toward "do something" rather than "stand down." Iteration 1 attempted to fix this and partially succeeded; the `monitor` escape hatch is the open lever.
-- **Most approved multi-iteration revisions were neutral by the current pairwise scorer, suggesting the revision loop is often cosmetic rather than substantive.** Of 31 multi-iteration approved cases, 25 were `revision_neutral` (24 of those flagged by the deterministic normalize-equal shortcut — meaning the iter-0 and final drafts were byte-identical after whitespace normalization). Only 5 were `revision_improved`. A candidate target for the next iteration.
+- **Action selection is the main weakness.** 62.8% action correctness with 16 cases flagged `wrong_action_severity`. The judge breakdown is more balanced than in earlier runs — 4 over-escalation, 2 missed-escalation, 7 category-drift, 3 tolerable-disagreement — so the dominant failure mode is no longer a directional bias but category confusion (the agent picking `investigate` for a case the gold set labels `monitor` or vice versa). Iteration 1 tried a prompt-level fix for the over-escalation half and regressed the aggregate; it was reverted in favor of this state, and the remaining action error is the next open lever.
+- **Multi-iteration revisions are mostly cosmetic.** Of 40 multi-iteration approved cases the pairwise scorer judged, 34 were `revision_neutral` — and all 34 were flagged by the deterministic normalize-equal shortcut, meaning the iter-0 and final drafts were byte-identical after whitespace normalization. Only 6 were `revision_improved`; zero were `revision_regressed`. The revision loop is rarely materially changing the draft — a candidate target for the next iteration (either tighten the critic's rejection bar or cut the revision budget).
 
 <details>
-<summary><a id="open-gaps"></a><strong>Open gaps (named, not hidden)</strong></summary>
+<summary><a id="open-gaps"></a><strong>Open gaps</strong></summary>
 
-- **Recall@k of 0.187 is honestly low.** The section-aware chunking and hybrid retrieval are working but the `must_include` sets in `golden.json` are stricter than what the cross-encoder converges on. The next iteration would either loosen the gold standard or tighten the chunker.
+- **Retrieval: recall vs concept hit.** Two companion numbers: source-level recall@5 is **0.385**, post-filter recall@5 is **0.269**. The 0.116 gap is the investigator's Self-RAG filter dropping **6 must-include chunks across 4 cases** — worth auditing whether that filter is over-pruning. The concept hit-rate (≥1 required concept retrieved) is **17 of 26 cases** on the source side and 14 of 26 after the filter, which tells a different story than recall: the retriever is landing on the right patch family for most cases (reach) but not surfacing every required chunk within that family (coverage). The cases that remain at hard zero after gold recalibration are legitimate retrieval misses concentrated in `civ7_gameplay_002`, `starfield_gameplay_001`, `poe2_balance_001/003`. Next attempts: (a) inspect the filter drops, (b) tighten section-aware chunking on multi-version patches to reduce chunk-ID fragmentation, (c) defer recall@10 until it can be populated without changing investigator inputs.
 
-- **Iteration 1 partial.** The `action_severity_precedence` rule edit hit 3 of 5 named positives, 3 of 5 named negatives held, and the aggregate failure metric dropped 9 → 5 — but four named cases miss, all sharing one root cause (the `monitor` escape hatch is too permissive):
-  - **Positive misses (stuck at `monitor` instead of the expected `no_action`):** `payday3_monetize_001`, `mhw_content_001`
-  - **Negative regressions:** `civ7_ui_002` regressed `investigate` → `no_action`; `civ7_monetize_001` regressed `no_action` → `monitor`
-  - All four are borderline subjective complaints with related-but-not-corrective patches; the responder is treating them as "trackable product signal" instead of `no_action`. Stop-rule budget exhausted; documented as known-state in `evals/_negative_controls_locked.md`. The fix is offline re-planning of the escape-hatch definition, not more prompt churn.
+- **Iteration 1 reverted — attempted but not fully successful.** The `action_severity_precedence` rule edit targeted the over-escalation half of the `wrong_action_severity` bucket and moved the narrow locked metric (over/missed-escalation count on 10 named cases) 9 → 5. But the full eval caught that it simultaneously regressed aggregate action correctness from 65.1% → 48.8%, introduced 12 non-convergent runs where no earlier state had any, and dropped 12 cases out of human approval. The eval infrastructure caught both halves of the tradeoff before any of it shipped — which is the point of running the full eval before and after every prompt edit. The edit was reverted to the pre-Iter1 skill state, and the results reported above are from that reverted state. The over-escalation problem it tried to fix is real (and is visible again in the current snapshot as 4 over-escalation cases); the right next attempt is a tighter, more targeted rule, not a rollback of the revert.
 
-- **Iteration 2 structural pass.** The pairwise revision-improvement scorer ran clean structurally, but **semantic spot checks deferred** to the next clean (non-remedial) full eval run.
+- **Iteration 2 structural pass.** The pairwise revision-improvement scorer ran clean structurally on the current run: 40 judged, 0 `judge_error`, 34 caught by the deterministic normalize-equal shortcut. Semantic spot checks (hand-picked case IDs with expected rulings) are still queued.
 
 - **`_judge_base.py` extraction is queued but not done.** Three sibling judge files exist now (`judge_grounding.py`, `judge_action.py`, `pairwise.py`); the abstraction shape is finally visible, but the cost of premature DRY is higher than the cost of one more clone.
 
@@ -338,7 +348,7 @@ steam-review-agent/
 │   ├── classify-tone/             # Tone classifier prompt
 │   ├── analyze-cluster/           # Cluster summarization prompt
 │   ├── investigate-evidence/      # Investigator retrieval-reasoning prompt
-│   ├── draft-response/            # Responder draft template (with action_severity_precedence)
+│   ├── draft-response/            # Responder draft template
 │   ├── critique-draft/            # Critic quality-gate checklist
 │   ├── judge-grounding/           # Eval judge: low-confidence citation classifier
 │   ├── judge-action/              # Eval judge: action severity classifier
@@ -411,10 +421,10 @@ export HF_TOKEN=...
 
 - **Data pipeline** (500 reviews, fresh fetch): ~5–10 min wall clock; cost dominated by classification (~500 Haiku calls × ~300 input tokens ≈ ~$0.10).
 - **Single-review agent run** (`test_agent.py`): ~30–60 sec including retrieval; ~5–15K total tokens depending on revision iterations; <$0.05 per review (Sonnet on the responder, Haiku elsewhere).
-- **Full eval suite** (`run_evals.py`, 56 cases): ~25–35 min wall clock; ~1.3M total tokens (per the latest snapshot); on the order of $1–2 per full run with all judges enabled.
+- **Full eval suite** (`run_evals.py`, 56 cases): ~25–35 min wall clock; ~1.04M total tokens (per the latest snapshot); on the order of $1–2 per full run with all judges enabled.
 - **Cached judge re-score** (offline against a saved run JSON): ~30 sec; $0 (cache hit on every flagged case).
 
-Numbers are approximations grounded in the latest snapshot's `total_tokens=1,286,789`. Actual cost depends on Anthropic pricing at run time.
+Numbers are approximations grounded in the latest snapshot's `total_tokens=1,038,164`. Actual cost depends on Anthropic pricing at run time.
 
 </details>
 
@@ -435,7 +445,7 @@ Three things I'd carry into the next project of this shape:
 <summary><strong>What's next</strong></summary>
 
 - **Improve action selection on borderline subjective complaints.** The four Iteration 1 misses all shared one root cause: the `monitor` action is too easy for the responder to reach for. The fix is a tighter definition — likely a deterministic signal (volume language, recurring-pattern detection) rather than leaving the judgment to the LLM.
-- **Improve retrieval recall.** Recall@k of 0.187 is the weakest number on the board. Either the section-aware chunker needs tightening or the `must_include` sets in the gold standard are stricter than what the evidence actually supports — both worth investigating.
+- **Improve retrieval recall.** Source recall@5 of 0.385 / post-filter recall@5 of 0.269 are the weakest numbers on the board. Iteration 3 split the old single `recall@k` into these two companion metrics and added a concept hit-rate — the next attempt is to inspect the 6 chunks the investigator's Self-RAG filter drops and tighten section-aware chunking on multi-version patches.
 - **Finish semantic verification for the pairwise revision judge.** The scorer ran clean structurally but hand-validated spot checks are deferred to the next clean (non-remedial) eval run.
 - **Extract shared judge infrastructure.** Three sibling judge files exist now (`judge_grounding.py`, `judge_action.py`, `pairwise.py`) — the right shape of a `_judge_base.py` abstraction is finally visible and ready to pull out.
 

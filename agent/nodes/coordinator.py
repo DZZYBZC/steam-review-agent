@@ -11,6 +11,7 @@ from config import AGENT_MAX_ITERATIONS
 logger = logging.getLogger(__name__)
 
 TERMINAL_ERROR_STOP_REASONS = {"llm_error", "parse_error"}
+TERMINAL_NORMAL_STOP_REASONS = {"no_response_needed"}
 
 def coordinator_node(state: AgentState) -> dict:
     """
@@ -29,8 +30,8 @@ def coordinator_node(state: AgentState) -> dict:
         f"Coordinator: iteration={iteration}, approved={approved}, stop_reason={stop_reason!r}, max_iterations={AGENT_MAX_ITERATIONS}"
     )
 
-    # Terminal error from Responder or Critic — audit-log and end.
-    if stop_reason in TERMINAL_ERROR_STOP_REASONS:
+    # Terminal stop from Responder/Critic (error) or Investigator (skip path) — audit-log and end.
+    if stop_reason in TERMINAL_ERROR_STOP_REASONS or stop_reason in TERMINAL_NORMAL_STOP_REASONS:
         try:
             conn = get_connection()
             try:
@@ -41,7 +42,7 @@ def coordinator_node(state: AgentState) -> dict:
             logger.warning(f"Coordinator: failed to save audit entry on {stop_reason}: {e}")
         return {
             "run_id": run_id,
-            "node_log": [f"coordinator: terminal error stop_reason={stop_reason} — ending"],
+            "node_log": [f"coordinator: terminal stop_reason={stop_reason} — ending"],
         }
 
     human_decision = state.get("human_decision", "")
@@ -90,8 +91,8 @@ def route_from_coordinator(state: AgentState) -> str:
     iteration = state.get("iteration_count", 0)
     stop_reason = state.get("stop_reason", "")
 
-    if stop_reason in TERMINAL_ERROR_STOP_REASONS:
-        logger.warning(f"Coordinator: terminal error ({stop_reason}), ending.")
+    if stop_reason in TERMINAL_ERROR_STOP_REASONS or stop_reason in TERMINAL_NORMAL_STOP_REASONS:
+        logger.info(f"Coordinator: terminal stop_reason ({stop_reason}), ending.")
         return "done"
 
     if iteration >= AGENT_MAX_ITERATIONS:

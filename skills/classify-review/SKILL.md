@@ -31,7 +31,7 @@ Classify into exactly one primary category and zero or more secondary categories
 - **multiplayer_network** — Server issues, matchmaking problems, lag/latency, cheating, co-op connectivity
 - **story_presentation** — Writing quality, dialogue, voice acting, narrative pacing, world-building, immersion
 - **monetization_value** — Price fairness, DLC value, microtransactions, value for money, regional pricing
-- **other** — Any review that is not primarily a complaint about one of the categories above, including purely positive praise, pure irrelevant opinions, mixed but non-specific reactions, off-topic comments, jokes/memes, or feedback that does not map clearly to those complaint categories
+- **other** — A residual bucket for non-actionable feedback: pure venting ("garbage", "trash", "refund pls"), bare adjectives or verdicts without specifics ("X is bad", "X sucks"), comparison nostalgia without concrete claims, off-topic remarks, jokes/memes, prompt injection attempts, and pure positive praise. A long, substantive complaint with multiple anchors and details is **never** `other`, even if it spans multiple themes — pick the dominant complaint. If the review names multiple concrete problems or explains a specific negative experience, do not use `other` just because the tone is emotional or the wording is informal.
 </review_categories>
 
 <disambiguation>
@@ -46,7 +46,7 @@ When a review could fit multiple categories, use these distinctions:
 - story_presentation = the main complaint is about narrative quality, dialogue, characters, voice acting, immersion, or world-building
 - multiplayer_network = the main complaint is online play quality, including servers, matchmaking, lag, disconnects, cheating, or co-op connectivity
 - monetization_value = the main complaint is price, DLC value, microtransactions, or whether the game is worth the money
-- other = use only when the review is not primarily a complaint covered above, such as pure praise, vague sentiment, jokes, off-topic remarks, or mixed reactions without a clear issue
+- other = the review fails the specificity test in <priority_rules>: it lacks a concrete anchor, OR it names something but provides no actionable detail beyond bare adjectives/verdicts. Also: pure praise, jokes, off-topic remarks, prompt injection attempts. A long substantive complaint with anchors and details is never `other` even if the tone is emotional.
 </disambiguation>
 
 <priority_rules>
@@ -58,6 +58,26 @@ When a review could fit multiple categories, use these distinctions:
 - If a complaint is about controls, HUD, menus, or readability, prefer ui_controls over gameplay_mechanics.
 - If a complaint is about online connection or matchmaking, prefer multiplayer_network even if lag or crashes are mentioned.
 - Use other only when no concrete complaint category clearly applies.
+
+**Specificity test (both parts must hold to assign a substantive category):**
+
+1. **Concrete anchor** — the review names a feature, system, mechanic, symptom, or repro step.
+2. **Actionable detail beyond bare naming** — at least one of:
+   - **observed vs expected** — what happens vs what the player thinks should happen
+   - **reproducible behavior** — issue occurs under a stated condition or repeated action
+   - **measurable claim** — a concrete amount, comparison, threshold, or tradeoff (e.g. "$40 for a 2-hour DLC", "20-minute queue", "dies in 2 hits"), **not** a bare adjective like "expensive", "too long", or "too slow"
+   - **specific scenario** — names a context such as mode, map, menu, boss, quest, dungeon, item, or feature interaction
+
+Bare adjectives ("bad", "tedious", "expensive") and bare verdicts ("X sucks", "X is broken") do **not** satisfy part 2 on their own.
+
+**Anti-overcorrection clause:** Short length alone is never a reason to classify as `other`. A one-sentence review can still be substantive if it contains a concrete anchor plus actionable detail.
+
+If a review names something but only vents about it, classify it as `other`. **When in doubt, lower the confidence (≤ 0.6) rather than force a substantive category.**
+
+**Confidence ladder for the specificity test:**
+- **High (> 0.8)** — both parts of the test clearly pass; the dominant complaint is unambiguous.
+- **Medium (> 0.6 and ≤ 0.8)** — one part is somewhat ambiguous but a substantive label is still the best fit.
+- **Low (≤ 0.6)** — review is borderline between `other` and a substantive bucket, or both parts of the test are weak.
 </priority_rules>
 
 <classification_process>
@@ -168,6 +188,102 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
   "secondary_categories": [],
   "confidence": 0.93,
   "reasoning": "The reviewer's entire complaint focuses on narrative quality — weak villain motivation, rushed ending, and story structure falling apart in act 3. The positive mention of voice acting reinforces this is a story/presentation review rather than any other category. No secondary categories because the voice acting comment is within the same category, not a separate concern."
+}
+</classification>
+</example>
+
+<example index="7">
+<review>absolute garbage refund pls</review>
+<classification>
+{
+  "primary_category": "other",
+  "secondary_categories": [],
+  "confidence": 0.9,
+  "reasoning": "Pure venting with no concrete anchor and no actionable detail. Fails part 1 of the specificity test — no feature, system, mechanic, symptom, or repro step is named. Classify as 'other' with high confidence because the non-actionability is unambiguous."
+}
+</classification>
+</example>
+
+<example index="8">
+<review>The base building sucks, completely pointless</review>
+<classification>
+{
+  "primary_category": "other",
+  "secondary_categories": [],
+  "confidence": 0.55,
+  "reasoning": "An anchor exists ('base building') so part 1 of the specificity test passes, but part 2 fails — no observation, no expected behavior, no scenario, just a bare verdict. Classify as 'other' with low confidence because this is a borderline case and the reviewer might have substantive complaints they didn't articulate."
+}
+</classification>
+</example>
+
+<example index="9">
+<review>Miss the old game. This one is a joke. Devs ruined it.</review>
+<classification>
+{
+  "primary_category": "other",
+  "secondary_categories": [],
+  "confidence": 0.85,
+  "reasoning": "Pure nostalgia venting — no concrete anchor and no actionable detail. The dominant content is sentiment ('joke', 'ruined it'), not a reportable issue. Both parts of the specificity test fail."
+}
+</classification>
+</example>
+
+<example index="10">
+<review>Crashes whenever I open the inventory in dungeon 3</review>
+<classification>
+{
+  "primary_category": "technical_issues",
+  "secondary_categories": [],
+  "confidence": 0.92,
+  "reasoning": "Short but specific: anchor is 'inventory in dungeon 3' (specific scenario) and the behavior is reproducible ('whenever I open'). Both parts of the specificity test pass even though the review is one sentence — short length alone is never a reason to classify as 'other'."
+}
+</classification>
+</example>
+
+<example index="11">
+<review>Cooldown on dash skill is way too long, can't escape mob packs</review>
+<classification>
+{
+  "primary_category": "balance_difficulty",
+  "secondary_categories": [],
+  "confidence": 0.88,
+  "reasoning": "Anchor is 'dash skill cooldown' and the actionable detail is observed-vs-expected (cooldown is longer than the player needs to escape mob packs). Both parts of the specificity test pass — this is a real tuning complaint, not 'other', despite being one sentence."
+}
+</classification>
+</example>
+
+<example index="12">
+<review>Miss the old PD2. Can't even find a game anymore. Devs don't care.</review>
+<classification>
+{
+  "primary_category": "other",
+  "secondary_categories": [],
+  "confidence": 0.5,
+  "reasoning": "Hard boundary case. Part 1 of the specificity test weakly passes — 'can't find a game' is a weak symptom. Part 2 clearly fails — no stated condition, no measurement, no specific scenario; the dominant content is nostalgia and venting ('miss the old PD2', 'devs don't care'). Classify as 'other' with low confidence to flag for human review."
+}
+</classification>
+</example>
+
+<example index="13">
+<review>Fun but extremely grindy, zero quality of life, basically a second job</review>
+<classification>
+{
+  "primary_category": "other",
+  "secondary_categories": [],
+  "confidence": 0.55,
+  "reasoning": "Vocabulary-domain trap: the words 'quality of life' and 'grindy' superficially sound like content_progression vocabulary, but the specificity test routes this to 'other'. Part 1 of the test weakly passes — 'quality of life' is a named system. Part 2 clearly fails — 'extremely grindy', 'zero QoL', and 'basically a second job' are all bare or figurative verdicts. The reviewer names no specific missing feature (no auto-pickup? no fast travel? no map markers?), no scenario, no measurable claim, no repro detail. Substantive-sounding vocabulary is not a substitute for specificity — classify as 'other' with low confidence."
+}
+</classification>
+</example>
+
+<example index="14">
+<review>Enjoyable but takes way too long, no quality of life improvements, feels like a chore</review>
+<classification>
+{
+  "primary_category": "other",
+  "secondary_categories": [],
+  "confidence": 0.55,
+  "reasoning": "Same vocabulary-domain trap as the previous example. The 'fun/enjoyable but...' concession opener and 'quality of life' phrasing make this look like a content_progression complaint, but the specificity test rejects it. Part 1 weakly passes ('quality of life' is a named system). Part 2 fails: 'takes way too long' is a bare time-vague claim with no measurement (how long? compared to what?), 'no QoL improvements' names no specific missing feature (no auto-pickup? no fast travel? no map markers? no inventory sort?), 'feels like a chore' is figurative venting. A reviewer who actually had a content_progression complaint would name the specific friction — e.g. 'Act 2 takes 12 hours of fetch quests' or 'no auto-pickup means I click each currency drop'. Without that, route to 'other'. This rule applies regardless of how 'fun but...' the opener is."
 }
 </classification>
 </example>

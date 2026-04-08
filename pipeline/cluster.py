@@ -178,7 +178,7 @@ def rank_clusters(clusters: list[ClusterSummary]) -> list[ClusterSummary]:
 
     return clusters
 
-client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+client = anthropic.Anthropic(api_key=CLAUDE_API_KEY, max_retries=5)
 CLUSTER_SYSTEM_PROMPT = load_skill("analyze-cluster")
 
 

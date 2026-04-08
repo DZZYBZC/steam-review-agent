@@ -351,9 +351,15 @@ def load_classifications(
 def load_classified_reviews(
     conn: sqlite3.Connection,
     app_id: str,
+    include_other: bool = False,
 ) -> pd.DataFrame:
     """
     Load non-duplicate reviews joined with their classifications.
+
+    By default the 'other' bucket is excluded — it's a catchall category
+    that the production pipeline (clustering, agent runs) ignores. Eval
+    code that needs to inspect 'other' cases (golden set annotation,
+    gating accuracy scorer) passes include_other=True.
     """
     query = """
         SELECT r.review_id, r.app_id, r.review_text, r.voted_up, r.timestamp,
@@ -363,8 +369,9 @@ def load_classified_reviews(
         JOIN classifications c ON r.review_id = c.review_id
         WHERE r.app_id = ?
           AND r.is_near_duplicate = 0
-          AND c.primary_category != 'other'
     """
+    if not include_other:
+        query += " AND c.primary_category != 'other'"
     df = pd.read_sql_query(query, conn, params=[app_id])
     
     if len(df) > 0 and "secondary_categories" in df.columns:

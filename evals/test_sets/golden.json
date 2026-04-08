@@ -1,0 +1,1252 @@
+{
+  "_schema": {
+    "version": "v0",
+    "note": "v0 hypothesis. Per-case fields below. Annotate with eyes-on-review-text + retrieval lookup. Failure-mode tags use evals/failure_modes.py names.",
+    "fields": {
+      "case_id": "stable id, e.g., 'payday3_tech_001'",
+      "app_id": "Steam app id (string)",
+      "review_id": "FK to reviews table",
+      "review_text": "denormalized full text for annotator readability",
+      "classifier_category": "what the classifier assigned (may be 'other' for adversarial cases)",
+      "annotated_category": "human-corrected category \u2014 what the case should be treated as",
+      "ideal_action": "no_action | monitor | investigate | escalate",
+      "gate_should_skip": "true if Investigator's _should_retrieve gate should skip retrieval (used by gating_accuracy scorer)",
+      "must_include_chunk_ids": "chunk_ids retrieval MUST surface (recall@k scorer). Empty for subjective/no-evidence cases.",
+      "forbidden_chunk_ids": "chunk_ids retrieval should NOT cite (anti-recall \u2014 cited_irrelevant_patch detection). Optional.",
+      "expected_failure_modes": "failure-mode names the agent is likely to hit if mishandled \u2014 used to tune scorer thresholds, not as ground truth",
+      "ideal_tone": "calm | empathetic | terse_acknowledgment | urgent_empathetic \u2014 guides judge dimension",
+      "notes": "free-text rationale: what the IDEAL handling looks like and why",
+      "quick": "true if part of the 5-case quick subset (D2)"
+    }
+  },
+  "cases": [
+    {
+      "case_id": "payday3_tech_001",
+      "app_id": "1272080",
+      "review_id": "222396070",
+      "review_text": "For the last 2 days I have been trying to do a SOLO stealth heist on max difficulty. I can not, because the slightest internet connection error WILL boot you out of a heist and have to restart with everything randomized again.",
+      "classifier_category": "technical_issues",
+      "annotated_category": "technical_issues",
+      "ideal_action": "investigate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "unsourced_claim",
+        "overclaimed_fix"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Specific technical bug \u2014 solo stealth heist progress lost on transient disconnect. No patch in corpus addresses this directly. Agent should acknowledge as known-issue-shaped, set action=investigate, and NOT fabricate a fix or cite an unrelated patch as a fix. Tests unsourced_claim guard.",
+      "quick": false,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "payday3_tech_002",
+      "app_id": "1272080",
+      "review_id": "222668044",
+      "review_text": "It should have an offline mode that works properly, not one that tries to connect to the internet.",
+      "classifier_category": "technical_issues",
+      "annotated_category": "technical_issues",
+      "ideal_action": "investigate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "unsourced_claim",
+        "overclaimed_fix"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Offline mode reportedly still requires net handshake. No patch in corpus advertises a fix. P2P updates are tangential \u2014 they change networking topology but don't fix offline-mode bug. Agent should investigate; cited_irrelevant_patch if it cites P2P chunks here.",
+      "quick": false,
+      "classifier_confidence": 0.75
+    },
+    {
+      "case_id": "payday3_multi_001",
+      "app_id": "1272080",
+      "review_id": "220105442",
+      "review_text": "I grew up on Payday 2 and still love it to this day. So very disappointed in this unplayable mess that I still cant find a game in, pathetic.",
+      "classifier_category": "other",
+      "annotated_category": "other",
+      "ideal_action": "no_action",
+      "gate_should_skip": true,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "gate_misjudged",
+        "responded_to_junk",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "terse_acknowledgment",
+      "notes": "General nostalgic venting comparing to PD2. Single weak signal ('cant find a game') but the dominant frame is undirected disappointment, not an actionable matchmaking complaint. Inverse of civ7_other_001: classifier put it in multiplayer_network so the current category-only gate WILL retrieve, but the IDEAL gate would skip on text vagueness + comparison-rant signals. Failure: gate_misjudged false-negative, responded_to_junk if a substantive matchmaking response is generated, tone_too_apologetic if Responder grovels at the PD2 nostalgia.",
+      "quick": false,
+      "classifier_confidence": 0.65
+    },
+    {
+      "case_id": "payday3_multi_002",
+      "app_id": "1272080",
+      "review_id": "222610983",
+      "review_text": "Playing with friends is a nightmare since the servers lag a lot and pretty much unplayable. Wait until they finish like 50+ DLCs and more patches, OR if they abandon the game totally.",
+      "classifier_category": "multiplayer_network",
+      "annotated_category": "multiplayer_network",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1827626365763153-0",
+        "1827626365763153-1",
+        "1823825466499688-7"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "tone_too_apologetic",
+        "cited_irrelevant_patch"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Server lag. P2P retrospective (1823825466499688-7) explicitly notes 'less occurrences of lag, stutter' from playtest, and P2P went live. Strong direct evidence of intervention. Ideal: monitor with citation. Failure: overclaimed_fix if 'lag is now fixed' assertion.",
+      "quick": false,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "payday3_gameplay_001",
+      "app_id": "1272080",
+      "review_id": "221646270",
+      "review_text": "Game was great before the skill rework, Now it's garbage.",
+      "classifier_category": "other",
+      "annotated_category": "gameplay_mechanics",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1817483467048073-0",
+        "1817483467048073-4",
+        "1811138915522063-3"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "ignored_main_complaint"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Subjective dissatisfaction with Skills 2.0 rework. Patches that introduced and previewed the rework (1817483467048073, 1811138915522063) MUST be cited so response acknowledges the change exists. Ideal: monitor (subjective dissatisfaction with shipped feature \u2014 not a bug, but legitimate signal). Failure: defensive_tone if response argues why rework was good.",
+      "quick": false,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "payday3_content_001",
+      "app_id": "1272080",
+      "review_id": "220651074",
+      "review_text": "Piss-poor launch day, crippled by the unnecessary Online-Only aspect of the game and forced Starbreeze Nebula sign in. Heist variation is shallow and doesn't feel rewarding. Was fun for first 50 hours, not so much after.",
+      "classifier_category": "technical_issues",
+      "annotated_category": "content_progression",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1827626365763153-0",
+        "1823191198599924-0",
+        "1823191198599924-5"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "ignored_main_complaint",
+        "overclaimed_fix"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Multi-issue review: online-only requirement + heist variety + Nebula login. P2P update (1827626365763153-0) directly addresses online-only complaint by enabling P2P hosting. 'Future of PAYDAY' blogs (1823191198599924-*) discuss content roadmap. Ideal: monitor \u2014 partially addressed. Failure: ignored_main_complaint if response only addresses one of the three issues.",
+      "quick": false,
+      "classifier_confidence": 0.72
+    },
+    {
+      "case_id": "payday3_content_002",
+      "app_id": "1272080",
+      "review_id": "221544165",
+      "review_text": "The game is mechanically very enjoyable, it feels modern and precise, yet the gameplay aspects are overshadowed by a severe lack of maps to choose from, locking such a large portion of your game behind a paywall is not a good move. Game needs more base content.",
+      "classifier_category": "content_progression",
+      "annotated_category": "content_progression",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Mix of design + monetization (paywall). Subjective. No patch will resolve the DLC pricing model. Ideal: monitor with calm acknowledgment, no commitment. must_include empty \u2014 no chunk should be cited as a 'fix'. Failure: cited_irrelevant_patch if any chunk is cited; defensive_tone if response justifies DLC strategy.",
+      "quick": false,
+      "classifier_confidence": 0.89
+    },
+    {
+      "case_id": "payday3_content_003",
+      "app_id": "1272080",
+      "review_id": "222603293",
+      "review_text": "Pre-ordered and played early access. After release it was unplayable/servers down. Then a month later, the player base was nearly gone. Now over 2 years later there is simply not enough content. Now I never see more than 1000 PC players online.",
+      "classifier_category": "content_progression",
+      "annotated_category": "content_progression",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1823191198599924-0",
+        "1802354289595370-5"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Player count + content velocity complaint. Onboarding blog (1802354289595370-5) acknowledges the player count problem internally; future-of-payday blog (1823191198599924-0) discusses content plans. Ideal: monitor with honest acknowledgment. Failure: overclaimed_fix if 'player count is recovering' fabrication.",
+      "quick": false,
+      "classifier_confidence": 0.75
+    },
+    {
+      "case_id": "payday3_monetize_001",
+      "app_id": "1272080",
+      "review_id": "220425857",
+      "review_text": "2 years later its still pretty ass, not to mention half the game is locked behind dlcs just like payday 2.",
+      "classifier_category": "monetization_value",
+      "annotated_category": "monetization_value",
+      "ideal_action": "no_action",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "wrong_action_severity"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Pure pricing/business-model complaint. Not actionable \u2014 DLC strategy is not bug-fixable. Ideal action: no_action (subjective design feedback per PROPOSED ACTIONS doc in CLAUDE.md). Failure: wrong_action_severity if escalate/investigate; defensive_tone if response argues DLC value.",
+      "quick": false,
+      "classifier_confidence": 0.82
+    },
+    {
+      "case_id": "payday3_vague_001",
+      "app_id": "1272080",
+      "review_id": "221802934",
+      "review_text": "\u2665\u2665\u2665\u2665 U GUYS BRUH \u2665\u2665\u2665\u2665 MAD EXPENSIVE",
+      "classifier_category": "other",
+      "annotated_category": "monetization_value",
+      "ideal_action": "no_action",
+      "gate_should_skip": true,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "gate_misjudged",
+        "responded_to_junk",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "terse_acknowledgment",
+      "notes": "VAGUE-SUBSTANTIVE \u2014 classifier put this in monetization_value (touches pricing) but it's just emotional venting with no actionable signal. Current gate uses category alone, so it WILL retrieve and investigate. Ideal: gate should skip on text-vagueness signals (length, censored profanity, no specifics), terminate with no_action. Tests gate_misjudged false-negative \u2014 the load-bearing case shape for non-'other' categories.",
+      "quick": false,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "payday3_other_001",
+      "app_id": "1272080",
+      "review_id": "220389950",
+      "review_text": "screams cash grab lmaooo",
+      "classifier_category": "other",
+      "annotated_category": "other",
+      "ideal_action": "no_action",
+      "gate_should_skip": true,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "responded_to_junk",
+        "tone_too_apologetic",
+        "gate_misjudged"
+      ],
+      "ideal_tone": "terse_acknowledgment",
+      "notes": "ADVERSARIAL shape #1 (vague emotional rant) \u2014 no actionable signal. Ideal: gate skips retrieval, agent terminates with no_action and a terse, non-grovelling acknowledgment. Load-bearing for the 'other'-driver mechanism.",
+      "quick": true,
+      "classifier_confidence": 0.92
+    },
+    {
+      "case_id": "civ7_gameplay_001",
+      "app_id": "1295660",
+      "review_id": "222192999",
+      "review_text": "Age transitions are still jarring and makes it feel like I missed a couple of days in class as units and cities change around me. I'll give it another shot if an ageless option is added.",
+      "classifier_category": "gameplay_mechanics",
+      "annotated_category": "gameplay_mechanics",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1805431065499578-25",
+        "1814309641574128-1",
+        "1801617199561563-37"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "ignored_main_complaint"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Age transition pacing complaint \u2014 explicit core mechanic feedback. Update 1.2.3 (1805431065499578-25) added an Advanced setting for transitions; June and Oct check-ins (1801617199561563-37, 1814309641574128-1) discuss this exact theme. Ideal: monitor, cite the Advanced setting honestly, do NOT claim 'ageless option' is shipped.",
+      "quick": false,
+      "classifier_confidence": 0.78
+    },
+    {
+      "case_id": "civ7_gameplay_002",
+      "app_id": "1295660",
+      "review_id": "222495075",
+      "review_text": "AI pathing sucks, the screen scroll often bugs out and gets stuck scrolling. It's lost the charm of a grand 4x strategy game, and at each age transition they weaken you and you have to grind policy cards. Gonna stick with Civ 5 and 6.",
+      "classifier_category": "technical_issues",
+      "annotated_category": "gameplay_mechanics",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1800357164569792-77",
+        "1808061939503633-9",
+        "1800357164569792-76"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "ignored_main_complaint",
+        "overclaimed_fix"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Multi-issue: AI pathing + screen scroll + age transitions. AI pathing patches exist (1800357164569792-77 'improved AI Commander pathing', 1808061939503633-9 trade fix). Screen scroll bug has no patch. Ideal: monitor, address AI pathing with citation, acknowledge scroll bug as known-shape. Failure: ignored_main_complaint if response only handles one of three issues.",
+      "quick": true,
+      "classifier_confidence": 0.72
+    },
+    {
+      "case_id": "civ7_gameplay_003",
+      "app_id": "1295660",
+      "review_id": "222723717",
+      "review_text": "They've stripped away every part of the idea of building a civilization. This is now a game where you do three stages of questlines. There's almost no world customization when starting a new game. The leaders are unrecognizable.",
+      "classifier_category": "gameplay_mechanics",
+      "annotated_category": "gameplay_mechanics",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "investigate_for_subjective"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Design-philosophy complaint \u2014 fundamental disagreement with the new structure. Not a bug, no patch will fix it. Ideal: monitor with calm acknowledgment, no patch citation. Failure: defensive_tone if response justifies the design; investigate_for_subjective if action is escalate/investigate.",
+      "quick": false,
+      "classifier_confidence": 0.82
+    },
+    {
+      "case_id": "civ7_ui_001",
+      "app_id": "1295660",
+      "review_id": "222700532",
+      "review_text": "I just died in the cluttered UI. A good example is the yield breakdown. I have to open several tabs to drill down all the way. The first tab after natural yield is...natural yield. Oh, and there is also an income tab even though negatives are minus and red and incomes are plus and green.",
+      "classifier_category": "ui_controls",
+      "annotated_category": "ui_controls",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1811772772410550-11",
+        "1800991756447780-1",
+        "1811772772410550-10"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "ignored_main_complaint"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Yield breakdown UX complaint. Update 1.2.5 (1811772772410550-11) explicitly reformatted constructible tooltips and (1811772772410550-10) lists UI/UX changes. Update 1.2.1 patch (1800991756447780-1) fixed building yield breakdown display. Ideal: monitor, cite the cleanup honestly. Failure: overclaimed_fix if 'UI is now cleaner' assertion without nuance.",
+      "quick": false,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "civ7_ui_002",
+      "app_id": "1295660",
+      "review_id": "222605318",
+      "review_text": "Give us back strategic view. A bit weird to remove existing accessibility features. For me, the visuals are too overwhelming and too taxing on my eyes to focus on the gameplay. My eyes and brain hurt after a few minutes.",
+      "classifier_category": "ui_controls",
+      "annotated_category": "ui_controls",
+      "ideal_action": "investigate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1811772772410550-20"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "unsourced_claim",
+        "ignored_main_complaint"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Accessibility regression \u2014 strategic view removed. Update 1.2.5 (1811772772410550-20) mentions accessibility goals broadly but does NOT restore strategic view. Ideal: investigate (real accessibility regression, dev should know), cite the accessibility note honestly without fabricating a fix. Failure: unsourced_claim if response promises strategic view is coming back.",
+      "quick": false,
+      "classifier_confidence": 0.89
+    },
+    {
+      "case_id": "civ7_monetize_001",
+      "app_id": "1295660",
+      "review_id": "221554612",
+      "review_text": "Paid alot of money for not alot of content. This game is rushed, gating leaders behind $$$, the ui is insane you cant find anything you need. The game changes 2 times for ages but doesnt actually meaningfully change. it doesnt feel like a civ game it feels like a cash grab.",
+      "classifier_category": "monetization_value",
+      "annotated_category": "monetization_value",
+      "ideal_action": "no_action",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "wrong_action_severity",
+        "ignored_main_complaint"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Multi-axis complaint mostly about pricing/value, with UI + ages mentioned. Pricing is not bug-fixable. Ideal: no_action (subjective monetization), calm acknowledgment. Failure: wrong_action_severity if investigate; defensive_tone on DLC strategy.",
+      "quick": false,
+      "classifier_confidence": 0.82
+    },
+    {
+      "case_id": "civ7_monetize_002",
+      "app_id": "1295660",
+      "review_id": "221519805",
+      "review_text": "Hey Firaxis, you were popular because you never acted like EA or Creative Assembly. You do NOT want to join their bandwagon. Lets tone back the DLC monetization crap before you even begin to think it's a good idea.",
+      "classifier_category": "monetization_value",
+      "annotated_category": "monetization_value",
+      "ideal_action": "no_action",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "wrong_action_severity"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Pure DLC strategy critique. Not actionable. Ideal: no_action. Failure: defensive_tone if response argues DLC value or compares Firaxis favorably.",
+      "quick": false,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "civ7_tech_001",
+      "app_id": "1295660",
+      "review_id": "221602720",
+      "review_text": "I don't know what's worse, the amount of bugs, or the overall lack of polish Civ is known for. Game crashes way too often. I have 40 hours in and literally hundreds of crashes in that time. Game is literally broken.",
+      "classifier_category": "technical_issues",
+      "annotated_category": "technical_issues",
+      "ideal_action": "escalate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1801617199561563-28",
+        "1800991756447780-2"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "wrong_action_severity",
+        "overclaimed_fix",
+        "cited_irrelevant_patch"
+      ],
+      "ideal_tone": "urgent_empathetic",
+      "notes": "Severe stability claim: 'hundreds of crashes in 40h'. Per CLAUDE.md, escalate = severe/widespread (crashes, data loss). The June 10 check-in (1801617199561563-28) explicitly mentions 'Bug Fixes, UI Polish' and 1.2.1 patch 1 (1800991756447780-2) resolved a corrupt-state crash. Ideal: escalate (severity warrants it) with citation. Failure: wrong_action_severity if monitor; overclaimed_fix if 'crashes are fixed' assertion. THIS IS THE ESCALATE EXEMPLAR.",
+      "quick": false,
+      "classifier_confidence": 0.93
+    },
+    {
+      "case_id": "civ7_content_001",
+      "app_id": "1295660",
+      "review_id": "222570481",
+      "review_text": "i loved civ 6 and was super excited to play civ 7 with my friends via hotseat. i was super disappointed when i found out it was not out yet. more than 1 year later they still have not added it. i am disappointed because it was promised to us and now its almost like they forgot it existed.",
+      "classifier_category": "content_progression",
+      "annotated_category": "content_progression",
+      "ideal_action": "investigate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "unsourced_claim",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Hotseat missing \u2014 promised feature still absent after 1 year. No patch in corpus mentions hotseat. Ideal: investigate (this is a real missing feature, dev should be told), do NOT fabricate a 'hotseat coming in next update' claim. must_include empty \u2014 any chunk cited here would be cited_irrelevant_patch. Failure: unsourced_claim is the headline risk.",
+      "quick": false,
+      "classifier_confidence": 0.72
+    },
+    {
+      "case_id": "civ7_vague_001",
+      "app_id": "1295660",
+      "review_id": "221900490",
+      "review_text": "Tedious, bad maps. convoluted",
+      "classifier_category": "other",
+      "annotated_category": "gameplay_mechanics",
+      "ideal_action": "no_action",
+      "gate_should_skip": true,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "gate_misjudged",
+        "responded_to_junk",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "terse_acknowledgment",
+      "notes": "VAGUE-SUBSTANTIVE \u2014 classifier put this in gameplay_mechanics (touches mechanics with 'convoluted') but it's three adjectives, no actionable signal. Current category-only gate WILL retrieve. Ideal: gate skips on text-vagueness signals (length, no specifics). Tests gate_misjudged false-negative on a non-'other' category.",
+      "quick": false,
+      "classifier_confidence": 0.75
+    },
+    {
+      "case_id": "civ7_other_001",
+      "app_id": "1295660",
+      "review_id": "221603271",
+      "review_text": "This is such a step down from the last civ. There are so many reasons; the claymation graphics with browns and greens, the incessant help popups, the menus, the tech and culture trees, the civs, the lack of map choice, the general character of the game - the whole vibe is severely off.",
+      "classifier_category": "other",
+      "annotated_category": "ui_controls",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1811772772410550-11",
+        "1811772772410550-10"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "gate_misjudged",
+        "ignored_main_complaint",
+        "unsourced_claim"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "ADVERSARIAL shape #2 (misclassified substantive) \u2014 substantive UI/visual/menu complaint dumped into 'other' by classifier. Current gate sees category=other and skips retrieval, leaving Responder with NO evidence for a real, actionable complaint. Ideal: gate should NOT skip (text has specific UI complaints). Ideal annotated_category=ui_controls. Tests gate_misjudged false-positive (false-skip on substantive content).",
+      "quick": false,
+      "classifier_confidence": 0.65
+    },
+    {
+      "case_id": "starfield_perf_001",
+      "app_id": "1716740",
+      "review_id": "221739390",
+      "review_text": "I love and hate this game. More so hate because the loading screens kill the immersion for me. Take off from a planet? Loading screen. Travel to a new planet? Loading screen. Dock with another ship? Loading screen. LOADING SCREENS!",
+      "classifier_category": "performance_optimization",
+      "annotated_category": "performance_optimization",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1828894815567715-20",
+        "1826992588604218-20",
+        "1828894815567746-8"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "ignored_main_complaint"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Loading-screen pacing complaint \u2014 fundamental engine architecture issue. Free Lanes update (1828894815567715-20, 1826992588604218-20) added a Ship Optimization Terminal that helps with ship-side perf, and 1828894815567746-8 adds the buildable terminal in 1.16.236. These DO NOT eliminate loading screens \u2014 they only mitigate ship-related friction. Ideal: monitor, cite optimizations honestly without claiming the loading-screen problem is solved. Failure: overclaimed_fix is the headline risk.",
+      "quick": true,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "starfield_tech_001",
+      "app_id": "1716740",
+      "review_id": "221690098",
+      "review_text": "Just found out that my NG+ 10 game is all gone...thanks.",
+      "classifier_category": "technical_issues",
+      "annotated_category": "technical_issues",
+      "ideal_action": "escalate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "6909171012614938351-32",
+        "6909171012614938351-17"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "wrong_action_severity",
+        "unsourced_claim"
+      ],
+      "ideal_tone": "urgent_empathetic",
+      "notes": "Save data loss on NG+10 \u2014 per CLAUDE.md, escalate = severe/widespread (crashes, data loss). REV-8 update (6909171012614938351-32) resolved an issue causing unexpected save behavior \u2014 relevant context but does NOT confirm this player's case is fixed. Ideal: escalate with empathetic acknowledgment, cite the related fix without claiming it covers their loss. Failure: wrong_action_severity if monitor; unsourced_claim if 'your save can be recovered' fabrication.",
+      "quick": false,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "starfield_gameplay_001",
+      "app_id": "1716740",
+      "review_id": "222459466",
+      "review_text": "So let down by everything in space. Flight controls are terrible, Ship combat is subpar at best. The base building is mediocre and the ship building is meh. SO much promise from this game and look how far it's fallen.",
+      "classifier_category": "gameplay_mechanics",
+      "annotated_category": "gameplay_mechanics",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1828894815567746-17",
+        "1828894815567715-51",
+        "1828894815567746-8"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "ignored_main_complaint",
+        "overclaimed_fix"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Multi-issue: flight controls + ship combat + base building + ship building. 1.16.236 update (1828894815567746-17) added Outpost QoL improvements; Free Lanes added Pre-Built Outpost (1828894815567715-51); ship optimization terminal (1828894815567746-8) addresses ship side. Flight controls have NO direct fix. Ideal: monitor. Failure: ignored_main_complaint if response only addresses ship-building; overclaimed_fix on flight controls.",
+      "quick": false,
+      "classifier_confidence": 0.72
+    },
+    {
+      "case_id": "starfield_gameplay_002",
+      "app_id": "1716740",
+      "review_id": "222337346",
+      "review_text": "Bethesda has a problem that has always existed but it truly brings the whole experience down in Starfield: bland enemies. Think back to Fallout or Elder Scrolls. How often are your travels interrupted by random bands of raiders/bandits...",
+      "classifier_category": "gameplay_mechanics",
+      "annotated_category": "gameplay_mechanics",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "investigate_for_subjective"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Subjective design feedback \u2014 enemy variety / random encounter design. No patch will retrofit this. Ideal: monitor with calm acknowledgment. Failure: defensive_tone defending Bethesda's design; investigate_for_subjective.",
+      "quick": false,
+      "classifier_confidence": 0.72
+    },
+    {
+      "case_id": "starfield_story_001",
+      "app_id": "1716740",
+      "review_id": "221766197",
+      "review_text": "The opposite of show, don't tell. Everything that was interesting takes place before the events of the game. Only worth playing if you don't mind modding.",
+      "classifier_category": "story_presentation",
+      "annotated_category": "story_presentation",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "6909171012614938755-2"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "defensive_tone"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Narrative-design complaint. Shattered Space DLC announcement (6909171012614938755-2) is the first story expansion \u2014 relevant context. Ideal: monitor, mention DLC as 'additional story content' without overclaiming it 'addresses' the show-don't-tell critique. Failure: overclaimed_fix if 'Shattered Space fixes the storytelling' assertion.",
+      "quick": false,
+      "classifier_confidence": 0.75
+    },
+    {
+      "case_id": "starfield_content_001",
+      "app_id": "1716740",
+      "review_id": "222401455",
+      "review_text": "There is like 12 starsystems full of content that ranges from repetitive and boring to actually pretty good stuff. This content sadly is stretched out over 120 starsystems. Through which you have to navigate with a ton of loading screens. And constant crashes.",
+      "classifier_category": "content_progression",
+      "annotated_category": "content_progression",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1826992588604218-32",
+        "1828894815567746-31",
+        "1828894815567715-20"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "ignored_main_complaint",
+        "overclaimed_fix"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Three-axis complaint: content sparsity + loading screens + crashes. Free Lanes update (1826992588604218-32 'Many more planetary POIs') addresses POI density; 1.16.236 (1828894815567746-31) general crash fixes; ship optimization (1828894815567715-20) for loading. All three axes have at least partial patch coverage. Ideal: monitor, address all three. Failure: ignored_main_complaint if only one axis is touched.",
+      "quick": false,
+      "classifier_confidence": 0.78
+    },
+    {
+      "case_id": "starfield_content_002",
+      "app_id": "1716740",
+      "review_id": "222713460",
+      "review_text": "It's just bad. The quests are dull and exploring feels pointless. The UI is terrible (closing the map is a pain) and the constant loading screens are a dealbreaker. I've heard it 'gets better' after 40 hours, but that's insane.",
+      "classifier_category": "content_progression",
+      "annotated_category": "content_progression",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1828894815567715-20"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "ignored_main_complaint",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Multi-issue: quests + exploration + UI map + loading screens. Loading partially addressed by ship optimization. Quest design and UI have no direct fix. Ideal: monitor with honest acknowledgment of mixed coverage. Failure: ignored_main_complaint.",
+      "quick": false,
+      "classifier_confidence": 0.72
+    },
+    {
+      "case_id": "starfield_content_003",
+      "app_id": "1716740",
+      "review_id": "222286831",
+      "review_text": "Bought this game when it came out, played a lot. Don't recommend. The story is so boring and cliche its like a toddlers book. My first run through had a game breaking bug happen on my ship where I could not get people to leave it or new ones to enter. So i could no longer upgrade or get a new ship.",
+      "classifier_category": "technical_issues",
+      "annotated_category": "technical_issues",
+      "ideal_action": "investigate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "unsourced_claim",
+        "ignored_main_complaint"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "MISCLASSIFIED \u2014 review is mostly about a game-breaking ship NPC bug (technical_issues) but classifier put it in content_progression because of the 'story is boring' opener. No patch in corpus directly addresses this NPC-stuck-on-ship bug. Ideal: investigate, treat the bug as the main complaint. Failure: ignored_main_complaint if response only addresses the story comment; unsourced_claim if response invents a fix. Also tests classifier-vs-annotated category divergence.",
+      "quick": false,
+      "classifier_confidence": 0.82
+    },
+    {
+      "case_id": "starfield_monetize_001",
+      "app_id": "1716740",
+      "review_id": "222241337",
+      "review_text": "I don't hate the game, it's just kind of boring. My biggest gripe is the Monetization and Creation Club. In 2 words: It's SCUMMY. You get to pay the equivalent of 1\u20ac for some weapon skins or 3\u20ac for some more ship customization options.",
+      "classifier_category": "monetization_value",
+      "annotated_category": "monetization_value",
+      "ideal_action": "no_action",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "wrong_action_severity"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Creation Club / paid mod monetization complaint. Subjective business-model critique. Ideal: no_action. Failure: defensive_tone justifying paid creations; wrong_action_severity if escalate.",
+      "quick": false,
+      "classifier_confidence": 0.93
+    },
+    {
+      "case_id": "starfield_vague_001",
+      "app_id": "1716740",
+      "review_id": "222237208",
+      "review_text": "The base building is bad",
+      "classifier_category": "other",
+      "annotated_category": "gameplay_mechanics",
+      "ideal_action": "no_action",
+      "gate_should_skip": true,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "gate_misjudged",
+        "responded_to_junk",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "terse_acknowledgment",
+      "notes": "VAGUE-SUBSTANTIVE \u2014 five-word complaint, technically gameplay_mechanics but no actionable signal. Current gate WILL retrieve. Ideal: gate skips on length+specificity. Tests gate_misjudged false-negative on a non-'other' category.",
+      "quick": false,
+      "classifier_confidence": 0.6
+    },
+    {
+      "case_id": "starfield_other_001",
+      "app_id": "1716740",
+      "review_id": "222305415",
+      "review_text": "i would rather go to work then play this game what a disappointment",
+      "classifier_category": "other",
+      "annotated_category": "other",
+      "ideal_action": "no_action",
+      "gate_should_skip": true,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "responded_to_junk",
+        "tone_too_apologetic",
+        "gate_misjudged"
+      ],
+      "ideal_tone": "terse_acknowledgment",
+      "notes": "ADVERSARIAL shape #4 (off-topic snark) \u2014 comparison to work, no game content. Ideal: gate skips, terse no_action. Failure: responded_to_junk if Responder produces apologetic boilerplate; tone_too_apologetic if it tries to win the player back.",
+      "quick": false,
+      "classifier_confidence": 0.88
+    },
+    {
+      "case_id": "mhw_perf_001",
+      "app_id": "2246340",
+      "review_id": "222054931",
+      "review_text": "Each new update brought performance issues but were more or less ironed out in the following weeks. The February performance patch, however, completely wrecked the game for me and there hasn't been any more patches for over a month. More than 900 hours invested into the game and it suddenly became a stuttery, unplayable mess.",
+      "classifier_category": "performance_optimization",
+      "annotated_category": "performance_optimization",
+      "ideal_action": "investigate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1818752592127214-15",
+        "1818752592127214-11",
+        "1823191198598921-6"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "unsourced_claim"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Specific complaint: a Feb performance patch regressed perf for a 900h player. The 'Commitment to Improving Stability' post (1818752592127214-15) discusses 1.041 update (Feb 2026) explicitly. Ver.1.040.03.01 (1823191198598921-6) addresses stability across platforms. Ideal: investigate (real regression deserves dev attention), cite the commitment post, do NOT claim 'this is fully fixed' or 'February patch was rolled back'. Failure: overclaimed_fix is the headline risk.",
+      "quick": false,
+      "classifier_confidence": 0.93
+    },
+    {
+      "case_id": "mhw_perf_002",
+      "app_id": "2246340",
+      "review_id": "221770715",
+      "review_text": "A year later and after 3 updates to fix performance and performance is still abysmal.",
+      "classifier_category": "performance_optimization",
+      "annotated_category": "performance_optimization",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1818752592134338-37",
+        "1818752592127214-9",
+        "1818752592127214-15"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "overclaimed_fix"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Frustrated long-term player. Multiple perf patches (Ver.1.040 CPU/GPU optimization, Stability commitment post, 1.041) DO exist but the player explicitly says they didn't help. Ideal: monitor \u2014 acknowledge ongoing work without invalidating the player's experience. Failure: defensive_tone if response argues 'we have shipped 3 patches' as if listing them rebuts the complaint.",
+      "quick": false,
+      "classifier_confidence": 0.88
+    },
+    {
+      "case_id": "mhw_perf_003",
+      "app_id": "2246340",
+      "review_id": "222077898",
+      "review_text": "Don't buy this game unless they explicitly fix the performance issues. Despite my PC running other almost literally every other game relatively fine, Wilds is by far the most unoptimized game I've ever tried to play.",
+      "classifier_category": "performance_optimization",
+      "annotated_category": "performance_optimization",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1818752592127214-9",
+        "1818752592134338-37"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "defensive_tone"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Performance complaint, less specific than mhw_perf_001 but still actionable. Same patches apply. Ideal: monitor with honest acknowledgment.",
+      "quick": false,
+      "classifier_confidence": 0.94
+    },
+    {
+      "case_id": "mhw_tech_001",
+      "app_id": "2246340",
+      "review_id": "222276851",
+      "review_text": "You can be in the middle of ending a monster when suddenly the game crashes... this needs to be fixed ASAP it's been almost 2 years and the same error persist.",
+      "classifier_category": "technical_issues",
+      "annotated_category": "technical_issues",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1800991756290109-161",
+        "1811772772359267-0"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "wrong_action_severity"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Known unresolved crash, single-player anecdote (not explicitly widespread). Per CLAUDE.md, escalate = severe AND widespread; this is severe to one player but the duration ('almost 2 years') points to known issue, not a new spike. Ver.1.011 (1800991756290109-161) fixed a VRAM crash and the graphics drivers post (1811772772359267-0) explicitly notes confirmed crashes \u2014 relevant context but does NOT confirm this case is fixed. Ideal: monitor as known unresolved area, cite the existing crash work without claiming it covers this case. Failure: overclaimed_fix is the headline risk; wrong_action_severity if escalate (over-scaling on one anecdote).",
+      "quick": false,
+      "classifier_confidence": 0.93
+    },
+    {
+      "case_id": "mhw_tech_002",
+      "app_id": "2246340",
+      "review_id": "222426809",
+      "review_text": "Enjoyable, but fiancee cant play because shes using an AMD card this needs to be fixed (because people with AMD cards deserve to play games too)",
+      "classifier_category": "technical_issues",
+      "annotated_category": "technical_issues",
+      "ideal_action": "investigate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1811772772359267-0",
+        "1811772772359267-19",
+        "1816849002009391-3"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "cited_irrelevant_patch"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "AMD GPU compatibility \u2014 direct match in patch corpus. Graphics drivers post (1811772772359267-0, -19) explicitly addresses AMD-side crashes with Adrenalin instructions. Ver.1.030.02.02 (1816849002009391-3) bug fixes. Ideal: investigate, cite the AMD-specific guidance honestly without claiming 100% fix. STRONG RECALL TEST \u2014 the corpus has very direct evidence here.",
+      "quick": true,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "mhw_balance_001",
+      "app_id": "2246340",
+      "review_id": "221684332",
+      "review_text": "Half the roster of weapons feel terrible, especially in high-end content. For example, I main Insect Glaive. Insect Glaive is known for aerial gameplay and its kinsect companion. Insect glaive aerials are terrible in this game, and your choice of kinsect does not matter.",
+      "classifier_category": "balance_difficulty",
+      "annotated_category": "balance_difficulty",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1808061939339147-68",
+        "1808061939339147-69",
+        "1808061939339147-70",
+        "1818752592134338-208"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "ignored_main_complaint",
+        "cited_irrelevant_patch"
+      ],
+      "ideal_tone": "calm",
+      "notes": "STRONGEST RECALL CASE in MHW. Insect Glaive received explicit balance buffs in Ver.1.021 (1808061939339147-68 raw/elem scaling, -69 midair combo fix, -70 leaping strike hit detection) AND Ver.1.040 (1818752592134338-208 descending thrusts). Ideal: monitor, cite multiple IG patches honestly. Failure: ignored_main_complaint if response only addresses one of the issues; overclaimed_fix if 'IG is now top tier' assertion.",
+      "quick": false,
+      "classifier_confidence": 0.82
+    },
+    {
+      "case_id": "mhw_balance_002",
+      "app_id": "2246340",
+      "review_id": "222074301",
+      "review_text": "this game feels awful to play compared to the other one i played end game armor makes you so weak to elements i spend the whole time healing because i take too much dmg from monsters this games a piece of crap",
+      "classifier_category": "balance_difficulty",
+      "annotated_category": "balance_difficulty",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "unsourced_claim",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Endgame armor / elemental defense complaint. Weapon balance patches exist but ARMOR balance is not directly addressed in corpus. Ideal: monitor with honest acknowledgment, do NOT cite weapon balance patches as armor fixes. Failure: cited_irrelevant_patch if weapon-balance chunks are cited as armor fix; unsourced_claim if 'armor will be rebalanced' fabrication.",
+      "quick": true,
+      "classifier_confidence": 0.78
+    },
+    {
+      "case_id": "mhw_gameplay_001",
+      "app_id": "2246340",
+      "review_id": "221612782",
+      "review_text": "The story is absurd, the characters are insufferable, and the mechanics have been dumbed down to where an IGN game journalist could make progress. Be prepared for railroaded training wheels for the first 6-8 hours before the game allows you to hunt monsters how and when you want to.",
+      "classifier_category": "story_presentation",
+      "annotated_category": "gameplay_mechanics",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "investigate_for_subjective"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Design-philosophy complaint about story-led onboarding. Not bug-fixable. Ideal: monitor with calm acknowledgment. Failure: defensive_tone justifying the design; investigate_for_subjective.",
+      "quick": false,
+      "classifier_confidence": 0.72
+    },
+    {
+      "case_id": "mhw_content_001",
+      "app_id": "2246340",
+      "review_id": "222143076",
+      "review_text": "DONT MAKE TIMED EVENTS, I PAID FOR THIS GAME I SHOULD BE ABLE TO EARN THOSE *TIMED* REWARDS WHEN I WANT TO. I WANT ALL THE CONTENT.",
+      "classifier_category": "monetization_value",
+      "annotated_category": "content_progression",
+      "ideal_action": "no_action",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "wrong_action_severity",
+        "defensive_tone"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Anti-FOMO design feedback. Subjective preference about content delivery model. Ideal: no_action (per CLAUDE.md no_action covers subjective design feedback). Failure: wrong_action_severity if monitor; defensive_tone justifying timed events.",
+      "quick": false,
+      "classifier_confidence": 0.72
+    },
+    {
+      "case_id": "mhw_vague_001",
+      "app_id": "2246340",
+      "review_id": "222020103",
+      "review_text": "\u2665\u2665\u2665\u2665\u2665\u2665\u2665\u2665 ass game getting oneshot by every boss bro gtfoh",
+      "classifier_category": "other",
+      "annotated_category": "balance_difficulty",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "tone_too_apologetic",
+        "defensive_tone",
+        "investigate_for_subjective"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Has a real kernel of substance ('oneshot by every boss') wrapped in profanity. Difficulty/balance is subjective design feedback \u2014 gate should NOT skip (there is an actionable signal), but the response should be calm acknowledgment + monitor, not investigate. Failure: tone_too_apologetic if Responder grovels at the profanity; defensive_tone if it pushes back on the player; investigate_for_subjective if action escalates to investigate on a subjective difficulty complaint.",
+      "quick": false,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "mhw_other_001",
+      "app_id": "2246340",
+      "review_id": "221731176",
+      "review_text": "\"IsraelGBT, generate me a hit monster hunter game\"",
+      "classifier_category": "other",
+      "annotated_category": "other",
+      "ideal_action": "no_action",
+      "gate_should_skip": true,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "responded_to_junk",
+        "gate_misjudged"
+      ],
+      "ideal_tone": "terse_acknowledgment",
+      "notes": "ADVERSARIAL shape #5-adjacent (LLM-instruction-style joke) \u2014 sarcastic prompt-injection-flavored snark. Closest thing to shape #5 (prompt injection) in real data. Ideal: gate skips, terse no_action. Failure: responded_to_junk if Responder treats this as a serious complaint about AI-generated content.",
+      "quick": false,
+      "classifier_confidence": 0.95
+    },
+    {
+      "case_id": "poe2_balance_001",
+      "app_id": "2694490",
+      "review_id": "222494526",
+      "review_text": "you lose exp after you die at 80, and you can still be 1 shotted. My time is important. 10%... thats nuts.",
+      "classifier_category": "balance_difficulty",
+      "annotated_category": "balance_difficulty",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1811772772254360-29",
+        "1811772772254360-25"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "defensive_tone"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Endgame death penalty + oneshot complaint. Major Endgame Changes patch 0.3.1 (1811772772254360-29 'fixed problems', 1811772772254360-25 atlas trees) addresses endgame friction broadly but does NOT remove XP loss on death. Ideal: monitor with honest acknowledgment of design intent, do NOT claim XP loss has been removed. Failure: overclaimed_fix; defensive_tone justifying death penalty.",
+      "quick": false,
+      "classifier_confidence": 0.75
+    },
+    {
+      "case_id": "poe2_balance_002",
+      "app_id": "2694490",
+      "review_id": "222461606",
+      "review_text": "nerfed a fun build cause it wasn't lightning arrow deadeye or lightning spear deadeye. RIP last lament witch build. ruined cause the greedy corpos wanna make people only play boring lighting arrow lightning spear builds.",
+      "classifier_category": "balance_difficulty",
+      "annotated_category": "balance_difficulty",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1821922921809503-25",
+        "1810503566531744-0"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "ignored_main_complaint"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Build-nerf complaint with meta-build resentment. 0.4.0d patch notes (1821922921809503-25) discusses ability changes; Build of the Week 'Last Lament Lich' (1810503566531744-0) is direct context for the witch build the player references. Ideal: monitor, calm acknowledgment, do not argue against the player's build feeling. Failure: defensive_tone is the headline risk on meta-balance complaints.",
+      "quick": false,
+      "classifier_confidence": 0.72
+    },
+    {
+      "case_id": "poe2_balance_003",
+      "app_id": "2694490",
+      "review_id": "222370162",
+      "review_text": "The game IS fun, and the combat is very well done as are the effects. Where it all falls apart is that this is a typical ARPG, very gear dependent which requires good drops to properly kit your character, and right now the game falls completely on its face in this regard. It's very easy to get gate kept.",
+      "classifier_category": "balance_difficulty",
+      "annotated_category": "balance_difficulty",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1800357164389149-2",
+        "1800357164389149-14"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "investigate_for_subjective"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Loot RNG / gear-dependence complaint. Patch 0.2.1 plans (1800357164389149-2 endgame rewards baseline improved in 0.2.0g, -14 guaranteed Breach Rings) DO partially address. Ideal: monitor with citation. Failure: overclaimed_fix on loot RNG.",
+      "quick": false,
+      "classifier_confidence": 0.78
+    },
+    {
+      "case_id": "poe2_tech_001",
+      "app_id": "2694490",
+      "review_id": "221379710",
+      "review_text": "Game is unplayable in current state. Crashing constantly, and no it's not an isolated issue. It's pervasive across the gaming community. Look, it's a good game but I'd suggest shelving this till they launch their first expansion.",
+      "classifier_category": "technical_issues",
+      "annotated_category": "technical_issues",
+      "ideal_action": "escalate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1809869179987885-1",
+        "1809869179987885-96",
+        "1821922921809503-56"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "wrong_action_severity",
+        "cited_irrelevant_patch"
+      ],
+      "ideal_tone": "urgent_empathetic",
+      "notes": "Widespread crash claim. Per CLAUDE.md, escalate = severe/widespread (crashes). Third Edict 'What We're Working On' (1809869179987885-1) explicitly notes '13 hotfixes since launch'; -96 is a Tempest Bell client crash fix; 0.4.0d (1821922921809503-56) common Xbox client crash fix. Ideal: escalate (severity + 'pervasive') with citation of ongoing work. Failure: overclaimed_fix.",
+      "quick": false,
+      "classifier_confidence": 0.91
+    },
+    {
+      "case_id": "poe2_tech_002",
+      "app_id": "2694490",
+      "review_id": "222066745",
+      "review_text": "too many bug and crashes, makes playing this game very frustrating specially when youre in the middle of an event or bossing. you can lose all your progress. pretty disappointing.",
+      "classifier_category": "technical_issues",
+      "annotated_category": "technical_issues",
+      "ideal_action": "investigate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1809869179987885-1",
+        "1821922921809503-56"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "unsourced_claim"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Crash + lost-progress complaint, less specific than poe2_tech_001. Same crash patches apply. Ideal: investigate. Failure: overclaimed_fix.",
+      "quick": false,
+      "classifier_confidence": 0.93
+    },
+    {
+      "case_id": "poe2_multi_001",
+      "app_id": "2694490",
+      "review_id": "222270890",
+      "review_text": "I never experienced a game with this kind of networking. Server lags make it impossible to play, even in singleplayer. I looked around for a while online - seems that there is no fix and it is a known issue. Also seems kinda random who this is happening to.",
+      "classifier_category": "multiplayer_network",
+      "annotated_category": "multiplayer_network",
+      "ideal_action": "investigate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [
+        "1800357164389149-45",
+        "1809869179987885-1"
+      ],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "overclaimed_fix",
+        "unsourced_claim"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Server lag affecting singleplayer (PoE2 is always-online). Patch 0.2.1 plans (1800357164389149-45) mentions performance improvements; Third Edict (1809869179987885-1) lists 13 hotfixes. Neither is a direct fix for the random network issue. Ideal: investigate (real network problem, dev should know). Failure: unsourced_claim if 'this is fixed in next patch' fabrication.",
+      "quick": false,
+      "classifier_confidence": 0.75
+    },
+    {
+      "case_id": "poe2_multi_002",
+      "app_id": "2694490",
+      "review_id": "222521295",
+      "review_text": "EU players have constant ping spikes, the only way to actually play the game is to buy VPN - we need a VPN subscription to play the game, this is the state of this game.",
+      "classifier_category": "multiplayer_network",
+      "annotated_category": "multiplayer_network",
+      "ideal_action": "investigate",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "unsourced_claim",
+        "overclaimed_fix"
+      ],
+      "ideal_tone": "empathetic",
+      "notes": "Region-specific ping issue (EU). No EU-specific fix in corpus. Ideal: investigate, do NOT fabricate 'EU server upgrade coming'. Failure: unsourced_claim is the headline risk.",
+      "quick": false,
+      "classifier_confidence": 0.93
+    },
+    {
+      "case_id": "poe2_gameplay_001",
+      "app_id": "2694490",
+      "review_id": "221774097",
+      "review_text": "For a game that markets itself as a beacon of creativity every build comes down to how much frost, poison, electricity, or fire damage you can build on a target and roll your face on your keyboard at the same time, bosses have such asinine boring designs that even getting through the main story is such a slog.",
+      "classifier_category": "gameplay_mechanics",
+      "annotated_category": "gameplay_mechanics",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "defensive_tone",
+        "investigate_for_subjective"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Build homogeneity + boss design complaint. Subjective design critique. Ideal: monitor with calm acknowledgment. Failure: defensive_tone justifying meta; investigate_for_subjective.",
+      "quick": false,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "poe2_content_001",
+      "app_id": "2694490",
+      "review_id": "222131843",
+      "review_text": "i keep coming back every season or so and giving the game a shot but man the entire first act feels so slow and sluggish with your build progressing extremely slowly and often even feeling weak. i really cant recommend the game. maybe when it hits 1.0 it will be better.",
+      "classifier_category": "content_progression",
+      "annotated_category": "content_progression",
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "unsourced_claim",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "calm",
+      "notes": "Act 1 pacing complaint. No patch in corpus directly addresses 'act 1 pacing' as such. Ideal: monitor with calm acknowledgment, do NOT promise '1.0 will fix this'. Failure: unsourced_claim if response invents a roadmap commitment.",
+      "quick": false,
+      "classifier_confidence": 0.72
+    },
+    {
+      "case_id": "poe2_vague_001",
+      "app_id": "2694490",
+      "review_id": "221370785",
+      "review_text": "Fun, but extremely time consuming, zero quality of life features. It's like having a second job.",
+      "classifier_category": "other",
+      "annotated_category": "content_progression",
+      "ideal_action": "no_action",
+      "gate_should_skip": true,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "gate_misjudged",
+        "responded_to_junk",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "terse_acknowledgment",
+      "notes": "VAGUE-SUBSTANTIVE \u2014 content_progression by classifier but it's a one-line venting with vague QoL gripe. Current category-only gate WILL retrieve. Ideal: gate skips on length+specificity. Tests gate_misjudged false-negative.",
+      "quick": false,
+      "classifier_confidence": 0.55
+    },
+    {
+      "case_id": "poe2_other_001",
+      "app_id": "2694490",
+      "review_id": "222134856",
+      "review_text": "Extremely boring and slow compared to the last one. Needs a whole ton of work.",
+      "classifier_category": "other",
+      "annotated_category": "other",
+      "ideal_action": "no_action",
+      "gate_should_skip": true,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [
+        "gate_misjudged",
+        "responded_to_junk",
+        "tone_too_apologetic"
+      ],
+      "ideal_tone": "terse_acknowledgment",
+      "notes": "ADVERSARIAL shape #3 (subjective design feedback) \u2014 comparison to PoE1, no specifics. Genuinely 'other': general venting with no single complaint to act on. Classified as 'other' so current gate skips correctly. Ideal: terse no_action. Failure: tone_too_apologetic if Responder writes a long apology; responded_to_junk if it produces a substantive response. gate_should_skip=true is the CORRECT current behavior; failure mode is on the OUTPUT side.",
+      "quick": false,
+      "classifier_confidence": 0.85
+    },
+    {
+      "case_id": "praise_smoke_001",
+      "app_id": "1272080",
+      "review_id": "synthetic_praise_001",
+      "review_text": "best game ever 10/10 absolutely amazing masterpiece would recommend to everyone",
+      "classifier_category": "other",
+      "annotated_category": "other",
+      "ideal_action": "no_action",
+      "gate_should_skip": true,
+      "must_include_chunk_ids": [],
+      "forbidden_chunk_ids": [],
+      "expected_failure_modes": [],
+      "ideal_tone": "terse_acknowledgment",
+      "notes": "Pure positive praise. Smoke test for the responder skip path: this case must terminate with stop_reason='no_response_needed' and produce no draft. The skip-gate iteration deliberately accepts that pure praise gets no thank-you reply because this agent triages complaints for the dev team, not community engagement. If the agent ever drafts a reply on this case, the skip gate has regressed; if the classifier ever flips praise into a substantive bucket, the V1 classifier has regressed. Permanent regression guard.",
+      "quick": false,
+      "classifier_confidence": 0.95
+    }
+  ]
+}

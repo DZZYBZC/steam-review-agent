@@ -23,7 +23,7 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+client = anthropic.Anthropic(api_key=CLAUDE_API_KEY, max_retries=5)
 SYSTEM_PROMPT = load_skill("draft-response")
 
 

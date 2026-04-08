@@ -9,6 +9,8 @@ Three stages:
 
 import json
 import logging
+from pathlib import Path
+
 import anthropic
 
 from agent.state import AgentState
@@ -32,8 +34,53 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+client = anthropic.Anthropic(api_key=CLAUDE_API_KEY, max_retries=5)
 SYSTEM_PROMPT = load_skill("investigate-evidence")
+
+
+_INVESTIGATOR_LOG_DIR = Path(__file__).resolve().parents[2] / "evals" / "logs"
+
+
+def _emit_self_rag_log(
+    run_id: str,
+    iteration_attempt: int,
+    query: str,
+    retrieval_hint_used: bool,
+    fell_back_to_default: bool,
+    retrieved_ids: list[str],
+    accepted_ids: list[str],
+    is_sufficient: bool,
+    reformulated_query: str | None,
+) -> None:
+    """
+    Append one JSONL line per Self-RAG iteration to evals/logs/investigator_<run_id>.jsonl.
+
+    Always-on observability hook (M5 Step 6 / Decision 3 / D5). Wrapped so any
+    failure (missing dir, disk full, permission error) is logged-and-swallowed —
+    a logging fault must NEVER take down the node.
+    """
+    if not run_id:
+        return
+    try:
+        _INVESTIGATOR_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        rejected = [c for c in retrieved_ids if c not in set(accepted_ids)]
+        line = {
+            "run_id": run_id,
+            "iteration_attempt": iteration_attempt,
+            "query": query,
+            "retrieval_hint_used": retrieval_hint_used,
+            "fell_back_to_default": fell_back_to_default,
+            "retrieved_ids": retrieved_ids,
+            "accepted_ids": accepted_ids,
+            "rejected_ids": rejected,
+            "is_sufficient": is_sufficient,
+            "reformulated_query": reformulated_query or None,
+        }
+        path = _INVESTIGATOR_LOG_DIR / f"investigator_{run_id}.jsonl"
+        with path.open("a") as f:
+            f.write(json.dumps(line) + "\n")
+    except Exception as e:
+        logger.warning(f"Investigator: JSONL log write failed (non-fatal): {e}")
 
 
 def _should_retrieve(category: str) -> bool:
@@ -188,6 +235,10 @@ def investigator_node(state: AgentState) -> dict:
             "review_tone": review_tone,
             "evidence_package": evidence.to_dict(),
             "retrieval_hint": "",
+            "drafted_response": "",
+            "proposed_action": "",            # Empty — semantically distinct from "no_action".
+            "source_ids_cited": [],
+            "stop_reason": "no_response_needed",
             "token_usage": {**state.get("token_usage", {}), "investigator": total_tokens},
             "node_log": [f"investigator: tone={review_tone}, skipped retrieval — category '{category}'", notes_log],
         }
@@ -199,6 +250,13 @@ def investigator_node(state: AgentState) -> dict:
     # retry loop below (the sufficiency check will fail and reformulated_query
     # will take over within the same invocation).
     retrieval_hint = state.get("retrieval_hint", "") or ""
+    # A revision cycle that landed back here because the Critic flagged
+    # missing evidence — the Critic was supposed to leave a hint. If the
+    # hint is empty, that's the silent fall-back path the JSONL log exists
+    # to surface (per D5).
+    is_evidence_revision = state.get("reason_type", "") == "evidence"
+    fell_back_to_default = is_evidence_revision and not retrieval_hint
+    run_id = state.get("run_id", "")
 
     try:
         # Stage 2: Hybrid retrieval
@@ -222,6 +280,22 @@ def investigator_node(state: AgentState) -> dict:
             total_tokens["output"] += tokens["output"]
 
             is_sufficient = assessment.get("is_sufficient", True)
+            reformulated = assessment.get("reformulated_query", "") or ""
+
+            # Observability: one JSONL line per Self-RAG iteration. Hint usage
+            # and fall-back flags are only meaningful on iteration 0 — after
+            # that, the loop is driven by reformulated_query.
+            _emit_self_rag_log(
+                run_id=run_id,
+                iteration_attempt=retries,
+                query=query,
+                retrieval_hint_used=(retries == 0 and bool(retrieval_hint)),
+                fell_back_to_default=(retries == 0 and fell_back_to_default),
+                retrieved_ids=[r["chunk_id"] for r in results],
+                accepted_ids=assessment.get("relevant_ids", []) or [],
+                is_sufficient=is_sufficient,
+                reformulated_query=reformulated if not is_sufficient else None,
+            )
 
             if is_sufficient or retries >= SELF_RAG_MAX_RETRIES:
                 if not is_sufficient:
@@ -231,7 +305,6 @@ def investigator_node(state: AgentState) -> dict:
                 break
 
             # Retry with reformulated query
-            reformulated = assessment.get("reformulated_query", "")
             if not reformulated:
                 logger.info("Investigator: insufficient but no reformulated query provided — stopping")
                 break

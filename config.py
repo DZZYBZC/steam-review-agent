@@ -64,7 +64,7 @@ CHECKPOINT_BACKEND = "sqlite"
 CHECKPOINT_DB_PATH = "checkpoints.db"
 
 STEAM_NEWS_API_URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid={app_id}"
-PATCH_NOTE_MAX_ITEMS = 50
+PATCH_NOTE_MAX_ITEMS = 100
 
 CHUNK_MAX_LENGTH = 500
 CHUNK_MIN_TEXT_LENGTH = 10
@@ -90,7 +90,7 @@ RESPONDER_MAX_TOKENS = 1000
 
 CRITIC_MODEL = "claude-haiku-4-5-20251001"
 CRITIC_TEMPERATURE = 0.1
-CRITIC_MAX_TOKENS = 400
+CRITIC_MAX_TOKENS = 1000
 
 RETRIEVAL_CATEGORIES = [
     "technical_issues",
@@ -106,6 +106,6 @@ RETRIEVAL_CATEGORIES = [
 
 SELF_RAG_MAX_RETRIES = 2  # Max query reformulation attempts in Investigator
 
-CLASSIFICATION_LIMIT = 50  # Default number of reviews to classify per run
+CLASSIFICATION_LIMIT = 200  # Default number of reviews to classify per run
 
 TEST_APP_ID = "2246340"  # Monster Hunter Wilds — used by test scripts

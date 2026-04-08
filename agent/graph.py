@@ -18,6 +18,34 @@ TERMINAL_ERROR_STOP_REASONS = {"llm_error", "parse_error"}
 
 logger = logging.getLogger(__name__)
 
+
+def route_after_investigator(state: AgentState) -> str:
+    """
+    Route after the Investigator runs.
+
+    Skip the Responder for reviews that don't merit a drafted reply.
+
+    LOAD-BEARING INVARIANT:
+        `evidence_package.retrieval_decision == "skipped"` is currently the
+        "no-response-eligible" bucket. The only path that produces this value
+        is the deterministic gate in investigator._should_retrieve(category),
+        which today fires only for `category == "other"`. Every other path out
+        of the Investigator produces retrieval_decision in {"retrieved",
+        "insufficient"}.
+
+        If a future change ever makes the Investigator skip retrieval for a
+        substantive category (e.g. budget-driven skips on cost-sensitive
+        tiers, or a new "subjective_opinion" category we still want to draft
+        replies for), this routing rule needs revisiting. Split the skip into
+        "skipped — no response eligible" vs "skipped — still draft" by adding
+        a sentinel field on EvidencePackage or a new retrieval_decision value
+        (e.g. "skipped_eligible" vs "skipped_no_response") and route on that.
+    """
+    ep = state.get("evidence_package", {}) or {}
+    if ep.get("retrieval_decision") == "skipped":
+        return "skip_response"
+    return "respond"
+
 def _create_checkpointer():
     """
     Create a checkpoint backend based on config.
@@ -65,7 +93,14 @@ def build_graph():
         },
     )
 
-    graph.add_edge("investigator", "responder")
+    graph.add_conditional_edges(
+        "investigator",
+        route_after_investigator,
+        {
+            "respond": "responder",
+            "skip_response": "coordinator",
+        },
+    )
 
     # Responder → critic, unless Responder hit a terminal error (skip critic, go to coordinator for audit-log + END)
     graph.add_conditional_edges(

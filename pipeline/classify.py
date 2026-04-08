@@ -60,7 +60,7 @@ class ClassificationResult(BaseModel):
             ]
         return self
 
-client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+client = anthropic.Anthropic(api_key=CLAUDE_API_KEY, max_retries=5)
 SYSTEM_PROMPT = load_skill("classify-review")
 
 def call_classifier(review_text: str) -> ClassificationResult:

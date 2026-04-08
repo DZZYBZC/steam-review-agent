@@ -6,6 +6,8 @@ __pycache__/
 *.pyc
 
 *.db
+*.db-shm
+*.db-wal
 chroma_db/
 
 .vscode/
@@ -18,3 +20,10 @@ data/*.json
 data/*.csv
 embeddings/
 logs/
+
+evals/snapshots/*
+!evals/snapshots/.gitkeep
+evals/logs/*
+!evals/logs/.gitkeep
+evals/runs/*
+!evals/runs/.gitkeep

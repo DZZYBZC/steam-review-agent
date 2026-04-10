@@ -262,17 +262,12 @@ Latest full-eval run (56 cases). Source: `snapshot_20260410_052557.json` (schema
 | Metric | Value |
 |---|---|
 | Cases evaluated | **56** (across 5 games, 11–12 cases each) |
-| Gating accuracy | **94.2%** (10 true_skip / 39 true_retrieve / 3 false_skip / 0 false_retrieve / 4 unknown) |
 | Action correctness | **76.9%** (30 / 39, excludes 17 no-response cases) |
-| Citation chain of custody (`subset_ok_rate`) | **100%** |
+| Effective first-pass rate | **87.2%** (critic approved or action-freeze override at iter0) |
+| Gating accuracy | **94.2%** (10 true_skip / 39 true_retrieve / 3 false_skip / 0 false_retrieve / 4 unknown) |
 | Hard grounding violations | **0** |
 | Retrieval — source recall@5 | **0.453** (retrieved top-5 before investigator filter, eligible cases) |
 | Retrieval — post-filter recall@5 | **0.272** (after investigator's Self-RAG filter) |
-| Retrieval — concept hit-rate | **69.6%** source / **56.5%** post-filter (did the retriever reach the right patch family) |
-| Effective first-pass rate | **87.2%** (critic approved or action-freeze override at iter0) |
-| Action-freeze overrides | **15 / 39** runs intercepted by coordinator |
-| Pairwise revision scorer | 39 judged → **5 improved**, 34 neutral (34 via deterministic shortcut), **0 regressed** |
-| Stop reasons | human_approved=39, no_response_needed=17, **max_iterations_reached=0** |
 | Total tokens | 1,574,723 |
 
 #### Where the numbers come from

@@ -82,7 +82,7 @@ Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — `s
 3. **Classify** — assign one of 10 review categories with a confidence score (Haiku)
 4. **Cluster + stats** — group by category in a rolling time window and compute priority signals
 5. **Coordinator entry** — mint a `run_id` and route into the agent graph
-6. **Investigate** — run hybrid retrieval (vector + BM25 → reciprocal-rank fusion → cross-encoder rerank) via Anthropic's tool-use API, with up to 2 self-RAG retries with query reformulation on insufficient evidence; load any active cluster notes as additional context
+6. **Investigate** — classify the review's emotional tone (Haiku), then check a deterministic category gate (some categories like `other` skip retrieval entirely). Load active cluster notes for the category. If the LLM judges from notes alone that no response is needed, exit early (`no_response_needed`). Otherwise, the investigator LLM drives retrieval via Anthropic's tool-use API: it formulates a search query, calls `retrieve_patches` (hybrid vector + BM25 → RRF → cross-encoder rerank), inspects results, and can reformulate and call again (up to 3 total calls)
 7. **Draft** — generate a player-facing reply citing only chunks the investigator retrieved (Sonnet 4.6 — the only generative node)
 8. **Critique → Human approval** — validate the evidence chain, tone, and action choice. On approval, the graph interrupts for a manual decision. On action-only rejection, the coordinator freezes the responder's action and routes directly to human approval (no revision). On evidence or drafting rejection, route back to the coordinator for a revise loop (max 3 iterations)
 
@@ -177,7 +177,7 @@ Patch notes → section-aware chunker → dual index (ChromaDB `all-MiniLM-L6-v2
 
 Reranker absolute scores are **not** passed to the investigator — they're uncalibrated and anchoring on them would amplify noise. The reranker orders; the investigator reasons about content.
 
-Up to 2 self-RAG retries on insufficient evidence (query reformulation) before falling back. Embedding and reranker models lazy-loaded and cached at module level.
+The investigator LLM formulates each search query and calls the tool up to 3 times total, reformulating between calls based on what it has seen. Embedding and reranker models lazy-loaded and cached at module level.
 
 Implementation: `pipeline/retrieve.py`.
 

@@ -34,6 +34,14 @@ def load_skill(name: str) -> str:
     return post.content
 
 
+def escape_xml(text: str) -> str:
+    """Escape characters that would break XML-like prompt tags."""
+    return (text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;"))
+
+
 def strip_code_fence(text: str) -> str:
     """Strip markdown code fences (```json ... ```) from LLM output."""
     text = text.strip()

@@ -549,27 +549,31 @@ def load_feedback_examples(
     """
     Load approved drafts from the audit log for few-shot examples.
 
-    Filters to human_decision='approved' only. Returns the fields
-    the Responder needs to learn from past approved responses.
+    Filters to human_decision='approved' and non-empty drafted_response.
+    Returns only the fields the Responder actually uses in the prompt.
 
     Returns:
         A list of dicts with: review_text, drafted_response,
-        human_decision, human_feedback, evidence_summary.
+        evidence_summary, review_tone, proposed_action, evidence_confidence.
     """
     cursor = conn.execute("""
-        SELECT review_text, drafted_response, human_decision,
-               human_feedback, evidence_summary
+        SELECT review_text, drafted_response, evidence_summary,
+               review_tone, proposed_action, evidence_confidence
         FROM audit_log
         WHERE app_id = ?
           AND category = ?
           AND human_decision = 'approved'
+          AND drafted_response IS NOT NULL
+          AND drafted_response != ''
         ORDER BY created_at DESC
         LIMIT ?
     """, (app_id, category, n))
 
     rows = cursor.fetchall()
-    columns = ["review_text", "drafted_response", "human_decision",
-               "human_feedback", "evidence_summary"]
+    columns = [
+        "review_text", "drafted_response", "evidence_summary",
+        "review_tone", "proposed_action", "evidence_confidence",
+    ]
 
     results = [dict(zip(columns, row)) for row in rows]
     logger.debug(f"Loaded {len(results)} feedback examples for {app_id}/{category}.")

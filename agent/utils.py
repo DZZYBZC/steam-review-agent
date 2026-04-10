@@ -4,6 +4,8 @@ agent/utils.py — Shared helpers for agent nodes.
 
 import json
 
+from utils import escape_xml
+
 
 def accumulate_tokens(existing: dict | None, new: dict[str, int]) -> dict[str, int]:
     """Add new token counts to existing ones, or return new if no prior entry."""
@@ -30,9 +32,9 @@ def format_evidence_sources(evidence: dict) -> str:
         meta = s.get("metadata", {})
         source_lines.append(
             f"[{i}] chunk_id={s.get('chunk_id', 'unknown')} "
-            f"version={meta.get('patch_version', 'unknown')} "
-            f"section={meta.get('section', 'unknown')}"
+            f"version={escape_xml(meta.get('patch_version', 'unknown'))} "
+            f"section={escape_xml(meta.get('section', 'unknown'))}"
         )
-        source_lines.append(f'    "{s.get("text", "")}"')
+        source_lines.append(f'    "{escape_xml(s.get("text", ""))}"')
     joined = "\n".join(source_lines)
     return f"<evidence_sources>\n{joined}\n</evidence_sources>"

@@ -89,6 +89,16 @@ Base this on the evidence confidence and the severity of the player's complaint,
 - Do not add a signature, greeting, or sign-off. The response should read as a direct reply.
 </constraints>
 
+<approved_examples>
+The user message may include a <feedback_examples> block containing previously approved responses for this category. These are real responses that a human reviewer approved.
+
+Use approved examples primarily for style, tone calibration, and rough action precedent. Do not copy their wording mechanically, and do not override the explicit grounding/action rules in this prompt. The approved examples show what has worked; the guidelines in this prompt define what is correct.
+
+Approved examples are style and action precedents only. Do not reuse their facts, patch version claims, or workaround details unless the current evidence package independently supports them. Your response must be grounded in the evidence you received for this review, not in evidence from past reviews.
+
+If no <feedback_examples> block is present (e.g., no prior approved responses exist for this category), proceed normally using only the static examples and guidelines above.
+</approved_examples>
+
 <output_format>
 Respond with ONLY a valid JSON object. Your entire response must be parseable by JSON.parse() with no preprocessing.
 - Do not wrap in markdown code fences (no ```json blocks)

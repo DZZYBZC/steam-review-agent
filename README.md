@@ -140,6 +140,8 @@ Five nodes: `coordinator` (plain Python), `investigator`, `responder`, `critic`,
 
 **Per-node model assignments.** Classifier, tone classifier, cluster summarizer, investigator, critic, and eval judges all run on **Haiku 4.5** — narrow extractive/classifier tasks. Only the responder runs on **Sonnet 4.6** (temp 0.4) because it's the only node generating player-visible prose. Heavyweight model where tone matters, nowhere else.
 
+---
+
 <details>
 <summary><strong>Key design decisions and alternatives rejected</strong></summary>
 

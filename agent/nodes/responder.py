@@ -13,12 +13,17 @@ import anthropic
 from agent.state import AgentState
 from agent.utils import accumulate_tokens, format_evidence_sources
 from pipeline.storage import get_connection, load_feedback_examples
-from utils import load_skill, parse_llm_json
+from utils import load_skill, parse_llm_json, escape_xml
 from config import (
     CLAUDE_API_KEY,
     RESPONDER_MODEL,
     RESPONDER_TEMPERATURE,
     RESPONDER_MAX_TOKENS,
+    RESPONDER_USE_FEEDBACK_EXAMPLES,
+    RESPONDER_FEEDBACK_EXAMPLES,
+    RESPONDER_FEEDBACK_MAX_REVIEW_CHARS,
+    RESPONDER_FEEDBACK_MAX_RESPONSE_CHARS,
+    RESPONDER_FEEDBACK_MAX_SUMMARY_CHARS,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,10 +35,10 @@ SYSTEM_PROMPT = load_skill("draft-response")
 def _format_evidence_for_responder(evidence: dict) -> str:
     """Format the evidence package into the text format the skill prompt expects."""
     lines = [
-        f"<evidence_summary>{evidence.get('summary', 'No evidence available.')}</evidence_summary>",
+        f"<evidence_summary>{escape_xml(evidence.get('summary', 'No evidence available.'))}</evidence_summary>",
         f"<evidence_confidence>{evidence.get('confidence', 0.0)}</evidence_confidence>",
-        f"<evidence_relevant_ids>{json.dumps(evidence.get('relevant_ids', []))}</evidence_relevant_ids>",
-        f"<known_unknowns>{json.dumps(evidence.get('known_unknowns', []))}</known_unknowns>",
+        f"<evidence_relevant_ids>{escape_xml(json.dumps(evidence.get('relevant_ids', [])))}</evidence_relevant_ids>",
+        f"<known_unknowns>{escape_xml(json.dumps(evidence.get('known_unknowns', [])))}</known_unknowns>",
         format_evidence_sources(evidence),
     ]
     return "\n".join(lines)
@@ -46,21 +51,67 @@ def _build_user_message(
     iteration: int,
     revision_reason: str,
     previous_draft: str,
+    feedback_examples_block: str = "",
 ) -> str:
     """Build the user message for the LLM call."""
     evidence_text = _format_evidence_for_responder(evidence)
 
     parts = [
-        f"<review_tone>{review_tone}</review_tone>",
-        f"<review>{review_text}</review>",
+        f"<review_tone>{escape_xml(review_tone)}</review_tone>",
+        f"<review>{escape_xml(review_text)}</review>",
         evidence_text,
     ]
 
     if iteration > 0 and revision_reason:
-        parts.append(f"<previous_draft>{previous_draft}</previous_draft>")
-        parts.append(f"<revision_feedback>{revision_reason}</revision_feedback>")
+        parts.append(f"<previous_draft>{escape_xml(previous_draft)}</previous_draft>")
+        parts.append(f"<revision_feedback>{escape_xml(revision_reason)}</revision_feedback>")
+
+    if feedback_examples_block:
+        parts.append(feedback_examples_block)
 
     return "\n\n".join(parts)
+
+
+def _format_feedback_examples(
+    examples: list[dict],
+    max_review_chars: int,
+    max_response_chars: int,
+    max_summary_chars: int,
+) -> str:
+    """Format approved audit_log examples as XML for the user message."""
+    if not examples:
+        return ""
+    parts = ["<feedback_examples>"]
+    for i, ex in enumerate(examples, 1):
+        parts.append(f'<approved_example index="{i}">')
+
+        review_tone = ex.get("review_tone") or ""
+        if review_tone:
+            parts.append(f"<review_tone>{escape_xml(review_tone)}</review_tone>")
+
+        review_text = (ex.get("review_text") or "")[:max_review_chars]
+        if review_text:
+            parts.append(f"<review>{escape_xml(review_text)}</review>")
+
+        evidence_summary = (ex.get("evidence_summary") or "")[:max_summary_chars]
+        if evidence_summary:
+            parts.append(f"<evidence_summary>{escape_xml(evidence_summary)}</evidence_summary>")
+
+        confidence = ex.get("evidence_confidence")
+        if confidence is not None:
+            parts.append(f"<evidence_confidence>{confidence}</evidence_confidence>")
+
+        action = ex.get("proposed_action") or ""
+        if action:
+            parts.append(f"<proposed_action>{escape_xml(action)}</proposed_action>")
+
+        response = (ex.get("drafted_response") or "")[:max_response_chars]
+        if response:
+            parts.append(f"<response>{escape_xml(response)}</response>")
+
+        parts.append("</approved_example>")
+    parts.append("</feedback_examples>")
+    return "\n".join(parts)
 
 
 def _call_responder_llm(user_message: str) -> tuple[dict, dict[str, int]]:
@@ -137,33 +188,36 @@ def responder_node(state: AgentState) -> dict:
     else:
         logger.info("Responder: drafting initial response")
 
-    user_message = _build_user_message(
-        review_text, review_tone, evidence,
-        iteration, revision_reason, previous_draft,
-    )
-
-    # Load feedback examples from audit log (first draft only — revision cycles don't need them)
-    feedback_examples = []
     app_id = state.get("app_id", "")
     category = state.get("cluster_summary", {}).get("category", "")
-    if iteration == 0 and app_id and category:
+
+    feedback_examples_block = ""
+    feedback_log = "responder: feedback examples disabled"
+    if RESPONDER_USE_FEEDBACK_EXAMPLES and iteration == 0 and app_id and category:
         try:
             conn = get_connection()
             try:
-                feedback_examples = load_feedback_examples(conn, app_id, category)
+                feedback_examples = load_feedback_examples(
+                    conn, app_id, category, n=RESPONDER_FEEDBACK_EXAMPLES
+                )
             finally:
                 conn.close()
+            feedback_log = f"responder: loaded {len(feedback_examples)} feedback examples"
+            feedback_examples_block = _format_feedback_examples(
+                feedback_examples,
+                RESPONDER_FEEDBACK_MAX_REVIEW_CHARS,
+                RESPONDER_FEEDBACK_MAX_RESPONSE_CHARS,
+                RESPONDER_FEEDBACK_MAX_SUMMARY_CHARS,
+            )
         except Exception as e:
             logger.warning(f"Responder: failed to load feedback examples: {e}")
+            feedback_log = f"responder: feedback examples failed: {e}"
 
-    feedback_log = f"responder: loaded {len(feedback_examples)} feedback examples"
-    if feedback_examples:
-        lines = ["Here are examples of previously approved responses for this category. Match their style and approach:"]
-        for ex in feedback_examples:
-            lines.append("--- Approved example ---")
-            lines.append(f"Review: {ex['review_text'][:200]}")
-            lines.append(f"Response: {ex['drafted_response']}")
-        user_message += "\n\n" + "\n".join(lines)
+    user_message = _build_user_message(
+        review_text, review_tone, evidence,
+        iteration, revision_reason, previous_draft,
+        feedback_examples_block=feedback_examples_block,
+    )
 
     try:
         data, tokens = _call_responder_llm(user_message)

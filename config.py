@@ -87,6 +87,12 @@ RESPONDER_MODEL = "claude-sonnet-4-6"
 RESPONDER_TEMPERATURE = 0.4
 RESPONDER_MAX_TOKENS = 1000
 
+RESPONDER_USE_FEEDBACK_EXAMPLES = True     # Feature flag — disable to roll back
+RESPONDER_FEEDBACK_EXAMPLES = 3            # Max approved examples loaded from audit_log
+RESPONDER_FEEDBACK_MAX_REVIEW_CHARS = 300  # Truncation limit for review_text in examples
+RESPONDER_FEEDBACK_MAX_RESPONSE_CHARS = 500  # Truncation limit for drafted_response in examples
+RESPONDER_FEEDBACK_MAX_SUMMARY_CHARS = 300   # Truncation limit for evidence_summary in examples
+
 CRITIC_MODEL = "claude-haiku-4-5-20251001"
 CRITIC_TEMPERATURE = 0.1
 CRITIC_MAX_TOKENS = 1000

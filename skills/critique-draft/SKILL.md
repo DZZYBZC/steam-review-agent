@@ -78,6 +78,8 @@ When rejecting, also classify the rejection into one of two categories via the `
 
 - **`"drafting"`** — the Responder can fix this without new evidence. Use this for tone mismatches, overconfidence, hallucination, bad citations, poor action choices, and formatting issues. The evidence package is fine; the draft misused it. When `reason_type` is `"drafting"`, `retrieval_hint` must be an empty string.
 
+- **`"action"`** — the ONLY failing check is the action check (#6). The response text itself is fine — it passes hallucination, overconfidence, known unknowns, tone, and completeness — but you disagree with the `proposed_action`. Use this classification ONLY when check #6 is the sole reason for rejection; if any other check also fails, use `"evidence"` or `"drafting"` as appropriate. When `reason_type` is `"action"`, `retrieval_hint` must be an empty string.
+
 **Hallucination defaults to `"drafting"`** (the Responder invented something; fixing that is a rewrite, not a new search). Only classify hallucination as `"evidence"` if you can specifically articulate what evidence was missing that would have prevented the invention — and then the retrieval_hint must target that gap.
 
 When approving, both `reason_type` and `retrieval_hint` must be empty strings.
@@ -105,7 +107,7 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
   "retrieval_hint": "3-8 keyword search query when reason_type is 'evidence'; empty string otherwise."
 }
 
-- `reason_type`: Empty string when approved. Otherwise "evidence" if a different retrieval is needed, "drafting" if the Responder can fix it alone. See the rejection_classification section.
+- `reason_type`: Empty string when approved. Otherwise "evidence" if a different retrieval is needed, "action" if only the action check (#6) failed, "drafting" for all other rejection reasons. See the rejection_classification section.
 - `retrieval_hint`: Required non-empty search query when reason_type is "evidence". Keywords only, no full sentences. Empty string in all other cases.
 </output_format>
 

@@ -55,7 +55,6 @@ CLUSTER_SUMMARY_MAX_TOKENS = 600
 
 CLUSTER_NOTE_STALENESS_DAYS = 90
 CLUSTER_NOTE_DEDUP_WINDOW_HOURS = 24
-CLUSTER_NOTE_AUTO_CONFIDENCE = 0.5  # deprecated: no longer load-bearing; kept for possible post-eval revival
 CLUSTER_NOTE_AUTO_MIN_SOURCES = 2
 CLUSTER_NOTE_STATUSES = ["active", "resolved"]
 
@@ -82,7 +81,7 @@ RERANKER_TOP_N = 5
 
 INVESTIGATOR_MODEL = "claude-haiku-4-5-20251001"
 INVESTIGATOR_TEMPERATURE = 0.1
-INVESTIGATOR_MAX_TOKENS = 400
+INVESTIGATOR_MAX_TOKENS = 1500  # Bumped from 400 to fit tool-use turns (text reasoning + tool_use blocks + final JSON)
 
 RESPONDER_MODEL = "claude-sonnet-4-6"
 RESPONDER_TEMPERATURE = 0.4
@@ -111,7 +110,7 @@ RETRIEVAL_CATEGORIES = [
     "monetization_value",
 ]
 
-SELF_RAG_MAX_RETRIES = 2  # Max query reformulation attempts in Investigator
+INVESTIGATOR_MAX_TOOL_CALLS = 3  # Hard cap on retrieve_patches tool calls per investigator invocation
 
 CLASSIFICATION_LIMIT = 200  # Default number of reviews to classify per run
 

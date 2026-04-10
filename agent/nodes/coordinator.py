@@ -56,6 +56,44 @@ def coordinator_node(state: AgentState) -> dict:
             f"Coordinator: critic revision cycle {iteration}, reason: {state.get('revision_reason', 'unknown')}"
         )
 
+    # Action-freeze interception: if critic rejected on action grounds only,
+    # override the rejection, freeze the responder's action, route to human.
+    # Checked BEFORE max_iterations so the freeze fires even at the iteration cap.
+    reason_type = state.get("reason_type", "")
+    if not approved and reason_type == "action" and human_decision != "rejected":
+        action = state.get("proposed_action", "monitor")
+        frozen = state.get("frozen_action", "") or action
+        logger.info(
+            f"Coordinator: action-only rejection overridden, "
+            f"freezing action at '{frozen}'"
+        )
+        override_count = state.get("action_override_count", 0) + 1
+        # Record the iteration of the FIRST override only (never overwritten).
+        # Convention: uses iteration_count, which is 1 after the first
+        # investigate→respond→critic pass. So Spot 1's expected value is 1.
+        first_override_iter = state.get("first_override_at_iteration", -1)
+        if first_override_iter < 0:
+            first_override_iter = iteration
+        return {
+            "run_id": run_id,
+            "frozen_action": frozen,
+            "action_freeze_applied": True,
+            "action_override_count": override_count,
+            "first_override_at_iteration": first_override_iter,
+            "proposed_action": frozen,
+            "approved": True,
+            "revision_reason": "",
+            "reason_type": "",
+            "stop_reason": "action_override",
+            "human_decision": "",
+            "human_feedback": "",
+            "node_log": [
+                f"coordinator: action-only rejection overridden, "
+                f"frozen_action={frozen}, override_count={override_count}, "
+                f"routing to human_approval"
+            ],
+        }
+
     if iteration >= AGENT_MAX_ITERATIONS:
         stop_reason = "max_iterations_reached"
         try:
@@ -94,6 +132,11 @@ def route_from_coordinator(state: AgentState) -> str:
     if stop_reason in TERMINAL_ERROR_STOP_REASONS or stop_reason in TERMINAL_NORMAL_STOP_REASONS:
         logger.info(f"Coordinator: terminal stop_reason ({stop_reason}), ending.")
         return "done"
+
+    # Action-freeze override: coordinator overrode a critic action-only rejection.
+    # Checked BEFORE max_iterations so the freeze fires even at the iteration cap.
+    if stop_reason == "action_override":
+        return "human_approval"
 
     if iteration >= AGENT_MAX_ITERATIONS:
         logger.warning(

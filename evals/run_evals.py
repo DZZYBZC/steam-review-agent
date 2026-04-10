@@ -149,6 +149,10 @@ def build_initial_state(case: dict) -> AgentState:
         "token_usage": {},
         "human_decision": "",
         "human_feedback": "",
+        "frozen_action": "",
+        "action_freeze_applied": False,
+        "action_override_count": 0,
+        "first_override_at_iteration": -1,
     }
 
 
@@ -221,6 +225,10 @@ def _serialize_result(result: dict) -> dict:
         "node_log": result.get("node_log", []),
         "token_usage": result.get("token_usage", {}),
         "human_decision": result.get("human_decision", ""),
+        "frozen_action": result.get("frozen_action", ""),
+        "action_freeze_applied": result.get("action_freeze_applied", False),
+        "action_override_count": result.get("action_override_count", 0),
+        "first_override_at_iteration": result.get("first_override_at_iteration", -1),
     }
 
 

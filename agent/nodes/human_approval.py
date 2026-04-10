@@ -86,22 +86,46 @@ def human_approval_node(state: AgentState) -> dict:
     decision = state.get("human_decision", "")
     feedback = state.get("human_feedback", "")
 
+    frozen = state.get("frozen_action", "")
+
     if decision == "approved":
         logger.info("Human approved the draft.")
-        _log_audit(state, "human_approved")
+        # Restore frozen_action BEFORE _log_audit so the audit row has the correct action.
+        action_override = {}
+        if frozen and state.get("proposed_action", "") != frozen:
+            action_override = {"proposed_action": frozen}
+            logger.info(f"Human approval: restoring frozen_action '{frozen}' "
+                        f"(was '{state.get('proposed_action', '')}')")
+        audit_state = {**state, **action_override}
+        _log_audit(audit_state, "human_approved")
         return {
             "stop_reason": "human_approved",
+            **action_override,
             "node_log": ["human_approval: human approved the draft"],
         }
 
     if decision == "rejected":
         reason = feedback or "Human rejected without feedback"
         logger.info(f"Human rejected the draft: {reason}")
-        _log_audit(state, "revising")
+        # Build cleared audit_state BEFORE _log_audit so the audit row reflects
+        # the freeze being cleared at this moment.
+        clear_fields = {
+            "frozen_action": "",
+            "action_freeze_applied": False,
+            "human_decision": "",
+            "human_feedback": "",
+        }
+        audit_state = {**state, **clear_fields, "revision_reason": reason}
+        _log_audit(audit_state, "revising")
+        # Clear active freeze: human is the final authority on action choice.
+        # human_decision/human_feedback cleared so the coordinator's freeze guard
+        # can re-engage on a future action-only rejection after revision.
+        # action_override_count intentionally NOT cleared — persistent record.
         return {
             "approved": False,
             "revision_reason": reason,
             "stop_reason": "revising",
+            **clear_fields,
             "node_log": [f"human_approval: human rejected — {reason}"],
         }
 

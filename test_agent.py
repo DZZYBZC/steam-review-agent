@@ -137,6 +137,11 @@ def run(category: str | None = None, review_id: str | None = None):
         "token_usage": {},
         "human_decision": "",
         "human_feedback": "",
+        "run_id": "",
+        "frozen_action": "",
+        "action_freeze_applied": False,
+        "action_override_count": 0,
+        "first_override_at_iteration": -1,
     }
 
     # 5. Run — graph pauses at human_approval interrupt

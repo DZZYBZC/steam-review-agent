@@ -51,6 +51,11 @@ def test_graph():
         "token_usage": {},
         "human_decision": "",
         "human_feedback": "",
+        "run_id": "",
+        "frozen_action": "",
+        "action_freeze_applied": False,
+        "action_override_count": 0,
+        "first_override_at_iteration": -1,
     }
 
     thread_config = {"configurable": {"thread_id": "test-001"}}

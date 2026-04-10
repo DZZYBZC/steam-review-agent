@@ -24,9 +24,9 @@ class EvidencePackage(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     sources: list[dict] = Field(default_factory=list)
     known_unknowns: list[str] = Field(default_factory=list)
-    retrieval_decision: Literal["retrieved", "skipped", "insufficient"] = Field(
-        default="skipped"
-    )
+    retrieval_decision: Literal[
+        "retrieved", "skipped", "skipped_notes_sufficient", "insufficient"
+    ] = Field(default="skipped")
     retrieval_reasoning: str = Field(default="")
     query_used: str = Field(default="")
 

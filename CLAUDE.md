@@ -27,6 +27,17 @@ steam-review-agent/
 │   └── nodes/             # One file per agent node
 ├── skills/                # Agent skills — SKILL.md files loaded by Python
 ├── .claude/skills/        # Claude Code skills — project conventions
+├── evals/                 # Eval harness (M5)
+│   ├── run_evals.py           # Eval runner — loads golden.json, runs graph, writes run JSON
+│   ├── reporter.py            # Stratified terminal report
+│   ├── snapshot.py            # Versioned eval snapshots (schema v6) with cross-snapshot diffing
+│   ├── scorers/               # Deterministic + LLM judge scorers
+│   │   ├── deterministic.py   # Action correctness, retrieval recall, citation audit, grounding band
+│   │   ├── gating_accuracy.py # Investigator gate confusion matrix
+│   │   ├── judge_grounding.py # LLM judge for low_conf_with_cite flag
+│   │   ├── judge_action.py    # LLM judge for wrong_action_severity
+│   │   └── pairwise.py        # LLM judge for revision-loop improvement
+│   └── test_sets/             # Golden set + regression seeds
 ├── config.py              # All configuration (models, temperatures, thresholds)
 ├── utils.py               # Shared utilities (load_skill with frontmatter parsing)
 ├── main.py                # Pipeline entry point
@@ -59,11 +70,16 @@ steam-review-agent/
 - Test agent (single review, real LLM calls): `python test_agent.py [--category <cat>] [--review-id <id>] [--list]`
 - Test graph compilation: `python test_graph.py`
 - Manage cluster notes: `python resolve_note.py {list <app_id> <category> | resolve <note_id> | reactivate <note_id>}`
+- Run evals (full): `python evals/run_evals.py`
+- Run evals (quick subset): `python evals/run_evals.py --quick`
+- Run evals (single case): `python evals/run_evals.py --case-id <case_id>`
+- Run evals (by category): `python evals/run_evals.py --category <category>`
 
 ## Agent graph flow
 - First pass (iteration 0): coordinator → investigator → responder → critic → (if approved) → **[interrupt]** → human_approval → END
 - Critic rejection — **drafting type**: critic → coordinator → responder → critic → ... (re-draft only, evidence_package unchanged)
 - Critic rejection — **evidence type**: critic → coordinator → investigator → responder → critic → ... (re-investigate using critic's `retrieval_hint` as query seed; falls back to default query construction if hint is empty)
+- Critic rejection — **action type** (Iter7 action-freeze): critic → coordinator → **[interrupt]** → human_approval → END. When `reason_type="action"` (the ONLY failing check is action correctness), the coordinator freezes the responder's action in `frozen_action`, sets `action_freeze_applied=True`, and routes directly to human_approval — bypassing the revision loop. Human rejection clears the freeze and re-enters the normal revision loop.
 - Terminal LLM/parse errors: responder or critic → coordinator → END with stop_reason="llm_error" or "parse_error" (skips rest of graph; coordinator audit-logs the errored run)
 - Human rejection: human_approval → coordinator → responder → critic → ... (re-enters revision loop as drafting type)
 - Terminates on: human approval, AGENT_MAX_ITERATIONS reached, human approval after max iterations, or terminal LLM/parse error
@@ -92,7 +108,7 @@ steam-review-agent/
 - Investigator loads active, non-stale cluster notes as additional context in the LLM call
 
 ## Retrieval pipeline
-Hybrid RAG: vector (ChromaDB + all-MiniLM-L6-v2) + BM25 → RRF fusion (top 12) → cross-encoder rerank (top 5) → Investigator node (up to 2 self-RAG retries with query reformulation). Reranker scores are internal to the retrieval pipeline — they order results but are not passed to the Investigator LLM (to avoid anchoring on uncalibrated floats).
+Hybrid RAG: vector (ChromaDB + all-MiniLM-L6-v2) + BM25 → RRF fusion (top 12) → cross-encoder rerank (top 5) → Investigator node (Anthropic tool-use API with `retrieve_patches` tool, up to `INVESTIGATOR_MAX_TOOL_CALLS` = 3 calls per invocation for query reformulation). Reranker scores are internal to the retrieval pipeline — they order results but are not passed to the Investigator LLM (to avoid anchoring on uncalibrated floats).
 
 ## Proposed actions
 

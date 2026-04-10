@@ -19,6 +19,9 @@ TERMINAL_ERROR_STOP_REASONS = {"llm_error", "parse_error"}
 logger = logging.getLogger(__name__)
 
 
+_NO_RESPONSE_RETRIEVAL_DECISIONS = {"skipped", "skipped_notes_sufficient"}
+
+
 def route_after_investigator(state: AgentState) -> str:
     """
     Route after the Investigator runs.
@@ -26,23 +29,24 @@ def route_after_investigator(state: AgentState) -> str:
     Skip the Responder for reviews that don't merit a drafted reply.
 
     LOAD-BEARING INVARIANT:
-        `evidence_package.retrieval_decision == "skipped"` is currently the
-        "no-response-eligible" bucket. The only path that produces this value
-        is the deterministic gate in investigator._should_retrieve(category),
-        which today fires only for `category == "other"`. Every other path out
-        of the Investigator produces retrieval_decision in {"retrieved",
-        "insufficient"}.
+        Two `retrieval_decision` values route to `skip_response`:
 
-        If a future change ever makes the Investigator skip retrieval for a
-        substantive category (e.g. budget-driven skips on cost-sensitive
-        tiers, or a new "subjective_opinion" category we still want to draft
-        replies for), this routing rule needs revisiting. Split the skip into
-        "skipped — no response eligible" vs "skipped — still draft" by adding
-        a sentinel field on EvidencePackage or a new retrieval_decision value
-        (e.g. "skipped_eligible" vs "skipped_no_response") and route on that.
+        - `"skipped"` — the deterministic category gate in
+          `investigator._should_retrieve(category)` fired (today: `category == "other"`).
+          Zero LLM cost path.
+        - `"skipped_notes_sufficient"` — the Investigator LLM judged from cluster
+          notes that no drafted response is warranted AND made no tool calls. Also
+          routes through the early-return path with `stop_reason="no_response_needed"`,
+          so Responder/Critic are never invoked and no empty `EvidencePackage` leaks
+          downstream.
+
+        Any other `retrieval_decision` ({"retrieved", "insufficient"}) routes to
+        the Responder. If a future change adds another "skip but still draft"
+        path, it MUST NOT reuse either of these values — add a new one and keep
+        this set in sync.
     """
     ep = state.get("evidence_package", {}) or {}
-    if ep.get("retrieval_decision") == "skipped":
+    if ep.get("retrieval_decision") in _NO_RESPONSE_RETRIEVAL_DECISIONS:
         return "skip_response"
     return "respond"
 
@@ -89,6 +93,7 @@ def build_graph():
         {
             "investigate": "investigator",
             "respond": "responder",
+            "human_approval": "human_approval",  # action-freeze override
             "done": END,
         },
     )

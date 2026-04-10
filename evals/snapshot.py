@@ -79,6 +79,8 @@ DIFF_METRICS: list[tuple[str, str, str]] = [
     ("judge_pw_n_deterministic",     "judge.pairwise.n_deterministic",       "d"),
     ("critic_approval_overall",      "critic_health.approval_rate_overall",".3f"),
     ("critic_iter0_approval",        "critic_health.iter0_approval",       ".3f"),
+    ("action_override_runs",         "action_freeze.n_runs_with_action_override", "d"),
+    ("effective_iter0_rate",         "action_freeze.effective_iter0_rate",  ".3f"),
     ("gating_accuracy",              "gating.accuracy",                    ".3f"),
     ("gating_false_skip_rate",       "gating.false_skip_rate",             ".3f"),
     ("gating_false_retrieve_rate",   "gating.false_retrieve_rate",         ".3f"),
@@ -295,6 +297,32 @@ def _build_aggregates(
         if act.get("applicable", True) and not act["correct"] and act["ideal"] and act["predicted"]:
             failure_modes["wrong_action_severity"] += 1
 
+    # Action-freeze metrics (Iter7): computed from serialized result records.
+    n_runs_with_action_override = sum(
+        1 for r in records
+        if r.get("ok") and (r.get("result") or {}).get("action_override_count", 0) > 0
+    )
+    # effective_iter0_rate: fraction of eligible runs that reached human_approval
+    # after their first critic evaluation (by normal approval OR coordinator override).
+    # Denominator: non-error runs that reached the critic at least once.
+    _eligible_for_eff = [
+        r for r in records
+        if r.get("ok")
+        and (r.get("result") or {}).get("stop_reason") not in {"llm_error", "parse_error", "no_response_needed"}
+    ]
+    _n_eff_denom = len(_eligible_for_eff)
+    # Numerator: runs where either (a) critic approved at iter0 (iteration_count==1
+    # means only one responder pass happened) or (b) coordinator overrode at iter0
+    # (first_override_at_iteration==1, set once and never overwritten).
+    _n_eff_numer = sum(
+        1 for r in _eligible_for_eff
+        if (
+            (r.get("result") or {}).get("first_override_at_iteration", -1) == 1
+            or (r.get("result") or {}).get("iteration_count", 0) == 1
+        )
+    )
+    effective_iter0_rate = round(_n_eff_numer / _n_eff_denom, 3) if _n_eff_denom else None
+
     return {
         "n_records": len(records),
         "n_scored": n_scored,
@@ -337,6 +365,10 @@ def _build_aggregates(
             "iter0_approval": iter0,
             "mean_iters_to_approval": ch["mean_iterations_to_approval"],
             "rejections_by_reason_type": ch["rejections_by_reason_type"],
+        },
+        "action_freeze": {
+            "n_runs_with_action_override": n_runs_with_action_override,
+            "effective_iter0_rate": effective_iter0_rate,
         },
         "gating": {
             "accuracy": gating["accuracy"],

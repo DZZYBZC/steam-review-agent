@@ -54,6 +54,8 @@ graph.add_conditional_edges(
     route_from_coordinator,    # function that returns a string
     {
         "investigate": "investigator",
+        "respond": "responder",
+        "human_approval": "human_approval",  # action-freeze override (Iter7)
         "done": END,
     },
 )
@@ -91,6 +93,11 @@ START → coordinator → investigator → responder → critic ──┐
               ↓                          approved ↓  rejected ↓
               ↓                             END           (revision)
               ↓                                         ↓
+              ↓                       reason_type == "action"?
+              ↓                         yes ↓
+              ↓                     freeze action, route to
+              ↓                     [interrupt] → human_approval
+              ↓                                         ↓
               ↓                       reason_type == "evidence"?
               ↓                         yes ↓           no ↓
               +———→ investigator ←—————————+            responder
@@ -98,8 +105,9 @@ START → coordinator → investigator → responder → critic ──┐
                                                          critic
 ```
 - First pass (iteration 0): full pipeline through investigator
-- Critic rejection — **drafting type** (tone, hallucination, overconfidence, bad citation, action): coordinator → responder (re-draft only, evidence_package unchanged)
+- Critic rejection — **drafting type** (tone, hallucination, overconfidence, bad citation): coordinator → responder (re-draft only, evidence_package unchanged)
 - Critic rejection — **evidence type** (insufficient or wrong coverage): coordinator → investigator → responder (re-investigate using Critic's `retrieval_hint` as query seed; investigator clears the hint on return)
+- Critic rejection — **action type** (Iter7 action-freeze): coordinator freezes the responder's action in `frozen_action`, sets `action_freeze_applied=True`, and routes directly to human_approval — bypassing the revision loop. Human rejection clears the freeze and re-enters the normal revision loop. Persistent record: `action_override_count` and `first_override_at_iteration` are never cleared.
 - Human rejection: coordinator → responder (treated as drafting type)
 - Terminal LLM/parse errors from responder or critic: routed directly to coordinator, which audit-logs and ends (`stop_reason="llm_error"` or `"parse_error"`, never reaches human_approval)
 - max_iterations is read from config.AGENT_MAX_ITERATIONS, not from state

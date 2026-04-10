@@ -50,6 +50,36 @@
       "judge_ruling_before_fix": "n/a (was action-correct in baseline)",
       "expected_outcome_after_fix": "action_correctness.correct == True (proposed_action == 'monitor')",
       "in_golden": true
+    },
+    {
+      "case_id": "poe2_content_001",
+      "added": "2026-04-09",
+      "added_in_iteration": "Iter5 — critique-draft header-block consultation (monitor-on-design over-rejection fix)",
+      "failure_pattern": "monitor_on_design_over_rejection",
+      "description": "Win-side seed for the Iter5 critic header-block surgery. Pre-fix, this case (a recurring design complaint about Act One pacing in PoE2) was repeatedly rejected at iter0 with critic critique 'monitor is incorrect... should be escalated to investigate'. The line-59 guardrail ('adjacent-rung disagreements monitor↔investigate are tolerable') was buried at the bottom of check #6 and being silently overridden. After moving the rung definitions to <action_rubric_reference> and promoting the guardrail to the lead of check #6, the critic should treat this as a tolerable adjacent-rung call and approve at monitor. Drift guard: any future edit that re-buries the guardrail or removes the adjacent-rung tolerance will surface as this case landing on investigate.",
+      "judge_ruling_before_fix": "n/a (final draft was action-correct, but iter0 was rejected and the case burned iterations)",
+      "expected_outcome_after_fix": "action_correctness.correct == True (proposed_action == 'monitor') AND ideally iter0_approval == True",
+      "in_golden": true
+    },
+    {
+      "case_id": "poe2_gameplay_001",
+      "added": "2026-04-09",
+      "added_in_iteration": "Iter5 — critique-draft header-block consultation (monitor-on-design over-rejection fix)",
+      "failure_pattern": "monitor_on_design_over_rejection",
+      "description": "Second win-side seed for the Iter5 critic surgery. Pre-fix, the responder's monitor proposal on this systemic design complaint (build diversity / boss design feedback) was rejected at iter0 with critic critique 'monitor is inappropriate... it belongs in no_action' — a no_action↔monitor adjacent rejection that the line-59 guardrail should also tolerate when the critic's confidence is low. After the cognitive-ordering inversion in check #6, this case should converge cleanly to monitor without the iter0 thrash. Locked alongside poe2_content_001 to give the regression suite two examples of the same pattern across different ladder neighborhoods (monitor↔investigate AND no_action↔monitor).",
+      "judge_ruling_before_fix": "n/a (final draft was action-correct after iteration, but iter0 was rejected)",
+      "expected_outcome_after_fix": "action_correctness.correct == True (proposed_action == 'monitor')",
+      "in_golden": true
+    },
+    {
+      "case_id": "starfield_monetize_001",
+      "added": "2026-04-09",
+      "added_in_iteration": "Iter5 — critique-draft header-block consultation (pricing-as-no_action negative control)",
+      "failure_pattern": "pricing_drift_guard",
+      "description": "Negative-direction guard for the Iter5 critic surgery. The header-block restructuring of check #6 must NOT relax fail condition #2 (over-escalation upward), which is what keeps pure pricing/monetization complaints at no_action even when they describe related game features. This case is a Starfield monetization complaint with ideal_action=no_action — after the edit, **it should still land at no_action; any acceptance of investigate or escalate is a failure of fail-condition #2.** The plan dropped README's candidate fix (b) (fold heated-adjective into responder) precisely to avoid weakening fail #2; this seed catches any silent drift in the same direction. Distinct from payday3_monetize_001 (Iter1 seed), which guards a different pricing review.",
+      "judge_ruling_before_fix": "n/a (was action-correct in baseline)",
+      "expected_outcome_after_fix": "action_correctness.correct == True (proposed_action == 'no_action')",
+      "in_golden": true
     }
   ]
 }

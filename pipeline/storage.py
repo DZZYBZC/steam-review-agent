@@ -113,11 +113,18 @@ def create_tables(conn: sqlite3.Connection) -> None:
             human_feedback TEXT,
             iteration_count INTEGER,
             stop_reason TEXT,
+            retrieval_decision TEXT,
             token_usage TEXT,
             run_id TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         )
     """)
+
+    # Backfill retrieval_decision column on pre-existing audit_log tables (idempotent)
+    try:
+        conn.execute("ALTER TABLE audit_log ADD COLUMN retrieval_decision TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS audit_log_iterations (
@@ -402,8 +409,9 @@ def save_audit_entry(conn: sqlite3.Connection, state: dict) -> bool:
             (app_id, review_id, category, review_text, review_tone,
              evidence_summary, evidence_confidence, drafted_response,
              proposed_action, source_ids_cited, critique, human_decision,
-             human_feedback, iteration_count, stop_reason, token_usage, run_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             human_feedback, iteration_count, stop_reason, retrieval_decision,
+             token_usage, run_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             state.get("app_id", ""),
             state.get("review_id", ""),
@@ -420,6 +428,7 @@ def save_audit_entry(conn: sqlite3.Connection, state: dict) -> bool:
             state.get("human_feedback", ""),
             state.get("iteration_count", 0),
             state.get("stop_reason", ""),
+            evidence.get("retrieval_decision", ""),
             json.dumps(state.get("token_usage", {})),
             state.get("run_id", ""),
         ))

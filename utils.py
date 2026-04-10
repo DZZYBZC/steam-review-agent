@@ -36,9 +36,13 @@ def load_skill(name: str) -> str:
 
 def strip_code_fence(text: str) -> str:
     """Strip markdown code fences (```json ... ```) from LLM output."""
+    text = text.strip()
     if text.startswith("```"):
         lines = text.split("\n")
-        text = "\n".join(lines[1:-1]).strip()
+        lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
     return text
 
 

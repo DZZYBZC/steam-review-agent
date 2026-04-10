@@ -10,16 +10,21 @@ Turns noisy Steam reviews into evidence-backed draft replies — with an iterati
 # 1. Install (Python 3.12)
 python3.12 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 
-# 2. Set CLAUDE_API_KEY (required for any agent run). Pick ONE of these two paths:
+# 2. Set API keys. CLAUDE_API_KEY is required for any agent run.
+#    HF_TOKEN is needed on first run to download embedding/reranker models.
+#    Pick ONE of these two paths:
 #    (a) write a .env file — config.py loads it via python-dotenv:
 echo 'CLAUDE_API_KEY=sk-ant-...' >> .env
-#    (b) OR export the variable directly in your shell:
+echo 'HF_TOKEN=hf_...' >> .env
+#    (b) OR export the variables directly in your shell:
 export CLAUDE_API_KEY=sk-ant-...
+export HF_TOKEN=hf_...
 
 # 3. End-to-end smoke test on a hardcoded review.
 #    Runs the full agent graph (investigator → responder → critic) against a fake
 #    "game crashes in dungeon" review and auto-approves at the human gate.
 #    Makes ~3-5 real LLM calls. Wall clock ~30s. Costs a few cents on Haiku+Sonnet.
+#    First run also downloads embedding + reranker models (~100MB).
 python test_graph.py
 ```
 
@@ -29,7 +34,7 @@ For the full data pipeline, eval suite, runtime/cost estimates, and other entry 
 
 ## What it does
 
-Ingests Steam reviews and routes each one through a multi-agent workflow: classify → retrieve patch notes → draft an evidence-grounded reply → critic gate → human approval. The interesting problem isn't generation — it's *defensible* generation that traces every claim back to a retrieved patch chunk.
+Ingests Steam reviews and routes each one through a LangGraph workflow with investigator / responder / critic agents plus a plain-Python coordinator and human approval gate: classify → retrieve patch notes → draft an evidence-grounded reply → critic gate → human approval. The interesting problem isn't generation — it's *defensible* generation that traces every claim back to a retrieved patch chunk.
 
 Approved drafts become few-shot examples for future runs; human-rejected drafts become cluster notes that warn the next investigator about known issues in the same category.
 
@@ -151,7 +156,7 @@ Seven choices that look like accidents until you know why:
 </details>
 
 <details>
-<summary><strong>Critic ↔ revision loop and run identity</strong></summary>
+<summary><a id="critic-revision-loop"></a><strong>Critic ↔ revision loop and run identity</strong></summary>
 
 **Three rejection kinds.** A `drafting` rejection routes the responder into a re-draft without re-investigating; an `evidence` rejection routes back through the coordinator to the investigator, with the critic's `retrieval_hint` seeding the next query; an `action` rejection (only the action check failed, all other checks passed) is intercepted by the coordinator before it reaches the responder. Each iteration writes to `audit_log_iterations` (draft, critique, reason type, hint) for offline analysis.
 
@@ -222,23 +227,25 @@ The agent matters; the eval system is what made it iterable. Each block below is
 <details>
 <summary><strong>Eval iteration arc (chronological)</strong></summary>
 
-Thirteen iterations, each producing labeled signal the next one acted on:
+Thirteen iterations. Three reverted, one partial success, nine shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
 
-1. **Baseline** — deterministic scorers only. Established gating accuracy, action correctness, citation chain-of-custody. No LLM judges.
-2. **Grounding judge** — `judge_grounding.py` rules on `low_conf_with_cite` cases: `honest_hedge | misleading_fix_claim | unclear`. Schema v2 → v3.
-3. **Action judge** — `judge_action.py` splits `wrong_action_severity` into `over_escalation | missed_escalation | category_drift | tolerable_disagreement`. Schema v3 → v4.
-4. **`multi_part_complaint` prompt edit** — first eval-driven prompt edit. `civ7_gameplay_002` flipped `misleading_fix_claim` → `honest_hedge`, all negative controls held. Clean win. Established the lock-before-edit discipline.
-5. **Iteration 1 reverted — `action_severity_precedence` rule.** Narrow locked metric improved 9 → 5 but aggregate action correctness regressed 65.1% → 48.8% and 12 runs hit max_iterations. Reverted. Root-cause diagnosis (rubric conflated two axes) motivated Iteration 4.
-6. **Iteration 2 — pairwise revision-improvement scorer.** Answers "is the revision loop earning its tokens?" Deterministic normalize-equal shortcut for cosmetic revisions, LLM judges the rest. Schema v4 → v5. Surfaced that the revision loop was mostly cosmetic.
-7. **Iteration 3 — retrieval scorer + gold recalibration.** Split `recall_at_k_mean` into source-level and post-filter recall, added concept hit-rate, introduced `{"any_of": [...]}` equivalence groups in gold. Scorer-only pass: no agent changes, offline rescore, non-retrieval metrics byte-identical to prior snapshot. Schema v5 → v6.
-8. **Iteration 4 — single-axis rubric revision (partial success).** Root-cause fix for Iter1: refactor the four actions into one axis (`actionability + priority`). Coordinated edit across `draft-response` + `critique-draft` + `judge-action`. Recovered action correctness above baseline (0.628 → 0.651) but critic-health regressed (0.714 → 0.474 approval overall, 7 max-iter cases). Failure shape: "expensive but correct."
-9. **Iteration 4R (remedial).** Coordinated 3-skill edit to tighten Iter4's rubric. Recovered action correctness (0.628 → 0.651) but critic-workload regression persisted.
-10. **Iteration 5 reverted — header-block rearrangement.** Moved rung definitions into a header block the critic consults only on ambiguity. Critic still cited rung definitions verbatim at iter0. Hypothesis falsified at smoke test.
-11. **Iteration 6 reverted — full rung-definition removal.** Deleted all rung definitions from the critic prompt entirely. Critic **reconstructed equivalent rung semantics from the action names alone** and rejected identically. Closed prompt-text edits as a class of intervention for this regression.
-12. **Tool-use investigator.** Rewrote the investigator node with Anthropic's tool-use API (self-RAG retries via structured tool calls). Not a prompt-edit iteration — infrastructure improvement. Retrieval recall improved (0.381 → 0.580 source).
-13. **Iteration 7 shipped — graph-level action-freeze.** Coordinator intercepts action-only critic rejections (`reason_type="action"`), freezes the responder's action, and routes directly to human_approval. Closed the critic-workload regression: action correctness 0.651 → 0.780, max-iter cases 7 → 0, effective first-pass rate 87.8%.
+| # | Name | Outcome | Key signal |
+|---|------|---------|------------|
+| 1 | Baseline | shipped | Deterministic scorers only. Established gating accuracy, action correctness, citation chain-of-custody |
+| 2 | Grounding judge | shipped | `judge_grounding.py` classifies `low_conf_with_cite` cases. Schema v3 |
+| 3 | Action judge | shipped | `judge_action.py` splits `wrong_action_severity` into 4 buckets. Schema v4 |
+| 4 | `multi_part_complaint` edit | shipped | First eval-driven prompt edit. Locked gate, clean win, established lock-before-edit discipline |
+| 5 | `action_severity_precedence` | **reverted** | Narrow metric improved but aggregate action correctness regressed 65→49% and 12 runs hit max_iterations |
+| 6 | Pairwise scorer | shipped | "Is the revision loop earning its tokens?" Surfaced that revisions were mostly cosmetic. Schema v5 |
+| 7 | Retrieval scorer + gold recal | shipped | Source vs post-filter recall split, concept hit-rate, `any_of` equivalence groups. Schema v6 |
+| 8 | Single-axis rubric | partial | Refactored 4 actions into one axis. Action correctness recovered but critic-workload regressed |
+| 9 | Rubric remedial (4R) | shipped | Tightened Iter8's rubric. Action correctness held; critic regression persisted |
+| 10 | Header-block rearrangement | **reverted** | Critic still cited rung definitions verbatim. Hypothesis falsified at smoke test |
+| 11 | Full rung-definition removal | **reverted** | Critic reconstructed rung semantics from action names alone. Closed prompt-text edits as a lever |
+| 12 | Tool-use investigator | shipped | Anthropic tool-use API with self-RAG retries. Source recall 0.381 → 0.580 |
+| 13 | Action-freeze | shipped | Graph-level interception of action-only critic rejections. Action correctness 0.651 → 0.780, max-iter 7 → 0 |
 
-Each iteration produced labeled signal *and* kept failures visible. **Iterations 1/5/6 reverted**, **Iteration 4 partial success**, and **Iteration 7 shipped** are named as such in the project log — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
+Full detail in `evals/M5_PLAN.md`.
 
 </details>
 
@@ -267,22 +274,22 @@ Latest full-eval run (56 cases). Source: `snapshot_20260409_211453.json` (schema
 #### Where the numbers come from
 
 - **Retrieval recall (0.580 source / 0.319 post-filter).** The 0.261 gap is the investigator's Self-RAG filter — it aggressively prunes low-relevance chunks. Concept hit-rate (did the retriever land on the right patch family at all) is **91.3% source / 69.6% post-filter**. Remaining hard-zero cases are chunking fragmentation across version-stamped patches.
-- **Action correctness (78.0%).** The action-freeze mechanism preserves the responder's action on cases where the critic's action-only rejection was an over-correction at the `monitor` ↔ `investigate` boundary. Judge breakdown of 9 remaining `wrong_action_severity` cases: **2 over + 2 missed + 2 drift + 2 tolerable + 1 judge_error**.
-- **Critic approvals (48.8% raw iter-0, 87.8% effective).** The critic node itself over-rejects on action grounds — but the coordinator intercepts all 16 action-only rejections before they cause revision thrash. The *effective* first-pass rate (critic approved OR action-freeze override) is 87.8%. Zero cases hit max_iterations.
-- **Revisions — almost entirely cosmetic.** 36 of 41 neutral via the deterministic normalize-equal shortcut, 5 improved, 0 regressed. Action-only rejections are intercepted before reaching the revision loop, so only genuine drafting/evidence issues trigger revisions.
+- **Action correctness (78.0%).** Action-freeze (see [Critic ↔ revision loop](#critic-revision-loop)) preserves the responder's action when the critic over-corrects at the `monitor` ↔ `investigate` boundary. Judge breakdown of 9 remaining mismatches: **2 over + 2 missed + 2 drift + 2 tolerable + 1 judge_error**.
+- **Critic approvals (48.8% raw iter-0, 87.8% effective).** The critic over-rejects on action grounds at the node level, but action-freeze intercepts those before they cause thrash. Zero cases hit max_iterations.
+- **Revisions — almost entirely cosmetic.** 36 of 41 neutral via the deterministic shortcut, 5 improved, 0 regressed. Only drafting/evidence issues trigger revisions.
 
 ### Key takeaways
 
 - **Grounding and citation discipline are strong.** 100% citation chain-of-custody, zero hard grounding violations. The `source_ids → relevant_ids → source_ids_cited` subset check is doing its job — the responder cannot fabricate citations.
-- **Action correctness and throughput are healthy.** 78.0% action correctness, 87.8% effective first-pass rate, zero max-iterations cases. The critic over-rejects on action grounds at the node level, but the graph-level action-freeze intercepts those rejections before they cause revision thrash.
-- **Revision loop is clean.** 0 regressions, 5 genuine improvements (grounding fixes caught by the critic). Only drafting and evidence issues trigger revisions — action-only disagreements are handled upstream.
+- **Action correctness and throughput are healthy.** 78.0% action correctness, 87.8% effective first-pass rate, zero max-iterations cases.
+- **Revision loop is clean.** 0 regressions, 5 genuine improvements (grounding fixes caught by the critic).
 
 <details>
 <summary><a id="open-gaps"></a><strong>Open gaps</strong></summary>
 
-- **Retrieval recall.** Source 0.580 / post-filter 0.319. Still the weakest metric on the board. The 0.261 gap is the investigator's Self-RAG filter aggressively pruning. Next: (a) audit filter drops on cases where the retriever surfaced the right chunk but the investigator discarded it, (b) tighten section-aware chunking on multi-version patches.
+- **Retrieval recall.** Source 0.580 / post-filter 0.319. Still the weakest metric on the board. The retriever usually reaches the right patch family, but the investigator still drops too many useful chunks before drafting. The 0.261 gap is the investigator's Self-RAG filter aggressively pruning. Next: (a) audit filter drops on cases where the retriever surfaced the right chunk but the investigator discarded it, (b) tighten section-aware chunking on multi-version patches.
 
-- **Critic node-level over-rejection.** The system-level workload regression is closed — zero max-iterations cases, 87.8% effective first-pass rate. But the critic *node itself* still over-rejects on the `monitor` ↔ `investigate` boundary (48.8% raw iter-0 approval, 54.3% overall). The graph-level action-freeze solves the churn by intercepting action-only rejections downstream, but the underlying node behavior is unchanged. Prompt-text edits are empirically closed as a lever; any future improvement to the critic's own judgment would need a different approach (e.g., critic fine-tuning, separate action-evaluation node).
+- **Critic node-level over-rejection.** The system-level churn is solved (action-freeze), but the critic *node itself* still over-rejects at the `monitor` ↔ `investigate` boundary (48.8% raw iter-0 approval). Prompt-text edits are empirically closed as a lever (Iter5/6 both failed); any improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node).
 
 - **Pairwise semantic spot checks — deferred.** Structurally clean (41 judged, 0 pairwise judge_error), but hand-validated spot checks are queued for the next clean run.
 
@@ -448,7 +455,7 @@ Four things I'd carry into the next project:
 <details>
 <summary><strong>What's next</strong></summary>
 
-- **Improve retrieval recall.** 0.580 source / 0.319 post-filter — still the weakest metric. Next: audit investigator filter drops, tighten section-aware chunking on multi-version patches.
+- **Improve retrieval recall.** 0.580 source / 0.319 post-filter — still the weakest metric. Small retrieval interventions (reranker top-N increase, zero-keep fallback) were hard to measure cleanly in the full-agent harness — Haiku's run-to-run variance across 56 cases swamped the signal from changes affecting 5-7 cases. A retrieval-only replay eval (isolating the retrieval pipeline from LLM stochasticity) is a plausible next step before attempting further runtime changes.
 - **Finish pairwise semantic spot checks.** Structurally clean; hand-validated spot checks deferred to the next clean run.
 - **Extract `_judge_base.py`.** Three sibling judge files exist — abstraction shape is visible and ready to pull out.
 - **Vs-baseline pairwise comparison.** Current pairwise scorer compares iter-0 vs final draft within a run. Cross-run comparison (before/after a prompt edit) would surface whether iteration-level improvements compound across the eval suite.

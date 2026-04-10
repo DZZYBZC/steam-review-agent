@@ -92,6 +92,83 @@ See the [annotated file tree](#9-project-layout) for exact file locations.
 
 ## Architecture
 
+<details>
+<summary><a id="9-project-layout"></a><strong>Project layout (annotated file tree)</strong></summary>
+
+```
+steam-review-agent/
+├── main.py                      # Pipeline entry point — fetch → clean → classify → cluster → stats
+├── test_agent.py                # Single-review smoke test against the live agent graph
+├── test_graph.py                # End-to-end graph smoke test on a hardcoded review (real LLM calls; ~30s; auto-approves at human gate)
+├── resolve_note.py              # CLI for cluster-notes lifecycle (list/resolve/reactivate)
+├── config.py                    # All configuration — models, temperatures, thresholds, env vars
+├── utils.py                     # Shared helpers (load_skill with frontmatter parsing, etc.)
+├── requirements.txt             # Pinned dependency list (Python 3.12)
+├── CLAUDE.md                    # Internal spec for Claude Code (project conventions)
+│
+├── pipeline/                    # Data ingestion + retrieval indexing
+│   ├── ingest_reviews.py          # Fetch Steam reviews via Web API
+│   ├── ingest_patch_notes.py      # Fetch + classify Steam patch notes
+│   ├── clean.py                   # Markup stripping, near-duplicate filtering
+│   ├── classify.py                # Review category classification (Haiku)
+│   ├── cluster.py                 # Time-windowed category clustering + priority signals
+│   ├── stats.py                   # Aggregate statistics over reviews + clusters
+│   ├── chunk.py                   # Section-aware patch-note chunking
+│   ├── retrieve.py                # Hybrid RAG: vector + BM25 → RRF → cross-encoder rerank
+│   ├── storage.py                 # SQLite schema, DAO functions, cluster-note lifecycle
+│   ├── keywords.py                # Keyword extraction helpers
+│   └── retry.py                   # Retry decorator for flaky API calls
+│
+├── agent/                       # LangGraph multi-agent system
+│   ├── state.py                   # AgentState TypedDict
+│   ├── models.py                  # Pydantic models for LLM-output trust boundaries
+│   ├── graph.py                   # StateGraph construction, conditional edges, checkpointing
+│   ├── utils.py                   # Shared agent helpers (token accumulation, evidence formatting)
+│   └── nodes/
+│       ├── coordinator.py         # Plain-Python routing (mints run_id, action-freeze interception)
+│       ├── investigator.py        # Tool-use retrieval + self-RAG retries + cluster-note loading
+│       ├── responder.py           # Drafts player-facing reply (Sonnet 4.6, only LLM-generative node)
+│       ├── critic.py              # Validates evidence chain, tone, action — writes per-iter audit
+│       └── human_approval.py      # Human-in-the-loop interrupt gate
+│
+├── skills/                      # Agent skills — SKILL.md files loaded by Python via load_skill()
+│   ├── classify-review/           # Category classifier prompt
+│   ├── classify-tone/             # Tone classifier prompt
+│   ├── analyze-cluster/           # Cluster summarization prompt
+│   ├── investigate-evidence/      # Investigator retrieval-reasoning prompt
+│   ├── draft-response/            # Responder draft template
+│   ├── critique-draft/            # Critic quality-gate checklist
+│   ├── judge-grounding/           # Eval judge: low-confidence citation classifier
+│   ├── judge-action/              # Eval judge: action severity classifier
+│   └── judge-pairwise/            # Eval judge: revision improvement
+│
+├── evals/                       # Evaluation harness
+│   ├── run_evals.py               # Main eval runner (loads cases, runs agent, scores, snapshots)
+│   ├── reporter.py                # Terminal-friendly score report
+│   ├── snapshot.py                # Snapshot writer + schema versioning + diff annotation
+│   ├── failure_modes.py           # Deterministic failure-mode taxonomy
+│   ├── M5_PLAN.md                 # Iteration log — every edit, gate, verification result
+│   ├── _negative_controls_locked.md  # Pre-edit gate locks for every prompt iteration
+│   ├── _lock_controls.py          # CLI helper to materialize lock blocks from a run JSON
+│   ├── refresh_classifier_fields.py
+│   ├── scorers/
+│   │   ├── deterministic.py       # Deterministic scorers (action_correctness, etc.)
+│   │   ├── gating_accuracy.py     # Retrieval-gating scorer
+│   │   ├── judge_grounding.py     # LLM judge — low_conf_with_cite ruling
+│   │   ├── judge_action.py        # LLM judge — wrong_action_severity ruling
+│   │   └── pairwise.py            # LLM judge — revision improvement
+│   └── test_sets/
+│       ├── golden.json            # Hand-curated eval cases with expected actions + must_include sources
+│       └── regression.json        # Regression seeds added during eval-driven prompt edits
+│
+└── .claude/
+    └── skills/                  # Claude Code skills — project conventions (NOT loaded by Python)
+```
+
+**Naming clash gotcha:** `skills/` holds runtime SKILL.md files loaded by `utils.load_skill()`; `.claude/skills/` holds project-convention skills read by Claude Code only. Different systems, same directory name.
+
+</details>
+
 ```
           ┌────────────────────┐
      ┌──► │    coordinator     │── done ─────┐
@@ -158,21 +235,6 @@ Seven choices that look like accidents until you know why:
 </details>
 
 <details>
-<summary><a id="critic-revision-loop"></a><strong>Critic ↔ revision loop and run identity</strong></summary>
-
-**Three rejection kinds.** A `drafting` rejection routes the responder into a re-draft without re-investigating; an `evidence` rejection routes back through the coordinator to the investigator, with the critic's `retrieval_hint` seeding the next query; an `action` rejection (only the action check failed, all other checks passed) is intercepted by the coordinator before it reaches the responder. Each iteration writes to `audit_log_iterations` (draft, critique, reason type, hint) for offline analysis.
-
-**Action-freeze override.** When the critic rejects solely on action grounds (`reason_type="action"`), the coordinator freezes the responder's current `proposed_action` and routes directly to `human_approval`, skipping the revision loop entirely. The freeze persists until the human acts: approval ends the run with the frozen action; rejection clears the freeze and re-enters the revision loop normally. Action-only thrash loops are broken at the first rejection.
-
-**Run identity.** Coordinator mints a UUID `run_id` on first entry; both `audit_log` and `audit_log_iterations` carry it, so a review's full revision history can be reassembled from the DB alone.
-
-**Termination.** Human approval, max iterations reached, human approval after max iterations, or terminal LLM/parse error.
-
-</details>
-
----
-
-<details>
 <summary><strong>Retrieval pipeline (hybrid RAG)</strong></summary>
 
 Patch notes → section-aware chunker → dual index (ChromaDB `all-MiniLM-L6-v2` + in-memory BM25). Query time: **RRF fusion** (top 12) → **cross-encoder rerank** (`ms-marco-MiniLM-L-6-v2`, top 5). The investigator sees the final 5 chunks.
@@ -182,6 +244,19 @@ Reranker absolute scores are **not** passed to the investigator — they're unca
 The investigator LLM formulates each search query and calls the tool up to 3 times total, reformulating between calls based on what it has seen. Embedding and reranker models lazy-loaded and cached at module level.
 
 Implementation: `pipeline/retrieve.py`.
+
+</details>
+
+<details>
+<summary><a id="critic-revision-loop"></a><strong>Critic ↔ revision loop and run identity</strong></summary>
+
+**Three rejection kinds.** A `drafting` rejection routes the responder into a re-draft without re-investigating; an `evidence` rejection routes back through the coordinator to the investigator, with the critic's `retrieval_hint` seeding the next query; an `action` rejection (only the action check failed, all other checks passed) is intercepted by the coordinator before it reaches the responder. Each iteration writes to `audit_log_iterations` (draft, critique, reason type, hint) for offline analysis.
+
+**Action-freeze override.** When the critic rejects solely on action grounds (`reason_type="action"`), the coordinator freezes the responder's current `proposed_action` and routes directly to `human_approval`, skipping the revision loop entirely. The freeze persists until the human acts: approval ends the run with the frozen action; rejection clears the freeze and re-enters the revision loop normally. Action-only thrash loops are broken at the first rejection.
+
+**Run identity.** Coordinator mints a UUID `run_id` on first entry; both `audit_log` and `audit_log_iterations` carry it, so a review's full revision history can be reassembled from the DB alone.
+
+**Termination.** Human approval, max iterations reached, human approval after max iterations, or terminal LLM/parse error.
 
 </details>
 
@@ -310,86 +385,6 @@ Latest full-eval run (56 cases). Source: `snapshot_20260410_052557.json` (schema
 - **Reranker:** cross-encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
 - **Lexical search:** rank-bm25 (in-memory, rebuilt per run)
 - **Other:** pandas, python-frontmatter (for skill files), python-dotenv
-
----
-
-<details>
-<summary><a id="9-project-layout"></a><strong>Project layout (annotated file tree)</strong></summary>
-
-```
-steam-review-agent/
-├── main.py                      # Pipeline entry point — fetch → clean → classify → cluster → stats
-├── test_agent.py                # Single-review smoke test against the live agent graph
-├── test_graph.py                # End-to-end graph smoke test on a hardcoded review (real LLM calls; ~30s; auto-approves at human gate)
-├── resolve_note.py              # CLI for cluster-notes lifecycle (list/resolve/reactivate)
-├── config.py                    # All configuration — models, temperatures, thresholds, env vars
-├── utils.py                     # Shared helpers (load_skill with frontmatter parsing, etc.)
-├── requirements.txt             # Pinned dependency list (Python 3.12)
-├── CLAUDE.md                    # Internal spec for Claude Code (project conventions)
-│
-├── pipeline/                    # Data ingestion + retrieval indexing
-│   ├── ingest_reviews.py          # Fetch Steam reviews via Web API
-│   ├── ingest_patch_notes.py      # Fetch + classify Steam patch notes
-│   ├── clean.py                   # Markup stripping, near-duplicate filtering
-│   ├── classify.py                # Review category classification (Haiku)
-│   ├── cluster.py                 # Time-windowed category clustering + priority signals
-│   ├── stats.py                   # Aggregate statistics over reviews + clusters
-│   ├── chunk.py                   # Section-aware patch-note chunking
-│   ├── retrieve.py                # Hybrid RAG: vector + BM25 → RRF → cross-encoder rerank
-│   ├── storage.py                 # SQLite schema, DAO functions, cluster-note lifecycle
-│   ├── keywords.py                # Keyword extraction helpers
-│   └── retry.py                   # Retry decorator for flaky API calls
-│
-├── agent/                       # LangGraph multi-agent system
-│   ├── state.py                   # AgentState TypedDict
-│   ├── models.py                  # Pydantic models for LLM-output trust boundaries
-│   ├── graph.py                   # StateGraph construction, conditional edges, checkpointing
-│   ├── utils.py                   # Shared agent helpers (token accumulation, evidence formatting)
-│   └── nodes/
-│       ├── coordinator.py         # Plain-Python routing (mints run_id, action-freeze interception)
-│       ├── investigator.py        # Tool-use retrieval + self-RAG retries + cluster-note loading
-│       ├── responder.py           # Drafts player-facing reply (Sonnet 4.6, only LLM-generative node)
-│       ├── critic.py              # Validates evidence chain, tone, action — writes per-iter audit
-│       └── human_approval.py      # Human-in-the-loop interrupt gate
-│
-├── skills/                      # Agent skills — SKILL.md files loaded by Python via load_skill()
-│   ├── classify-review/           # Category classifier prompt
-│   ├── classify-tone/             # Tone classifier prompt
-│   ├── analyze-cluster/           # Cluster summarization prompt
-│   ├── investigate-evidence/      # Investigator retrieval-reasoning prompt
-│   ├── draft-response/            # Responder draft template
-│   ├── critique-draft/            # Critic quality-gate checklist
-│   ├── judge-grounding/           # Eval judge: low-confidence citation classifier
-│   ├── judge-action/              # Eval judge: action severity classifier
-│   └── judge-pairwise/            # Eval judge: revision improvement
-│
-├── evals/                       # Evaluation harness
-│   ├── run_evals.py               # Main eval runner (loads cases, runs agent, scores, snapshots)
-│   ├── reporter.py                # Terminal-friendly score report
-│   ├── snapshot.py                # Snapshot writer + schema versioning + diff annotation
-│   ├── failure_modes.py           # Deterministic failure-mode taxonomy
-│   ├── M5_PLAN.md                 # Iteration log — every edit, gate, verification result
-│   ├── _negative_controls_locked.md  # Pre-edit gate locks for every prompt iteration
-│   ├── _lock_controls.py          # CLI helper to materialize lock blocks from a run JSON
-│   ├── _remedial_rerun.py         # Partial rerun harness used by Iteration 1 remediation
-│   ├── refresh_classifier_fields.py
-│   ├── scorers/
-│   │   ├── deterministic.py       # Deterministic scorers (action_correctness, etc.)
-│   │   ├── gating_accuracy.py     # Retrieval-gating scorer
-│   │   ├── judge_grounding.py     # LLM judge — low_conf_with_cite ruling
-│   │   ├── judge_action.py        # LLM judge — wrong_action_severity ruling
-│   │   └── pairwise.py            # LLM judge — revision improvement
-│   └── test_sets/
-│       ├── golden.json            # Hand-curated eval cases with expected actions + must_include sources
-│       └── regression.json        # Regression seeds added during eval-driven prompt edits
-│
-└── .claude/
-    └── skills/                  # Claude Code skills — project conventions (NOT loaded by Python)
-```
-
-**Naming clash gotcha:** `skills/` holds runtime SKILL.md files loaded by `utils.load_skill()`; `.claude/skills/` holds project-convention skills read by Claude Code only. Different systems, same directory name.
-
-</details>
 
 ---
 

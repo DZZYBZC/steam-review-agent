@@ -92,6 +92,7 @@ RESPONDER_FEEDBACK_EXAMPLES = 3            # Max approved examples loaded from a
 RESPONDER_FEEDBACK_MAX_REVIEW_CHARS = 300  # Truncation limit for review_text in examples
 RESPONDER_FEEDBACK_MAX_RESPONSE_CHARS = 500  # Truncation limit for drafted_response in examples
 RESPONDER_FEEDBACK_MAX_SUMMARY_CHARS = 300   # Truncation limit for evidence_summary in examples
+RESPONDER_FEEDBACK_SELECTION_POOL = 25       # Candidate pool size for diversity-aware selection
 
 CRITIC_MODEL = "claude-haiku-4-5-20251001"
 CRITIC_TEMPERATURE = 0.1

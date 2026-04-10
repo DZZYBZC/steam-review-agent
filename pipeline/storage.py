@@ -545,16 +545,25 @@ def load_feedback_examples(
     app_id: str,
     category: str,
     n: int = 3,
-) -> list[dict]:
+    pool_size: int = 10,
+) -> tuple[list[dict], list[dict]]:
     """
     Load approved drafts from the audit log for few-shot examples.
 
-    Filters to human_decision='approved' and non-empty drafted_response.
-    Returns only the fields the Responder actually uses in the prompt.
+    Fetches a pool of recent approved entries, then selects up to *n*
+    with diversity across action types and confidence levels:
+      - Slot 1: most recent (captures current approver style)
+      - Slot 2: most recent with a different proposed_action than slot 1
+      - Slot 3: highest evidence_confidence among remaining candidates
+
+    Falls back to next-most-recent for any unfillable slot.
 
     Returns:
-        A list of dicts with: review_text, drafted_response,
-        evidence_summary, review_tone, proposed_action, evidence_confidence.
+        A tuple of (examples, selection_log):
+        - examples: list of dicts with review_text, drafted_response,
+          evidence_summary, review_tone, proposed_action, evidence_confidence.
+        - selection_log: list of dicts with pool_index, action, confidence,
+          reason for each selected example (for node_log debugging).
     """
     cursor = conn.execute("""
         SELECT review_text, drafted_response, evidence_summary,
@@ -567,17 +576,74 @@ def load_feedback_examples(
           AND drafted_response != ''
         ORDER BY created_at DESC
         LIMIT ?
-    """, (app_id, category, n))
+    """, (app_id, category, pool_size))
 
     rows = cursor.fetchall()
     columns = [
         "review_text", "drafted_response", "evidence_summary",
         "review_tone", "proposed_action", "evidence_confidence",
     ]
+    pool = [dict(zip(columns, row)) for row in rows]
+    logger.debug(f"Loaded {len(pool)} feedback candidates for {app_id}/{category}.")
 
-    results = [dict(zip(columns, row)) for row in rows]
-    logger.debug(f"Loaded {len(results)} feedback examples for {app_id}/{category}.")
-    return results
+    if not pool:
+        return [], []
+
+    selected: list[dict] = []
+    selection_log: list[dict] = []
+    used_indices: set[int] = set()
+
+    def _pick(index: int, reason: str) -> None:
+        used_indices.add(index)
+        selected.append(pool[index])
+        ex = pool[index]
+        selection_log.append({
+            "pool_index": index,
+            "action": ex.get("proposed_action", ""),
+            "confidence": ex.get("evidence_confidence"),
+            "reason": reason,
+        })
+
+    # Slot 1: most recent
+    _pick(0, "recent")
+
+    if len(selected) >= n:
+        return selected, selection_log
+
+    # Slot 2: most recent with a different action than slot 1
+    slot1_action = pool[0].get("proposed_action", "")
+    filled_slot2 = False
+    for i, ex in enumerate(pool):
+        if i in used_indices:
+            continue
+        if ex.get("proposed_action", "") != slot1_action:
+            _pick(i, "different_action")
+            filled_slot2 = True
+            break
+    if not filled_slot2:
+        # Fall back to next most recent unused
+        for i in range(len(pool)):
+            if i not in used_indices:
+                _pick(i, "recent_fallback")
+                break
+
+    if len(selected) >= n:
+        return selected, selection_log
+
+    # Slot 3: highest evidence_confidence among remaining
+    best_idx = -1
+    best_conf = -1.0
+    for i, ex in enumerate(pool):
+        if i in used_indices:
+            continue
+        conf = ex.get("evidence_confidence") or 0.0
+        if conf > best_conf:
+            best_conf = conf
+            best_idx = i
+    if best_idx >= 0:
+        _pick(best_idx, "high_confidence")
+
+    return selected, selection_log
 
 
 def save_cluster_note(

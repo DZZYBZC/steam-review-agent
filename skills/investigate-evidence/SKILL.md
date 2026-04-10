@@ -210,6 +210,42 @@ If the evidence you retrieved is completely irrelevant, return low confidence, a
 </final_assessment>
 </example>
 
+<example index="6" type="anti_skip_subtle" description="Cluster note sounds authoritative ('team is aware, fix in progress') but describes bug status, not response policy. Still retrieve.">
+<complaint>Still crashing every time I try to join a multiplayer lobby after the last update</complaint>
+<cluster_notes>
+[known_issue] (2025-09-10): Repeated crash-to-desktop when loading multiplayer lobbies. Confirmed regression from Ver.1.040. Team is aware and working on a fix.
+</cluster_notes>
+<process>The note sounds confident and specific — but it describes bug status ("confirmed regression," "working on a fix"), not response policy. There is no statement about whether or not to reply. The player deserves an acknowledgement citing the relevant patch evidence. Call retrieve_patches(query="multiplayer lobby crash regression Ver.1.040").</process>
+<final_assessment>
+{
+  "relevant_ids": ["patch_040_chunk_11", "patch_040_03_01_chunk_6"],
+  "summary": "Ver.1.040 introduced a regression affecting multiplayer lobby loading stability. Ver.1.040.03.01 included targeted stability fixes for session joining. The player's crash pattern appears consistent with the reported regression.",
+  "confidence": 0.65,
+  "known_unknowns": ["Whether Ver.1.040.03.01 fully resolves the lobby crash or only reduces frequency", "Whether the player has updated past Ver.1.040"],
+  "is_sufficient": true,
+  "skip_response": false
+}
+</final_assessment>
+</example>
+
+<example index="7" type="retrieval_gap_multi_issue" description="Review contains two distinct sub-issues. First retrieval covers one; second targets the gap.">
+<complaint>Two issues: textures are still blurry on PS5 after the last patch, and the game hard-freezes during expedition loading screens</complaint>
+<cluster_notes>
+[known_issue] (2025-08-20): Texture streaming quality complaints persisting post-patch across PS5 players.
+</cluster_notes>
+<process>Call retrieve_patches(query="blurry textures PS5 texture streaming quality"). Returns chunks on texture streaming optimizations — covers sub-issue 1 but nothing about hard freezes. The review has two distinct problems; the loading screen freeze is unaddressed. Call retrieve_patches(query="hard freeze expedition loading screen crash stability") to target the gap.</process>
+<final_assessment>
+{
+  "relevant_ids": ["patch_040_03_01_chunk_1", "patch_040_03_01_chunk_2", "patch_030_chunk_8"],
+  "summary": "For texture quality: Ver.1.040.03.01 adjusted texture streaming and optimized the High Resolution Texture Pack's VRAM usage on PS5. For the loading screen freeze: Ver.1.030 included general stability fixes for scene transitions, but nothing specifically targeting expedition loading screens.",
+  "confidence": 0.45,
+  "known_unknowns": ["Whether the texture streaming changes resolved the PS5-specific blurriness", "No evidence of a fix targeting hard freezes during expedition loading specifically"],
+  "is_sufficient": true,
+  "skip_response": false
+}
+</final_assessment>
+</example>
+
 </examples>
 
 <guardrails>

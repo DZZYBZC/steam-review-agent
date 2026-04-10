@@ -58,7 +58,16 @@ def parse_llm_json(text: str) -> dict:
     """
     Parse JSON from an LLM response, stripping code fences if present.
 
-    Raises json.JSONDecodeError if the text is not valid JSON.
+    Handles a common Haiku quirk: valid JSON followed by trailing explanation
+    text (e.g. ```json\n{...}\n```\n\nThe player is upset...).
+
+    Raises json.JSONDecodeError if no valid JSON object can be found.
     """
     text = strip_code_fence(text)
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Model appended explanation text after valid JSON — extract first object
+        decoder = json.JSONDecoder()
+        obj, _ = decoder.raw_decode(text)
+        return obj

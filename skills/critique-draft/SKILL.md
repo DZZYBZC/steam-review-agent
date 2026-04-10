@@ -57,6 +57,24 @@ Check each of the following. A draft must pass ALL checks to be approved.
    3. **Minor/already-resolved → escalate**: an issue clearly addressed by shipped patches, or a low-severity single incident, assigned to `escalate`.
 
    Do NOT reject `investigate` solely because the complaint is design-flavored — the gate is specificity and actionability, not technical-vs-design. Do NOT reject adjacent-rung calls (monitor↔investigate on a mid-ladder case) when the draft's reasoning is defensible — those are tolerable disagreements, not failures.
+
+   <disambiguation>
+   When the action is on a boundary, use these distinctions to decide whether to fail check #6 or approve it:
+
+   - **no_action vs monitor** — The gate is "any actionable signal at all." A pure taste complaint with zero overlap to a measurable product symptom = `no_action`; approve `no_action` only — do NOT approve `monitor` for complaints with no actionable signal. A complaint with even weak recurring signal overlapping a product symptom (post-patch performance perception, repeated "feels off" after an update) = `monitor` is defensible; do NOT fail `no_action→monitor` on these. Only fail if the Responder chose `monitor` on a complaint with no actionable signal whatsoever, or `no_action` on a complaint with clear recurring product-level signal.
+   - **monitor vs investigate** — The gate is "specific enough to triage or reproduce." A vague complaint with emerging signal but no concrete reproduction detail = `monitor`; a complaint naming a specific location, hardware, steps, or error = `investigate`. When a complaint has *some* specificity but debatable reproducibility, both are defensible — do NOT reject. Only fail if the Responder chose `investigate` on a complaint with no concrete detail, or `monitor` on a complaint with clear reproduction steps and an unresolved defect.
+   - **investigate vs escalate** — The gate is "would a delay of days cause meaningful harm?" Heated adjectives alone ("unplayable," "broken") do NOT push past this gate. Only fail if: (a) the review describes a concrete hard-blocker with explicit persistence/reproducibility and the Responder chose `investigate`, or (b) the Responder chose `escalate` on a complaint with no persistence/blast-radius/blocker framing.
+   - **Adjacent-rung, defensible** — If the swap is exactly one rung and the draft's framing is consistent with its chosen action, approve. The Responder and the annotation can legitimately disagree on mid-ladder cases. Reserve action rejection for clear ladder-direction failures, not close calls.
+
+   Specific patterns (use these to decide approve/reject when the general boundaries leave the case ambiguous):
+   - **Promised/acknowledged feature gap** — A missing or promised feature where evidence shows team acknowledgment or scoping: `monitor` is correct. Do NOT reject `monitor` in favor of `investigate` unless the review describes a broken shipped feature or a concrete blocked workflow reproducible now.
+   - **Design-architecture annoyance** — Complaints about structural product choices (loading-screen frequency, pacing, art direction, general immersion): `no_action` is correct unless the review also describes a measurable symptom, concrete regression, or recurring post-update signal. Do NOT approve `monitor` on pure structural taste complaints.
+   - **Named balance/tuning change** — Review points to a specific identifiable balance, progression, or tuning change: `monitor` is defensible even if the tone is emotional. Only treat `no_action` as correct when the complaint is pure venting with no identifiable product change.
+   - **Regional/network/VPN issue** — Region-specific lag, routing, matchmaking, or VPN-workaround complaints identifying a region/scenario/workaround: `investigate` is correct. Only approve `escalate` if the review also shows widespread outage framing or explicit every-session hard-blocker persistence.
+   - **Post-patch performance regression** — Concrete post-patch performance regression: `investigate` is the default. Only approve `escalate` when the review also shows broad many-user impact, catastrophic every-session severity, or explicit blocker/persistence language.
+   - **Single-user severe technical issue** — Concrete crash, disconnect, or blocker with scenario detail: `investigate` is the default. Only approve `escalate` when the review conveys hard-blocker persistence or reproducibility (every session, cannot progress, cannot launch, save is gone).
+   - **Real but underspecified** — Sounds real and unresolved but lacks environment, steps, or context for reproduction: `monitor` is correct. Do NOT approve `investigate` unless the review includes enough concrete detail to begin triage.
+   </disambiguation>
 </evaluation_checklist>
 
 <decision_rules>
@@ -103,7 +121,7 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
   "approved": true or false,
   "critique": "Brief summary of your evaluation. If approved, note what the draft did well. If rejected, summarize the issues.",
   "revision_reason": "If rejected: specific, actionable description of what failed and what to fix. If approved: empty string.",
-  "reason_type": "evidence" | "drafting" | "",
+  "reason_type": "evidence" | "drafting" | "action" | "",
   "retrieval_hint": "3-8 keyword search query when reason_type is 'evidence'; empty string otherwise."
 }
 

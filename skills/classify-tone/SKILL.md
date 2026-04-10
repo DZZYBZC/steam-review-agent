@@ -130,6 +130,11 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
 {"tone": "frustrated"}
 <!-- Why: intense wording ("so sick", "damn") but directed at the issue, not the developers. The player wants a fix ("I just want to play"), not to attack anyone. -->
 </example>
+<example index="14" type="disappointed-vs-neutral-edge">
+<review>I was really looking forward to this one. It's fine, I guess. Just expected more from this studio.</review>
+{"tone": "disappointed"}
+<!-- Why: the flat phrasing ("It's fine, I guess") looks neutral, but "really looking forward to this one" and "expected more from this studio" reveal an expectation gap — the player invested anticipation and feels let down. That letdown is the emotional center, not flat indifference. -->
+</example>
 </examples>
 
 <guardrails>

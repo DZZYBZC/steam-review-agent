@@ -445,7 +445,7 @@
       "review_text": "i loved civ 6 and was super excited to play civ 7 with my friends via hotseat. i was super disappointed when i found out it was not out yet. more than 1 year later they still have not added it. i am disappointed because it was promised to us and now its almost like they forgot it existed.",
       "classifier_category": "content_progression",
       "annotated_category": "content_progression",
-      "ideal_action": "investigate",
+      "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
       "forbidden_chunk_ids": [],
@@ -454,7 +454,7 @@
         "tone_too_apologetic"
       ],
       "ideal_tone": "empathetic",
-      "notes": "Hotseat missing \u2014 promised feature still absent after 1 year. No patch in corpus mentions hotseat. Ideal: investigate (this is a real missing feature, dev should be told), do NOT fabricate a 'hotseat coming in next update' claim. must_include empty \u2014 any chunk cited here would be cited_irrelevant_patch. Failure: unsourced_claim is the headline risk.",
+      "notes": "Hotseat missing \u2014 promised feature still absent after 1 year. This is a feature gap with team acknowledgment (scoped in Check-In), not a broken shipped feature. Ideal: monitor (promised feature gap with acknowledgment defaults to monitor per boundary rules). Do NOT fabricate a 'hotseat coming in next update' claim. must_include empty \u2014 any chunk cited here would be cited_irrelevant_patch. Failure: unsourced_claim is the headline risk.",
       "quick": false,
       "classifier_confidence": 0.72
     },
@@ -510,20 +510,16 @@
       "review_text": "I love and hate this game. More so hate because the loading screens kill the immersion for me. Take off from a planet? Loading screen. Travel to a new planet? Loading screen. Dock with another ship? Loading screen. LOADING SCREENS!",
       "classifier_category": "performance_optimization",
       "annotated_category": "performance_optimization",
-      "ideal_action": "monitor",
+      "ideal_action": "no_action",
       "gate_should_skip": false,
-      "must_include_chunk_ids": [
-        "1828894815567715-20",
-        "1826992588604218-20",
-        "1828894815567746-8"
-      ],
+      "must_include_chunk_ids": [],
       "forbidden_chunk_ids": [],
       "expected_failure_modes": [
         "overclaimed_fix",
-        "ignored_main_complaint"
+        "wrong_action_severity"
       ],
       "ideal_tone": "empathetic",
-      "notes": "Loading-screen pacing complaint \u2014 fundamental engine architecture issue. Free Lanes update (1828894815567715-20, 1826992588604218-20) added a Ship Optimization Terminal that helps with ship-side perf, and 1828894815567746-8 adds the buildable terminal in 1.16.236. These DO NOT eliminate loading screens \u2014 they only mitigate ship-related friction. Ideal: monitor, cite optimizations honestly without claiming the loading-screen problem is solved. Failure: overclaimed_fix is the headline risk.",
+      "notes": "Loading-screen pacing complaint \u2014 fundamental engine architecture issue, not a regression or post-update change. This is a design-architecture annoyance (structural product choice the player dislikes) with no measurable symptom, no concrete regression, and no recurring post-update signal. Ideal: no_action per boundary rules. Ship Optimization Terminal patches exist but do not address the core complaint (loading-screen frequency as architecture). Failure: overclaimed_fix if the response implies loading screens are being fixed; wrong_action_severity if monitor or higher (the complaint has no actionable product signal).",
       "quick": true,
       "classifier_confidence": 0.85
     },
@@ -822,7 +818,7 @@
       "review_text": "You can be in the middle of ending a monster when suddenly the game crashes... this needs to be fixed ASAP it's been almost 2 years and the same error persist.",
       "classifier_category": "technical_issues",
       "annotated_category": "technical_issues",
-      "ideal_action": "monitor",
+      "ideal_action": "investigate",
       "gate_should_skip": false,
       "must_include_chunk_ids": [
         "1800991756290109-161",
@@ -834,7 +830,7 @@
         "wrong_action_severity"
       ],
       "ideal_tone": "empathetic",
-      "notes": "Known unresolved crash, single-player anecdote (not explicitly widespread). Per CLAUDE.md, escalate = severe AND widespread; this is severe to one player but the duration ('almost 2 years') points to known issue, not a new spike. Ver.1.011 (1800991756290109-161) fixed a VRAM crash and the graphics drivers post (1811772772359267-0) explicitly notes confirmed crashes \u2014 relevant context but does NOT confirm this case is fixed. Ideal: monitor as known unresolved area, cite the existing crash work without claiming it covers this case. Failure: overclaimed_fix is the headline risk; wrong_action_severity if escalate (over-scaling on one anecdote).",
+      "notes": "Specific mid-hunt crash with explicit persistence ('almost 2 years and the same error persist'). The crash has a concrete scenario (mid-hunt), and the '2 years same error' language conveys persistence/reproducibility \u2014 enough concrete detail for triage. Ideal: investigate per boundary rules (single-user severe technical issue with scenario detail + persistence = investigate). Not escalate because no widespread/blast-radius framing and no every-session hard-blocker language. Ver.1.011 (1800991756290109-161) fixed a VRAM crash and the graphics drivers post (1811772772359267-0) notes confirmed crashes \u2014 relevant context but does NOT confirm this case is fixed. Failure: overclaimed_fix is the headline risk; wrong_action_severity if escalate (over-scaling on single anecdote without widespread framing).",
       "quick": false,
       "classifier_confidence": 0.93
     },

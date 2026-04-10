@@ -134,6 +134,15 @@ Important nuance on subjective feedback: **do not automatically route all subjec
 
 **Exclusion on the recurring-signal clause:** pricing, DLC strategy, monetization structure, and other business-model complaints do NOT qualify under this clause. They stay at `no_action` unless they describe a concrete failure mode (e.g. a broken checkout flow, a paywall bug). The clause is for subjective pain that overlaps with measurable product symptoms (combat feel, performance perception, difficulty feel, UI friction), not for value-judgment disagreements with the business model.
 
+Boundary-sharpening rules (apply when the general definitions leave a case ambiguous):
+- **Promised/acknowledged feature gap** → `monitor` (not `investigate`), unless the review describes a broken shipped feature or concrete blocked workflow.
+- **Design-architecture annoyance** (loading-screen frequency, pacing, art direction, immersion) → `no_action`, unless also describing a measurable symptom, regression, or recurring post-update signal.
+- **Named balance/tuning change** → `monitor` even if emotional, unless pure venting with no identifiable product change.
+- **Regional/network/VPN issue** with identified region/scenario/workaround → `investigate`. Escalate only with widespread outage framing or every-session hard-blocker persistence.
+- **Post-patch performance regression** with concrete context → `investigate` default. Escalate only with broad multi-user impact, catastrophic every-session severity, or blocker/persistence language.
+- **Single-user severe technical issue** with scenario detail → `investigate` default. Escalate only with hard-blocker persistence/reproducibility (every session, cannot progress, cannot launch, save gone).
+- **Real but underspecified issue** → `monitor` default. Promote to `investigate` once enough concrete detail exists for reproduction.
+
 ## Known gotchas
 - Agent skill files use YAML frontmatter — `load_skill()` strips it before sending to API
 - BM25 index is in-memory, rebuilt each run — not persisted like ChromaDB

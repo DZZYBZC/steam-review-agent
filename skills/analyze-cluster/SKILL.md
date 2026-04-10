@@ -167,6 +167,30 @@ priority_score: 61.8
 - **Recommendation**: Investigate server capacity and stability changes tied to the new season launch, with particular attention to ranked mode disconnect handling.
 </summary>
 </example>
+<example index="5">
+<cluster_data>
+category: performance_optimization
+total_reviews: 6
+recent_reviews: 6
+prior_reviews: 0
+velocity_ratio: null
+negative_pct: 83.3
+top_keywords: ["lag", "stuttering", "choppy", "fps", "update"]
+sample_reviews:
+- "Game feels laggy since the update"
+- "Stuttering everywhere, wasn't like this before"
+- "FPS seems worse now, hard to tell exactly"
+- "Choppy gameplay after patch"
+priority_score: 29.4
+</cluster_data>
+
+<summary>
+- **Issue**: A small cluster of performance complaints appeared in the 4 days following the latest patch. Reviews consistently describe lag, stuttering, and FPS drops, but none provide specific hardware, settings, locations, or reproduction steps.
+- **Scope**: Only 6 reports, all within the recent window (no prior baseline). The velocity is notable for such a short period, but the sample is too small to distinguish a real regression from normal post-patch perception sensitivity.
+- **Severity**: LOW — the velocity is a meaningful early signal, but the evidence is entirely vague and non-diagnostic. No review names a specific location, hardware config, or measurable symptom beyond "feels worse."
+- **Recommendation**: Monitor for additional reports. If more reviews accumulate and gain concrete reproduction detail (specific hardware, locations, or measurable frame drops), re-evaluate at MEDIUM and recommend investigation.
+</summary>
+</example>
 </examples>
 
 <guardrails>

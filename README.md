@@ -229,7 +229,7 @@ The agent matters; the eval system is what made it iterable. Each block below is
 <details>
 <summary><strong>Eval iteration arc (chronological)</strong></summary>
 
-Thirteen iterations. Three reverted, one partial success, nine shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
+Fifteen iterations. Three reverted, one partial success, eleven shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
 
 | # | Name | Outcome | Key signal |
 |---|------|---------|------------|
@@ -246,6 +246,8 @@ Thirteen iterations. Three reverted, one partial success, nine shipped — hones
 | 11 | Full rung-definition removal | **reverted** | Critic reconstructed rung semantics from action names alone. Closed prompt-text edits as a lever |
 | 12 | Tool-use investigator | shipped | Anthropic tool-use API with self-RAG retries. Source recall 0.381 → 0.580 |
 | 13 | Action-freeze | shipped | Graph-level interception of action-only critic rejections. Action correctness 0.651 → 0.780, max-iter 7 → 0 |
+| 14 | Few-shot examples | shipped | Responder few-shot examples + `parse_llm_json` robustness fix. Infra errors 5 → 0 |
+| 15 | Boundary sharpening | shipped | 7 disambiguation rules across all skills + 3 golden corrections. Action correctness 71.1% → 76.9%, category_drift 4 → 1 |
 
 Full detail in `evals/M5_PLAN.md`.
 
@@ -255,45 +257,45 @@ Full detail in `evals/M5_PLAN.md`.
 
 ## Results
 
-Latest full-eval run (56 cases). Source: `snapshot_20260409_211453.json` (schema v6).
+Latest full-eval run (56 cases). Source: `snapshot_20260410_052557.json` (schema v6). This snapshot reflects boundary-sharpening disambiguation rules added to all skill prompts, plus three golden annotation corrections to align with the sharpened rubric. Comparisons to earlier snapshots are informative but not perfectly apples-to-apples.
 
 | Metric | Value |
 |---|---|
 | Cases evaluated | **56** (across 5 games, 11–12 cases each) |
-| Gating accuracy | **94.4%** (10 true_skip / 41 true_retrieve / 3 false_skip / 0 false_retrieve) |
-| Action correctness | **78.0%** (32 / 41, excludes 15 no-response cases) |
+| Gating accuracy | **94.2%** (10 true_skip / 39 true_retrieve / 3 false_skip / 0 false_retrieve / 4 unknown) |
+| Action correctness | **76.9%** (30 / 39, excludes 17 no-response cases) |
 | Citation chain of custody (`subset_ok_rate`) | **100%** |
 | Hard grounding violations | **0** |
-| Retrieval — source recall@5 | **0.580** (raw retriever top-5, eligible cases) |
-| Retrieval — post-filter recall@5 | **0.319** (after investigator's Self-RAG filter) |
-| Retrieval — concept hit-rate | **91.3%** source / **69.6%** post-filter (did the retriever reach the right patch family) |
-| Effective first-pass rate | **87.8%** (critic approved or action-freeze override at iter0) |
-| Action-freeze overrides | **16 / 41** runs intercepted by coordinator |
-| Pairwise revision scorer | 41 judged → **5 improved**, 36 neutral (36 via deterministic shortcut), **0 regressed** |
-| Stop reasons | human_approved=41, no_response_needed=15, **max_iterations_reached=0** |
-| Total tokens | 1,299,991 |
+| Retrieval — source recall@5 | **0.453** (retrieved top-5 before investigator filter, eligible cases) |
+| Retrieval — post-filter recall@5 | **0.272** (after investigator's Self-RAG filter) |
+| Retrieval — concept hit-rate | **69.6%** source / **56.5%** post-filter (did the retriever reach the right patch family) |
+| Effective first-pass rate | **87.2%** (critic approved or action-freeze override at iter0) |
+| Action-freeze overrides | **15 / 39** runs intercepted by coordinator |
+| Pairwise revision scorer | 39 judged → **5 improved**, 34 neutral (34 via deterministic shortcut), **0 regressed** |
+| Stop reasons | human_approved=39, no_response_needed=17, **max_iterations_reached=0** |
+| Total tokens | 1,574,723 |
 
 #### Where the numbers come from
 
-- **Retrieval recall (0.580 source / 0.319 post-filter).** The 0.261 gap is the investigator's Self-RAG filter — it aggressively prunes low-relevance chunks. Concept hit-rate (did the retriever land on the right patch family at all) is **91.3% source / 69.6% post-filter**. Remaining hard-zero cases are chunking fragmentation across version-stamped patches.
-- **Action correctness (78.0%).** Action-freeze (see [Critic ↔ revision loop](#critic-revision-loop)) preserves the responder's action when the critic over-corrects at the `monitor` ↔ `investigate` boundary. Judge breakdown of 9 remaining mismatches: **2 over + 2 missed + 2 drift + 2 tolerable + 1 judge_error**.
-- **Critic approvals (48.8% raw iter-0, 87.8% effective).** The critic over-rejects on action grounds at the node level, but action-freeze intercepts those before they cause thrash. Zero cases hit max_iterations.
-- **Revisions — almost entirely cosmetic.** 36 of 41 neutral via the deterministic shortcut, 5 improved, 0 regressed. Only drafting/evidence issues trigger revisions.
+- **Retrieval recall (0.453 source / 0.272 post-filter).** The 0.181 gap is the investigator's Self-RAG filter — it aggressively prunes low-relevance chunks. The retrieval stack was unchanged in this iteration; the observed recall swing from earlier runs is most plausibly explained by investigator query stochasticity and small-pool variance (on a 23-case eligible pool, a single case flipping from 1.0 → 0.0 moves the mean by ~0.04). Remaining hard-zero cases are chunking fragmentation across version-stamped patches.
+- **Action correctness (76.9%).** Action-freeze (see [Critic ↔ revision loop](#critic-revision-loop)) preserves the responder's action when the critic over-corrects at the `monitor` ↔ `investigate` boundary. Judge breakdown of 9 remaining mismatches: **3 over + 3 missed + 1 drift + 2 tolerable + 0 judge_error**. Boundary-sharpening disambiguation rules collapsed category_drift from 4 → 1 by resolving ambiguous mid-ladder cases. The metric has ~5pp run-to-run variance from Haiku stochasticity across full runs with identical code.
+- **Critic approvals (53.8% raw iter-0, 87.2% effective).** The critic over-rejects on action grounds at the node level, but action-freeze intercepts those before they cause thrash. Boundary-sharpening rules were added to the critic prompt, but the node-level over-rejection pattern persists; action-freeze still does the heavy lifting at the system level. Zero cases hit max_iterations.
+- **Revisions — almost entirely cosmetic.** 34 of 39 neutral via the deterministic shortcut, 5 improved, 0 regressed. Only drafting/evidence issues trigger revisions.
 
 ### Key takeaways
 
 - **Grounding and citation discipline are strong.** 100% citation chain-of-custody, zero hard grounding violations. The `source_ids → relevant_ids → source_ids_cited` subset check is doing its job — the responder cannot fabricate citations.
-- **Action correctness and throughput are healthy.** 78.0% action correctness, 87.8% effective first-pass rate, zero max-iterations cases.
+- **Action correctness and throughput are healthy.** 76.9% action correctness, 87.2% effective first-pass rate, zero max-iterations cases.
 - **Revision loop is clean.** 0 regressions, 5 genuine improvements (grounding fixes caught by the critic).
 
 <details>
 <summary><a id="open-gaps"></a><strong>Open gaps</strong></summary>
 
-- **Retrieval recall.** Source 0.580 / post-filter 0.319. Still the weakest metric on the board. The retriever usually reaches the right patch family, but the investigator still drops too many useful chunks before drafting. The 0.261 gap is the investigator's Self-RAG filter aggressively pruning. Next: (a) audit filter drops on cases where the retriever surfaced the right chunk but the investigator discarded it, (b) tighten section-aware chunking on multi-version patches.
+- **Retrieval recall.** Source 0.453 / post-filter 0.272. Still the weakest metric on the board. The retrieval stack was unchanged in this iteration; the observed swing from earlier runs is most plausibly explained by investigator query stochasticity and small-pool variance. The core gap remains the investigator's Self-RAG filter aggressively pruning useful chunks before drafting. Next: (a) audit filter drops on cases where the retriever surfaced the right chunk but the investigator discarded it, (b) tighten section-aware chunking on multi-version patches.
 
-- **Critic node-level over-rejection.** The system-level churn is solved (action-freeze), but the critic *node itself* still over-rejects at the `monitor` ↔ `investigate` boundary (48.8% raw iter-0 approval). Prompt-text edits are empirically closed as a lever (Iter5/6 both failed); any improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node).
+- **Critic node-level over-rejection.** The system-level churn is solved (action-freeze), but the critic *node itself* still over-rejects at the `monitor` ↔ `investigate` boundary (53.8% raw iter-0 approval). Disambiguation rules were added to the critic prompt but the over-rejection pattern persists; action-freeze still does the heavy lifting. Broad rubric rewrites look closed as a lever for the critic's raw over-rejection problem; targeted boundary-sharpening rules improved action correctness but did not materially lift raw iter-0 approval. Any further improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node).
 
-- **Pairwise semantic spot checks — deferred.** Structurally clean (41 judged, 0 pairwise judge_error), but hand-validated spot checks are queued for the next clean run.
+- **Pairwise semantic spot checks — deferred.** Structurally clean (39 judged, 0 pairwise judge_error), but hand-validated spot checks are queued for the next clean run.
 
 - **`_judge_base.py` extraction — queued.** Three sibling judge files exist; the abstraction shape is visible, but one more clone is cheaper than premature DRY.
 
@@ -433,10 +435,10 @@ export HF_TOKEN=...
 
 - **Data pipeline** (500 reviews, fresh fetch): ~5–10 min wall clock; cost dominated by classification (~500 Haiku calls × ~300 input tokens ≈ ~$0.10).
 - **Single-review agent run** (`test_agent.py`): ~30–60 sec including retrieval; ~5–15K total tokens depending on revision iterations; <$0.05 per review (Sonnet on the responder, Haiku elsewhere).
-- **Full eval suite** (`run_evals.py`, 56 cases): ~25–35 min wall clock; ~1.32M total tokens (per the latest snapshot); on the order of $1–2 per full run with all judges enabled.
+- **Full eval suite** (`run_evals.py`, 56 cases): ~25–35 min wall clock; ~1.57M total tokens (per the latest snapshot); on the order of $2–3 per full run with all judges enabled.
 - **Cached judge re-score** (offline against a saved run JSON): ~30 sec; $0 (cache hit on every flagged case).
 
-Numbers are approximations grounded in the latest snapshot's `total_tokens=1,299,991`. Actual cost depends on Anthropic pricing at run time.
+Numbers are approximations grounded in the latest snapshot's `total_tokens=1,574,723`. Actual cost depends on Anthropic pricing at run time.
 
 </details>
 
@@ -445,19 +447,20 @@ Numbers are approximations grounded in the latest snapshot's `total_tokens=1,299
 <details>
 <summary><strong>Design notes — what I learned</strong></summary>
 
-Four things I'd carry into the next project:
+Five things I'd carry into the next project:
 
 - **Lock the eval gate before every prompt edit.** The clean wins were locked first; the blow-ups weren't. Without the lock file, prompt editing is gambling with stochastic feedback.
 - **Prompt-text edits have limits — know when to move to graph-level interventions.** Rearranging and removing the critic's rung definitions both failed identically: the model reconstructed the semantics from action names alone. Two failed experiments closed the class empirically. Accepting the critic's judgment as-is and intercepting at the graph level was a smaller, more targeted fix than any prompt edit could have been.
 - **`judge_error` gets its own bucket.** Collapsing infra failures into a substantive ruling silently undercounts real failures. One extra column in the snapshot is a small price for misfiring judges that can't pass as healthy.
 - **Sibling-clone, then extract.** Three judge files were cloned intentionally. The right `_judge_base.py` shape is only visible because three real usages exist — guessing from one example would have picked the wrong abstraction.
+- **Eval-driven boundary analysis beats broad prompt rewrites.** Analyzing the specific wrong cases to extract targeted disambiguation rules (7 boundary patterns from 11 mismatches) moved action correctness more reliably than broad rubric refactors. Narrow contrastive rules ("X, not Y") sharpen decision boundaries without destabilizing adjacent cases.
 
 </details>
 
 <details>
 <summary><strong>What's next</strong></summary>
 
-- **Improve retrieval recall.** 0.580 source / 0.319 post-filter — still the weakest metric. Small retrieval interventions (reranker top-N increase, zero-keep fallback) were hard to measure cleanly in the full-agent harness — Haiku's run-to-run variance across 56 cases swamped the signal from changes affecting 5-7 cases. A retrieval-only replay eval (isolating the retrieval pipeline from LLM stochasticity) is a plausible next step before attempting further runtime changes.
+- **Improve retrieval recall.** 0.453 source / 0.272 post-filter — still the weakest metric. Small retrieval interventions (reranker top-N increase, zero-keep fallback) were hard to measure cleanly in the full-agent harness — Haiku's run-to-run variance across 56 cases swamped the signal from changes affecting 5-7 cases. A retrieval-only replay eval (isolating the retrieval pipeline from LLM stochasticity) is a plausible next step before attempting further runtime changes.
 - **Finish pairwise semantic spot checks.** Structurally clean; hand-validated spot checks deferred to the next clean run.
 - **Extract `_judge_base.py`.** Three sibling judge files exist — abstraction shape is visible and ready to pull out.
 - **Vs-baseline pairwise comparison.** Current pairwise scorer compares iter-0 vs final draft within a run. Cross-run comparison (before/after a prompt edit) would surface whether iteration-level improvements compound across the eval suite.

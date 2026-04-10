@@ -68,6 +68,24 @@ Choose exactly one. The boundaries below are the load-bearing definitions — ap
 - Do not rule on draft quality, tone, length, citation grounding, or anything other than the action-class question. Other judges handle those.
 - **One-rung adjacent swaps are the trickiest case.** Default to category_drift if the case is mid-ladder and the prediction is plausible. Default to over_/missed_escalation if the direction is clearly wrong AND the evidence supports the ideal direction strongly.
 - If `<cited_chunks>` is empty, rule from the review, draft framing, evidence summary, and action ladder alone; absence of citations does not block an action-mismatch ruling.
+
+<disambiguation>
+When a one-rung swap could be category_drift or a failure bucket, use these distinctions:
+
+- category_drift vs over_escalation — Did the agent treat a non-issue as actionable, or did it just miscalibrate severity within the actionable range? monitor→investigate on a vague complaint with thin evidence = over_escalation (the agent created urgency from nothing). monitor→investigate on a complaint with a concrete symptom but debatable severity = category_drift (reasonable people disagree).
+- category_drift vs missed_escalation — Did the agent see a real problem and shrug it off, or did it reasonably read the evidence as less severe? investigate→monitor on a crash report with "constant" and "every session" = missed_escalation (hard-blocker language ignored). investigate→monitor on a one-time crash with no reproducibility signal = category_drift (defensible downgrade).
+- category_drift vs tolerable_disagreement — Is the prediction defensible on its own terms, or just "not the worst mistake"? category_drift means the prediction is *wrong but not harmful* — the agent's framing misreads the severity. tolerable_disagreement means the prediction is *genuinely reasonable* and you can articulate why. If you cannot write a one-sentence defense of the prediction, it is not tolerable_disagreement.
+- Two-rung-or-more swaps — Never category_drift. Always over_escalation or missed_escalation depending on direction. no_action→investigate is two rungs up = over_escalation. escalate→monitor is two rungs down = missed_escalation.
+
+Specific patterns (use these when judging whether a mismatch is a failure or tolerable):
+- **Promised/acknowledged feature gap** — `monitor` is the expected default. `investigate→monitor` on a feature-gap case = tolerable_disagreement or category_drift, not missed_escalation.
+- **Design-architecture annoyance** — `no_action` is the expected default. `no_action→monitor` on a pure structural taste complaint = over_escalation.
+- **Named balance/tuning change** — `monitor` is defensible even with emotional tone. `no_action` on a review naming a specific product change = missed_escalation if the change is identifiable.
+- **Regional/network/VPN issue** — `investigate` is the expected default when a region/scenario is identified. `monitor→investigate` = tolerable_disagreement or category_drift. `investigate→escalate` without outage/persistence framing = over_escalation.
+- **Post-patch performance regression** — `investigate` is the default. `escalate` without broad impact or persistence = over_escalation.
+- **Single-user severe technical issue** — `investigate` is the default. `escalate` without persistence/reproducibility framing = over_escalation.
+- **Real but underspecified** — `monitor` is the default. `investigate` without concrete reproduction detail = over_escalation.
+</disambiguation>
 </judgment_rules>
 
 <output_format>
@@ -123,6 +141,16 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
 <evidence_confidence>0.10</evidence_confidence>
 <evidence_summary>No relevant patch evidence; complaint is design-level subjective feedback.</evidence_summary>
 {"ruling": "tolerable_disagreement", "rationale": "One-rung downward swap (monitor→no_action) on a purely subjective design-taste complaint with zero technical component — no_action is genuinely defensible because the complaint is pure opinion that can't be 'addressed' by a patch, even though monitor is a reasonable annotation choice for tracking design sentiment."}
+</example>
+
+<example index="5" type="category_drift">
+<review>Frame rate tanks in the hub area. Happens every time I fast travel there, drops to maybe 15-20 FPS for a few seconds before recovering. Running a 3080.</review>
+<draft_response>Performance dips in busy areas are something the team has been working on. Ver.1.040.03.01 included optimizations to texture streaming and VRAM usage that may help with hub-area hitches. If you're still seeing this after that update, it's worth reporting with your full specs so the team can investigate further.</draft_response>
+<ideal_action>investigate</ideal_action>
+<predicted_action>monitor</predicted_action>
+<evidence_confidence>0.50</evidence_confidence>
+<evidence_summary>Texture streaming and VRAM optimizations shipped in Ver.1.040.03.01; no fix specifically targeting hub-area frame drops.</evidence_summary>
+{"ruling": "category_drift", "rationale": "One-rung downward swap (investigate→monitor) on a performance complaint with a specific location and hardware but only tangentially related evidence — the complaint is reproducible enough to investigate, but the agent's 'monitor' read is not unreasonable given the partial evidence overlap, putting this squarely mid-ladder."}
 </example>
 
 </examples>

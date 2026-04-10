@@ -24,6 +24,7 @@ from config import (
     RESPONDER_FEEDBACK_MAX_REVIEW_CHARS,
     RESPONDER_FEEDBACK_MAX_RESPONSE_CHARS,
     RESPONDER_FEEDBACK_MAX_SUMMARY_CHARS,
+    RESPONDER_FEEDBACK_SELECTION_POOL,
 )
 
 logger = logging.getLogger(__name__)
@@ -197,12 +198,21 @@ def responder_node(state: AgentState) -> dict:
         try:
             conn = get_connection()
             try:
-                feedback_examples = load_feedback_examples(
-                    conn, app_id, category, n=RESPONDER_FEEDBACK_EXAMPLES
+                feedback_examples, selection_log = load_feedback_examples(
+                    conn, app_id, category,
+                    n=RESPONDER_FEEDBACK_EXAMPLES,
+                    pool_size=RESPONDER_FEEDBACK_SELECTION_POOL,
                 )
             finally:
                 conn.close()
-            feedback_log = f"responder: loaded {len(feedback_examples)} feedback examples"
+            selection_summary = ", ".join(
+                f"{s['reason']}({s['action']}/{s['confidence']})"
+                for s in selection_log
+            )
+            feedback_log = (
+                f"responder: selected {len(feedback_examples)} feedback examples "
+                f"[{selection_summary}]"
+            )
             feedback_examples_block = _format_feedback_examples(
                 feedback_examples,
                 RESPONDER_FEEDBACK_MAX_REVIEW_CHARS,

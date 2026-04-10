@@ -112,6 +112,19 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
 {"ruling": "revision_regressed", "rationale": "Introduced a misleading fix claim (dimension 1 inverse): final asserts 'will be addressed in the next balance patch' at confidence 0.25 with no hedging, where iter 0 honestly disowned the fix. The added cite to a balance chunk does not support the assertive 'will be addressed' framing at low confidence."}
 </example>
 
+<example index="4" type="action_change_improved">
+<review>Server lag makes multiplayer pretty much unplayable right now</review>
+<iter_0_draft>Server instability is a serious issue and the team is treating it as top priority. Ver.1.035 included netcode optimizations, and further improvements are in progress.</iter_0_draft>
+<iter_0_action>escalate</iter_0_action>
+<final_draft>Server instability is a real problem. Ver.1.035 included netcode optimizations, and the team is continuing to work on connection stability.</final_draft>
+<final_action>monitor</final_action>
+<critic_reason>action</critic_reason>
+<critic_critique>The response text is fine but escalate is inappropriate — the review uses heated language ("unplayable") without a concrete hard-blocker symptom or persistence/reproducibility framing.</critic_critique>
+<cited_source_ids>iter_0=["patch_035_chunk_3"], final=["patch_035_chunk_3"]</cited_source_ids>
+<evidence_confidence>0.35</evidence_confidence>
+{"ruling": "revision_improved", "rationale": "Action moved from escalate to monitor — correct direction given the review uses 'unplayable' as a heated adjective without a concrete hard-blocker or persistence framing. Wording is near-identical (minor trim of 'top priority' framing, consistent with the action downgrade). The action correction alone is substantive improvement per the 'action changes are almost never neutral' rule."}
+</example>
+
 </examples>
 
 <guardrails>

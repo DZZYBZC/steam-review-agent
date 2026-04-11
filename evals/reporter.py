@@ -163,6 +163,115 @@ def _per_category_section(cases: list[dict], scored: dict) -> list[str]:
     return lines
 
 
+def _layered_retrieval_section(scored: dict) -> list[str]:
+    """
+    Phase A2 layered retrieval display. Rows, cheapest → most semantic:
+      - gold slot recall (diagnostic; legacy retrieval_recall)
+      - concept recall
+      - relevant-concept precision
+      - sufficiency rate (with provisional tag when coverage < 80%)
+      - HEADLINE line (headline rule: concept_recall_postfilter until
+        sufficient_sets coverage ≥ 80%, then sufficiency_postfilter_rate)
+
+    Every row prints [n_scored=K, eligible=M] so per-row denominator
+    differences are visible.
+    """
+    per_case = scored["per_case"]
+
+    # M = retrieval-eligible (canonical): cases with non-empty must_include_chunk_ids
+    retrieval_eligible = [
+        s["retrieval_recall"] for s in per_case.values()
+        if not s["retrieval_recall"].get("not_applicable")
+    ]
+    M = len(retrieval_eligible)
+
+    # gold slot recall: K = M minus gate_false_skip
+    gold_pool = [s for s in retrieval_eligible if not s.get("gate_false_skip")]
+    gold_src = _mean([s["recall_source"] for s in gold_pool])
+    gold_post = _mean([s["recall_relevant"] for s in gold_pool])
+
+    # concept recall
+    concept_pool = [
+        s["concept_recall"] for s in per_case.values()
+        if not s["concept_recall"].get("not_applicable")
+        and not s["concept_recall"].get("gate_false_skip")
+    ]
+    concept_src = _mean([s["recall_source"] for s in concept_pool])
+    concept_post = _mean([s["recall_postfilter"] for s in concept_pool])
+
+    # concept annotation coverage (should be 100% post A1)
+    n_concept_unannotated = sum(
+        1 for s in per_case.values()
+        if not s["retrieval_recall"].get("not_applicable")
+        and s["concept_recall"].get("not_applicable")
+    )
+    n_concept_annotated = M - n_concept_unannotated
+
+    # relevant-concept precision
+    precision_pool = [
+        s["relevant_concept_precision"] for s in per_case.values()
+        if not s["relevant_concept_precision"].get("not_applicable")
+    ]
+    precision_mean = _mean([s["precision"] for s in precision_pool])
+
+    # sufficiency
+    suff_pool = [
+        s["evidence_sufficiency"] for s in per_case.values()
+        if not s["evidence_sufficiency"].get("not_applicable")
+    ]
+    def _rate(vals: list[bool]) -> float | None:
+        return (sum(1 for v in vals if v) / len(vals)) if vals else None
+    suff_src = _rate([s["sufficient_at_source"] for s in suff_pool])
+    suff_post = _rate([s["sufficient_postfilter"] for s in suff_pool])
+    n_suff_annotated = len(suff_pool)
+    suff_coverage_pct = (100.0 * n_suff_annotated / M) if M else 0.0
+    provisional = suff_coverage_pct < 80.0
+
+    lines = [
+        "",
+        _hr(),
+        f"RETRIEVAL (LAYERED)   [eligible = {M} retrieval-eligible cases]",
+        _hr(),
+        f"  annotation coverage:    concept-annotated {n_concept_annotated}/{M} ({100.0 * n_concept_annotated / M:.0f}%)   "
+        f"sufficient_sets {n_suff_annotated}/{M} ({suff_coverage_pct:.0f}%)",
+        f"                          unannotated retrieval-eligible: {n_concept_unannotated}",
+        "",
+        f"  gold slot recall (diag): src {_fmt_float(gold_src, 3)}   post {_fmt_float(gold_post, 3)}"
+        f"    [n_scored={len(gold_pool)}, eligible={M}]",
+        f"  concept recall         : src {_fmt_float(concept_src, 3)}   post {_fmt_float(concept_post, 3)}"
+        f"    [n_scored={len(concept_pool)}, eligible={M}]",
+        f"  relevant-concept prec. : {_fmt_float(precision_mean, 3)}"
+        f"    [n_scored={len(precision_pool)}, eligible={M}]",
+    ]
+    suff_line = (
+        f"  sufficiency rate       : src {_fmt_float(suff_src, 3)}    post {_fmt_float(suff_post, 3)}"
+    )
+    if provisional:
+        suff_line += f"   (provisional — coverage {n_suff_annotated}/{M} < 80%)"
+    suff_line += f"    [n_scored={n_suff_annotated}, eligible={M}]"
+    lines.append(suff_line)
+    lines.append("")
+
+    if provisional:
+        headline_val = _fmt_float(concept_post, 3)
+        lines.append(
+            f"  HEADLINE: concept_recall_postfilter_mean = {headline_val}   "
+            f"(provisional; sufficient_sets coverage {suff_coverage_pct:.0f}% < 80%)"
+        )
+    else:
+        headline_val = _fmt_float(suff_post, 3)
+        lines.append(
+            f"  HEADLINE: sufficiency_postfilter_rate = {headline_val}   "
+            f"(promoted; sufficient_sets coverage {suff_coverage_pct:.0f}% ≥ 80%)"
+        )
+    return lines
+
+
+def _mean(vals: list[float | None]) -> float | None:
+    clean = [v for v in vals if v is not None]
+    return sum(clean) / len(clean) if clean else None
+
+
 def _confusion_matrix_section(scored: dict) -> list[str]:
     lines = ["", _hr(), "ACTION CONFUSION MATRIX (rows=ideal, cols=predicted)", _hr()]
     actions = list(PROPOSED_ACTIONS)
@@ -505,6 +614,7 @@ def build_report(
     sections = [
         _overall_section(records, scored),
         _per_category_section(cases, scored),
+        _layered_retrieval_section(scored),
         _confusion_matrix_section(scored),
         _failure_mode_section(scored),
         _diagnostic_flags_section(scored),

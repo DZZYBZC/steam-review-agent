@@ -50,6 +50,12 @@ DIFF_METRICS: list[tuple[str, str, str]] = [
     ("concept_recall_source_mean",    "retrieval.concept_recall_source_mean",     ".3f"),
     ("concept_recall_postfilter_mean","retrieval.concept_recall_postfilter_mean", ".3f"),
     ("n_concept_unannotated_eligible","retrieval.n_concept_unannotated_eligible", "d"),
+    # Phase A2: sufficiency + filter-noise tripwire. sufficiency_postfilter_rate
+    # is the conditional headline (promoted when sufficient_sets coverage ≥ 80%).
+    ("sufficiency_at_source_rate",    "retrieval.sufficiency_at_source_rate",     ".3f"),
+    ("sufficiency_postfilter_rate",   "retrieval.sufficiency_postfilter_rate",    ".3f"),
+    ("sufficient_sets_coverage_pct",  "retrieval.sufficient_sets_coverage_pct",   ".1f"),
+    ("relevant_concept_precision_mean","retrieval.relevant_concept_precision_mean",".3f"),
     ("concept_hit_source_rate",      "retrieval.concept_hit_source_rate",  ".3f"),
     ("concept_hit_relevant_rate",    "retrieval.concept_hit_relevant_rate",".3f"),
     ("n_lost_to_filter",             "retrieval.n_lost_to_filter",         "d"),
@@ -280,6 +286,34 @@ def _build_aggregates(
         and s["concept_recall"].get("not_applicable")
     )
 
+    # Evidence sufficiency (Phase A2). A case is sufficient at a pool iff any
+    # declared sufficient_set is fully covered there. Cases without
+    # sufficient_sets are not_applicable and excluded from the rate.
+    suff_scored = [
+        s["evidence_sufficiency"] for s in per_case.values()
+        if not s["evidence_sufficiency"].get("not_applicable")
+    ]
+    def _rate(vals: list[bool]) -> float | None:
+        return round(sum(1 for v in vals if v) / len(vals), 3) if vals else None
+    sufficiency_at_source_rate = _rate([s["sufficient_at_source"] for s in suff_scored])
+    sufficiency_postfilter_rate = _rate([s["sufficient_postfilter"] for s in suff_scored])
+    # Annotation-coverage gauge for sufficient_sets. Retrieval-eligible
+    # denominator (same as retrieval_recall's n_with_must_include).
+    n_retrieval_eligible = len(retrieval_scored)
+    n_sufficient_sets_annotated = len(suff_scored)
+    sufficient_sets_coverage_pct = (
+        round(100.0 * n_sufficient_sets_annotated / n_retrieval_eligible, 1)
+        if n_retrieval_eligible else None
+    )
+
+    # Relevant-concept precision (Phase A2). Tripwire for filter noise
+    # relative to the annotator-listed concept pool.
+    precision_scored = [
+        s["relevant_concept_precision"] for s in per_case.values()
+        if not s["relevant_concept_precision"].get("not_applicable")
+    ]
+    relevant_concept_precision_mean = _mean([s["precision"] for s in precision_scored])
+
     # Citation subset
     n_cite_ok = sum(1 for s in per_case.values() if s["citation_audit"]["subset_ok"])
     cite_rate = (n_cite_ok / n_scored) if n_scored else None
@@ -377,6 +411,13 @@ def _build_aggregates(
             "concept_recall_postfilter_mean": concept_recall_postfilter_mean,
             "n_concept_eligible_for_recall": len(concept_eligible),
             "n_concept_unannotated_eligible": n_concept_unannotated_eligible,
+            "sufficiency_at_source_rate": sufficiency_at_source_rate,
+            "sufficiency_postfilter_rate": sufficiency_postfilter_rate,
+            "sufficient_sets_coverage_pct": sufficient_sets_coverage_pct,
+            "n_sufficient_sets_annotated": n_sufficient_sets_annotated,
+            "n_retrieval_eligible": n_retrieval_eligible,
+            "relevant_concept_precision_mean": relevant_concept_precision_mean,
+            "n_relevant_concept_precision_scored": len(precision_scored),
         },
         "citation": {
             "subset_ok_rate": cite_rate,

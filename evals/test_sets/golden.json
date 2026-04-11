@@ -80,7 +80,7 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "p2p_patch_shipped",
           "any_of": [
             "1827626365763153-0",
             "1827626365763153-1"
@@ -88,11 +88,17 @@
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "p2p_playtest_lag_reduction",
           "any_of": [
             "1823825466499688-7"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001",
+          "c_002"
+        ]
       ]
     },
     {
@@ -117,12 +123,17 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "skills_2_0_rework_shipped",
           "any_of": [
             "1817483467048073-0",
             "1811138915522063-3"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -144,25 +155,35 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "p2p_addresses_online_only",
           "any_of": [
             "1827626365763153-0"
           ]
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "future_of_payday_roadmap_a",
           "any_of": [
             "1823191198599924-0"
           ]
         },
         {
           "concept_id": "c_003",
-          "name": "c_003",
+          "name": "future_of_payday_roadmap_b",
           "any_of": [
             "1823191198599924-5"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001",
+          "c_002"
+        ],
+        [
+          "c_001",
+          "c_003"
+        ]
       ]
     },
     {
@@ -201,7 +222,7 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "future_of_payday_content_plans",
           "any_of": [
             "1823191198599924-0",
             "1823191198599924-1"
@@ -209,11 +230,17 @@
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "player_count_acknowledgment",
           "any_of": [
             "1802354289595370-5"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001",
+          "c_002"
+        ]
       ]
     },
     {
@@ -278,19 +305,24 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "advanced_setting_for_age_transitions",
           "any_of": [
             "1805431065499578-25"
           ]
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "team_acknowledged_age_transition_concern",
           "any_of": [
             "1814309641574128-1",
             "1801617199561563-37"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -316,19 +348,27 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "ai_commander_pathing_fix",
           "any_of": [
             "1800357164569792-77"
           ]
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "ai_pathing_alternate_evidence",
           "any_of": [
             "1808061939503633-9",
             "1800357164569792-76"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ],
+        [
+          "c_002"
+        ]
       ]
     },
     {
@@ -367,7 +407,7 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "ui_cleanup_in_1_2_5",
           "any_of": [
             "1811772772410550-11",
             "1811772772410550-10"
@@ -375,11 +415,17 @@
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "yield_breakdown_fix_1_2_1",
           "any_of": [
             "1800991756447780-1"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001",
+          "c_002"
+        ]
       ]
     },
     {
@@ -438,11 +484,16 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "corrupt_state_crash_fix_1_2_1",
           "any_of": [
             "1800991756447780-2"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -493,12 +544,17 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "ui_cleanup_in_1_2_5",
           "any_of": [
             "1811772772410550-11",
             "1811772772410550-10"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -550,7 +606,7 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "outpost_qol_improvements",
           "any_of": [
             "1828894815567746-17",
             "1828894815567715-51"
@@ -558,11 +614,17 @@
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "ship_optimization_terminal",
           "any_of": [
             "1828894815567746-8"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001",
+          "c_002"
+        ]
       ]
     },
     {
@@ -595,11 +657,16 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "shattered_space_dlc",
           "any_of": [
             "6909171012614938755-2"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -620,18 +687,24 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "more_planetary_pois_free_lanes",
           "any_of": [
             "1826992588604218-32"
           ]
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "crash_fixes_1_16_236",
           "any_of": [
             "1828894815567746-31"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001",
+          "c_002"
+        ]
       ]
     },
     {
@@ -722,19 +795,24 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "feb_2026_stability_commitment_post",
           "any_of": [
             "1818752592127214-15"
           ]
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "ver_1_040_earlier_stability_fix",
           "any_of": [
             "1818752592127214-11",
             "1823191198598921-6"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -760,19 +838,18 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "ongoing_perf_optimization_patches",
           "any_of": [
             "1818752592134338-37",
-            "1818752592127214-9"
-          ]
-        },
-        {
-          "concept_id": "c_002",
-          "name": "c_002",
-          "any_of": [
+            "1818752592127214-9",
             "1818752592127214-15"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -805,22 +882,21 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "ongoing_perf_optimization_patches",
           "any_of": [
             "1818752592127214-9",
-            "1818752592127214-15"
-          ]
-        },
-        {
-          "concept_id": "c_002",
-          "name": "c_002",
-          "any_of": [
+            "1818752592127214-15",
             "1818752592134338-37",
             "1825093633183688-24",
             "1825093633183688-20",
             "1823191198598921-7"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -859,7 +935,7 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "amd_adrenalin_guidance",
           "any_of": [
             "1811772772359267-0",
             "1811772772359267-19"
@@ -867,11 +943,16 @@
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "ver_1_030_bug_fixes",
           "any_of": [
             "1816849002009391-3"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -898,7 +979,7 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "ig_buffs_in_ver_1_021",
           "any_of": [
             "1808061939339147-68",
             "1808061939339147-69",
@@ -907,11 +988,19 @@
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "ig_buffs_in_ver_1_040",
           "any_of": [
             "1818752592134338-208"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ],
+        [
+          "c_002"
+        ]
       ]
     },
     {
@@ -1009,11 +1098,16 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "last_lament_lich_build_context",
           "any_of": [
             "1810503566531744-0"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -1038,12 +1132,17 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "endgame_rewards_breach_rings_improved",
           "any_of": [
             "1800357164389149-2",
             "1800357164389149-14"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -1068,12 +1167,17 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "ongoing_crash_hotfixes_third_edict",
           "any_of": [
             "1809869179987885-1",
             "1809869179987885-96"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -1093,11 +1197,16 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "ongoing_crash_hotfixes_third_edict",
           "any_of": [
             "1809869179987885-1"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
       ]
     },
     {
@@ -1118,18 +1227,26 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "c_001",
+          "name": "perf_improvements_planned_0_2_1",
           "any_of": [
             "1800357164389149-45"
           ]
         },
         {
           "concept_id": "c_002",
-          "name": "c_002",
+          "name": "third_edict_ongoing_hotfixes",
           "any_of": [
             "1809869179987885-1"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ],
+        [
+          "c_002"
+        ]
       ]
     },
     {

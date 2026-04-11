@@ -267,6 +267,136 @@ def concept_recall(case: dict, result: dict) -> dict:
     }
 
 
+def evidence_sufficiency(case: dict, result: dict) -> dict:
+    """
+    Pre-declared sufficient_sets test (Phase A2 of the layered retrieval plan).
+
+    A case is sufficient at a given pool iff at least one declared
+    sufficient_set has all its concept_ids hit in that pool. Binary per case,
+    aggregated as a rate. `best_set_coverage_*` is the max-over-sets fraction
+    covered, kept as a continuous diagnostic when sufficiency is False.
+
+    Validates that every concept_id in sufficient_sets resolves to a concept
+    in required_concepts (raises ValueError on dangling reference). Empty/
+    missing sufficient_sets → not_applicable=True (same pattern as empty
+    must_include_chunk_ids in retrieval_recall).
+
+    Subset invariant asserted: post-filter pool ⊆ source pool, so
+    sufficient_postfilter ⇒ sufficient_at_source per case. Violation = pool
+    construction or scorer bug.
+    """
+    sufficient_sets = case.get("sufficient_sets") or []
+    if not sufficient_sets:
+        return {
+            "sufficient_at_source": None,
+            "sufficient_postfilter": None,
+            "best_set_coverage_source": None,
+            "best_set_coverage_postfilter": None,
+            "n_sufficient_sets": 0,
+            "not_applicable": True,
+        }
+
+    concepts = case.get("required_concepts") or []
+    if not concepts:
+        raise ValueError(
+            f"case {case.get('case_id')!r}: sufficient_sets present but "
+            f"required_concepts is empty/missing"
+        )
+
+    by_id: dict[str, list[str]] = {}
+    for c in concepts:
+        cid = c.get("concept_id")
+        if isinstance(cid, str) and cid:
+            by_id[cid] = list(c.get("any_of") or [])
+
+    for set_idx, s in enumerate(sufficient_sets):
+        if not isinstance(s, list) or not s:
+            raise ValueError(
+                f"case {case.get('case_id')!r}: sufficient_sets[{set_idx}] "
+                f"must be a non-empty list of concept_ids"
+            )
+        for cid in s:
+            if cid not in by_id:
+                raise ValueError(
+                    f"case {case.get('case_id')!r}: sufficient_sets[{set_idx}] "
+                    f"references unknown concept_id {cid!r}"
+                )
+
+    ep = result.get("evidence_package") or {}
+    source_pool = set(ep.get("source_ids", []) or [])
+    relevant_pool = set(ep.get("relevant_ids", []) or [])
+
+    def _concept_hit(cid: str, pool: set[str]) -> bool:
+        return any(x in pool for x in by_id[cid])
+
+    def _set_coverage(s: list[str], pool: set[str]) -> float:
+        return sum(1 for cid in s if _concept_hit(cid, pool)) / len(s)
+
+    best_source = max(_set_coverage(s, source_pool) for s in sufficient_sets)
+    best_postfilter = max(_set_coverage(s, relevant_pool) for s in sufficient_sets)
+
+    sufficient_at_source = any(
+        all(_concept_hit(cid, source_pool) for cid in s) for s in sufficient_sets
+    )
+    sufficient_postfilter = any(
+        all(_concept_hit(cid, relevant_pool) for cid in s) for s in sufficient_sets
+    )
+
+    assert not sufficient_postfilter or sufficient_at_source, (
+        f"evidence_sufficiency invariant violated for case {case.get('case_id')}: "
+        f"sufficient_postfilter=True but sufficient_at_source=False"
+    )
+
+    return {
+        "sufficient_at_source": sufficient_at_source,
+        "sufficient_postfilter": sufficient_postfilter,
+        "best_set_coverage_source": round(best_source, 3),
+        "best_set_coverage_postfilter": round(best_postfilter, 3),
+        "n_sufficient_sets": len(sufficient_sets),
+        "not_applicable": False,
+    }
+
+
+def relevant_concept_precision(case: dict, result: dict) -> dict:
+    """
+    Post-filter chunk-level precision against annotated concepts (Phase A2).
+
+    Of the chunks the investigator kept (relevant_ids, deduped to a set),
+    what fraction belong to ANY required_concept's any_of pool? Surfaces
+    filter noise relative to annotated concepts. NOT a general "evidence
+    quality" number — a chunk outside any annotated concept may still be
+    useful; this scorer can't tell. Read as a tripwire alongside
+    concept_recall, not as ground truth.
+
+    Dedup rule: relevant_ids is converted to a set FIRST. Same chunk_id
+    appearing twice must not double-count toward numerator or denominator.
+
+    Empty required_concepts OR empty deduped relevant_ids → not_applicable.
+    """
+    concepts = case.get("required_concepts") or []
+    relevant_set = set((result.get("evidence_package") or {}).get("relevant_ids") or [])
+    if not concepts or not relevant_set:
+        return {
+            "precision": None,
+            "n_relevant_in_concept": 0,
+            "n_relevant": 0,
+            "not_applicable": True,
+        }
+
+    concept_chunk_set: set[str] = set()
+    for c in concepts:
+        for x in c.get("any_of") or []:
+            concept_chunk_set.add(x)
+
+    in_concept = len(relevant_set & concept_chunk_set)
+    return {
+        "precision": round(in_concept / len(relevant_set), 3),
+        "n_relevant_in_concept": in_concept,
+        "n_relevant": len(relevant_set),
+        "not_applicable": False,
+    }
+
+
 def action_correctness(case: dict, result: dict) -> dict:
     """
     Exact match between proposed_action and ideal_action. Also surfaces the
@@ -532,6 +662,8 @@ def critic_health(records: list[dict]) -> dict:
 PER_CASE_SCORERS = {
     "retrieval_recall": retrieval_recall,
     "concept_recall": concept_recall,
+    "evidence_sufficiency": evidence_sufficiency,
+    "relevant_concept_precision": relevant_concept_precision,
     "action_correctness": action_correctness,
     "citation_audit": citation_audit,
     "evidence_utilization": evidence_utilization,

@@ -149,6 +149,7 @@ def build_initial_state(case: dict) -> AgentState:
         "token_usage": {},
         "human_decision": "",
         "human_feedback": "",
+        "human_action_override": "",
         "frozen_action": "",
         "action_freeze_applied": False,
         "action_override_count": 0,

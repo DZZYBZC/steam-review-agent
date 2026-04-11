@@ -44,3 +44,4 @@ class AgentState(TypedDict):
     # Human-in-the-loop
     human_decision: str     # "approved", "rejected", or "" (empty = awaiting)
     human_feedback: str     # Free-text feedback from human reviewer
+    human_action_override: str  # Optional action swap on approve; empty = no swap. Must be a value in config.PROPOSED_ACTIONS or empty.

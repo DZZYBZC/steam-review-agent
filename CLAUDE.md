@@ -92,6 +92,8 @@ steam-review-agent/
 - Human review gate sits between Critic approval and graph termination
 - `human_decision`: "approved", "rejected", or "" (awaiting)
 - `human_feedback`: free-text revision guidance (used as revision_reason on rejection)
+- `human_action_override`: optional action swap on approve (must be a value in `config.PROPOSED_ACTIONS` or empty). Lets the human approve the current draft while overriding the action label in one shot, avoiding a full revision cycle for action-only disagreements. Invalid values log a warning and fall through to the `frozen_action` path. Ignored on rejection.
+- Precedence on approve: valid `human_action_override` > `frozen_action` > current `proposed_action` (linear resolve — invalid override never short-circuits the frozen-action restore)
 - On approval: saves audit log entry, graph ends with stop_reason="human_approved"
 - On rejection with feedback: saves audit log entry + cluster note (type="human_feedback"), re-enters revision loop
 

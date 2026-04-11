@@ -87,6 +87,7 @@ def coordinator_node(state: AgentState) -> dict:
             "stop_reason": "action_override",
             "human_decision": "",
             "human_feedback": "",
+            "human_action_override": "",
             "node_log": [
                 f"coordinator: action-only rejection overridden, "
                 f"frozen_action={frozen}, override_count={override_count}, "
@@ -115,6 +116,7 @@ def coordinator_node(state: AgentState) -> dict:
         "stop_reason": "revising",
         "human_decision": "",
         "human_feedback": "",
+        "human_action_override": "",
         "node_log": [f"coordinator: iteration={iteration}, routing next"],
     }
 

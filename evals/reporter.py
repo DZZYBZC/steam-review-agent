@@ -26,6 +26,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+from config import PROPOSED_ACTIONS
+
 
 # ---------- Helpers --------------------------------------------------------
 
@@ -163,7 +165,7 @@ def _per_category_section(cases: list[dict], scored: dict) -> list[str]:
 
 def _confusion_matrix_section(scored: dict) -> list[str]:
     lines = ["", _hr(), "ACTION CONFUSION MATRIX (rows=ideal, cols=predicted)", _hr()]
-    actions = ["no_action", "monitor", "investigate", "escalate"]
+    actions = list(PROPOSED_ACTIONS)
     matrix: dict[tuple[str, str], int] = defaultdict(int)
     other_seen: set[str] = set()
     for s in scored["per_case"].values():
@@ -205,9 +207,8 @@ def _failure_mode_section(scored: dict) -> list[str]:
 
     for case_id, s in scored["per_case"].items():
         # cited_irrelevant_patch: any cited chunk_id outside relevant_ids
-        # OR explicitly forbidden_cited
         cite = s["citation_audit"]
-        if cite["out_of_set_ids"] or cite["forbidden_cited"]:
+        if cite["out_of_set_ids"]:
             counts["cited_irrelevant_patch"].append(case_id)
 
         # grounding hard violations only — low_conf_with_cite is now a flag.

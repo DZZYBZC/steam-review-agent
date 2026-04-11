@@ -254,6 +254,8 @@ Implementation: `pipeline/retrieve.py`.
 
 **Action-freeze override.** When the critic rejects solely on action grounds (`reason_type="action"`), the coordinator freezes the responder's current `proposed_action` and routes directly to `human_approval`, skipping the revision loop entirely. The freeze persists until the human acts: approval ends the run with the frozen action; rejection clears the freeze and re-enters the revision loop normally. Action-only thrash loops are broken at the first rejection.
 
+**Human action override at the gate.** The human approval step is not a binary approve/reject. On approval, the caller can inject an optional `human_action_override` (one of `config.PROPOSED_ACTIONS`) to swap the action label in a single shot — useful when the draft reads fine but the reviewer disagrees with the `proposed_action`, which otherwise would cost a full revision cycle with no guarantee the redraft lands on the desired action. Precedence on approve is resolved linearly: valid override > `frozen_action` > current action, so an invalid override (typo) falls through to the existing frozen-action restore rather than silently skipping it. Rejection ignores the override and clears it on the way back into the revision loop.
+
 **Run identity.** Coordinator mints a UUID `run_id` on first entry; both `audit_log` and `audit_log_iterations` carry it, so a review's full revision history can be reassembled from the DB alone.
 
 **Termination.** Human approval, max iterations reached, human approval after max iterations, or terminal LLM/parse error.

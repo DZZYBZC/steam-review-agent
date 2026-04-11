@@ -28,6 +28,8 @@ REVIEW_MIN_CHARS = 5
 REVIEW_MIN_WORDS = 3
 NEAR_DUPLICATE_THRESHOLD = 0.85
 
+PROPOSED_ACTIONS = ("no_action", "monitor", "investigate", "escalate")
+
 REVIEW_CATEGORIES = [
     "technical_issues",
     "performance_optimization",

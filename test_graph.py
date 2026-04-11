@@ -51,6 +51,7 @@ def test_graph():
         "token_usage": {},
         "human_decision": "",
         "human_feedback": "",
+        "human_action_override": "",
         "run_id": "",
         "frozen_action": "",
         "action_freeze_applied": False,

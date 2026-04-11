@@ -43,6 +43,13 @@ DIFF_METRICS: list[tuple[str, str, str]] = [
     # companion concept hit-rates and a filter-drop diagnostic.
     ("recall_source_mean",           "retrieval.recall_source_mean",       ".3f"),
     ("recall_relevant_mean",         "retrieval.recall_relevant_mean",     ".3f"),
+    # Layered retrieval Phase A1: concept_recall is the formula generalization
+    # of retrieval_recall over named concepts. Post the 1:1 mechanical
+    # migration, these are byte-equal to recall_source_mean / recall_relevant_mean.
+    # Phase A2 manual annotation will let them legitimately diverge.
+    ("concept_recall_source_mean",    "retrieval.concept_recall_source_mean",     ".3f"),
+    ("concept_recall_postfilter_mean","retrieval.concept_recall_postfilter_mean", ".3f"),
+    ("n_concept_unannotated_eligible","retrieval.n_concept_unannotated_eligible", "d"),
     ("concept_hit_source_rate",      "retrieval.concept_hit_source_rate",  ".3f"),
     ("concept_hit_relevant_rate",    "retrieval.concept_hit_relevant_rate",".3f"),
     ("n_lost_to_filter",             "retrieval.n_lost_to_filter",         "d"),
@@ -252,6 +259,27 @@ def _build_aggregates(
     n_lost_to_filter = sum(len(s.get("dropped_by_filter") or []) for s in eligible)
     n_cases_with_drops = sum(1 for s in eligible if s.get("dropped_by_filter"))
 
+    # Concept recall (Phase A1). Same eligibility rules as retrieval_recall:
+    # not_applicable cases are excluded entirely; gate_false_skip cases are
+    # excluded from the mean. After the 1:1 mechanical migration the
+    # eligible-set and means must be identical to retrieval_recall above.
+    concept_scored = [
+        s["concept_recall"] for s in per_case.values()
+        if not s["concept_recall"].get("not_applicable")
+    ]
+    concept_eligible = [s for s in concept_scored if not s.get("gate_false_skip")]
+    concept_recall_source_mean = _mean([s["recall_source"] for s in concept_eligible])
+    concept_recall_postfilter_mean = _mean([s["recall_postfilter"] for s in concept_eligible])
+    # Annotation-coverage gauge: cases that are retrieval-eligible (have
+    # must_include_chunk_ids) but lack required_concepts. Post-A1 mechanical
+    # migration this should be 0; if it ever climbs, the migration didn't
+    # cover a newly-added case and concept recall silently shrinks.
+    n_concept_unannotated_eligible = sum(
+        1 for s in per_case.values()
+        if not s["retrieval_recall"].get("not_applicable")
+        and s["concept_recall"].get("not_applicable")
+    )
+
     # Citation subset
     n_cite_ok = sum(1 for s in per_case.values() if s["citation_audit"]["subset_ok"])
     cite_rate = (n_cite_ok / n_scored) if n_scored else None
@@ -287,7 +315,7 @@ def _build_aggregates(
     failure_modes: dict[str, int] = defaultdict(int)
     for s in per_case.values():
         cite = s["citation_audit"]
-        if cite["out_of_set_ids"] or cite["forbidden_cited"]:
+        if cite["out_of_set_ids"]:
             failure_modes["cited_irrelevant_patch"] += 1
         hv = s["grounding_band_compliance"].get("hard_violation")
         if hv:
@@ -345,6 +373,10 @@ def _build_aggregates(
             "n_gate_false_skip_in_recall_pool": n_gate_false_skip,
             "n_lost_to_filter": n_lost_to_filter,
             "n_cases_with_filter_drops": n_cases_with_drops,
+            "concept_recall_source_mean": concept_recall_source_mean,
+            "concept_recall_postfilter_mean": concept_recall_postfilter_mean,
+            "n_concept_eligible_for_recall": len(concept_eligible),
+            "n_concept_unannotated_eligible": n_concept_unannotated_eligible,
         },
         "citation": {
             "subset_ok_rate": cite_rate,

@@ -15,7 +15,9 @@ import json
 import re
 from pathlib import Path
 
-LADDER = ["no_action", "monitor", "investigate", "escalate"]
+from config import PROPOSED_ACTIONS
+
+LADDER = list(PROPOSED_ACTIONS)
 HARDWORDS = re.compile(
     r"\b(crash|crashing|unplayable|data loss|save deleted|lost progress|completely broken|pervasive)\b",
     re.I,

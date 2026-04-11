@@ -10,6 +10,7 @@ Plain Python — no LLM call.
 
 import logging
 from agent.state import AgentState
+from config import PROPOSED_ACTIONS
 from pipeline.storage import (
     get_connection, save_audit_entry, save_cluster_note,
     find_recent_similar_note, update_cluster_note_text,
@@ -90,17 +91,50 @@ def human_approval_node(state: AgentState) -> dict:
 
     if decision == "approved":
         logger.info("Human approved the draft.")
-        # Restore frozen_action BEFORE _log_audit so the audit row has the correct action.
-        action_override = {}
-        if frozen and state.get("proposed_action", "") != frozen:
-            action_override = {"proposed_action": frozen}
-            logger.info(f"Human approval: restoring frozen_action '{frozen}' "
-                        f"(was '{state.get('proposed_action', '')}')")
-        audit_state = {**state, **action_override}
+
+        # Linear precedence resolve: valid human override > frozen_action > current.
+        # An invalid override logs a warning and falls through to the frozen path,
+        # so a typo'd override cannot short-circuit the existing freeze-restore.
+        current_action = state.get("proposed_action", "")
+        raw_override = state.get("human_action_override", "") or ""
+
+        valid_override = ""
+        if raw_override:
+            if raw_override in PROPOSED_ACTIONS:
+                valid_override = raw_override
+            else:
+                logger.warning(
+                    f"Human approval: ignoring invalid human_action_override "
+                    f"'{raw_override}' (expected one of: {', '.join(PROPOSED_ACTIONS)}); "
+                    f"falling back to frozen_action path"
+                )
+
+        final_action = current_action
+        if frozen:
+            final_action = frozen
+        if valid_override:
+            final_action = valid_override
+
+        action_overrides = {}
+        if final_action != current_action:
+            action_overrides = {"proposed_action": final_action}
+            if valid_override:
+                logger.info(
+                    f"Human approval: human overrode action "
+                    f"'{current_action}' → '{final_action}'"
+                )
+            else:
+                logger.info(
+                    f"Human approval: restoring frozen_action '{final_action}' "
+                    f"(was '{current_action}')"
+                )
+
+        audit_state = {**state, **action_overrides}
         _log_audit(audit_state, "human_approved")
         return {
             "stop_reason": "human_approved",
-            **action_override,
+            **action_overrides,
+            "human_action_override": "",
             "node_log": ["human_approval: human approved the draft"],
         }
 
@@ -114,6 +148,7 @@ def human_approval_node(state: AgentState) -> dict:
             "action_freeze_applied": False,
             "human_decision": "",
             "human_feedback": "",
+            "human_action_override": "",
         }
         audit_state = {**state, **clear_fields, "revision_reason": reason}
         _log_audit(audit_state, "revising")

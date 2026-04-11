@@ -1,22 +1,20 @@
 """
-evals/refresh_classifier_fields.py — One-shot refresh of classifier fields in golden.json.
+evals/refresh_classifier_fields.py — One-shot refresh of classifier_category in golden.json.
 
-After editing skills/classify-review/SKILL.md, the frozen classifier_category /
-classifier_confidence values in golden.json no longer reflect what the live
-classifier would produce. This script re-runs the production `classify_review()`
-on every case's review_text and writes the new category + confidence back into
-golden.json. All other fields (annotated_category, gate_should_skip, must_include,
-review_text, etc.) are ground truth and are NOT touched.
+After editing skills/classify-review/SKILL.md, the frozen classifier_category
+values in golden.json no longer reflect what the live classifier would produce.
+This script re-runs the production `classify_review()` on every case's
+review_text and writes the new category back into golden.json. All other fields
+(annotated_category, gate_should_skip, must_include, review_text, etc.) are
+ground truth and are NOT touched.
 
 Idempotent: re-running on an unchanged classifier produces an empty diff.
 
-Prints a checkpoint summary before exiting:
-  1. case_ids whose classifier_category FLIPPED (old → new)
-  2. case_ids whose classifier_confidence changed materially (|Δ| ≥ 0.1) even
-     if the category did not flip — surfaces calibration drift before the full eval.
+Prints a checkpoint summary listing case_ids whose classifier_category FLIPPED
+(old → new) before exiting.
 
 Usage:
-    python evals/refresh_classifier_fields.py                              # all 55 cases
+    python evals/refresh_classifier_fields.py                              # all cases
     python evals/refresh_classifier_fields.py --dry-run                    # report only, no write
     python evals/refresh_classifier_fields.py --case-id poe2_vague_001     # single case
     python evals/refresh_classifier_fields.py --case-id a --case-id b      # multiple cases
@@ -46,11 +44,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 GOLDEN_PATH = Path(__file__).parent / "test_sets" / "golden.json"
-CONFIDENCE_DRIFT_THRESHOLD = 0.1
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Refresh classifier_category / classifier_confidence in golden.json.")
+    parser = argparse.ArgumentParser(description="Refresh classifier_category in golden.json.")
     parser.add_argument("--dry-run", action="store_true", help="Report changes without writing golden.json")
     parser.add_argument(
         "--case-id",
@@ -84,10 +81,9 @@ def main():
             sys.exit(1)
         logger.info(f"Refreshing {len(selected_ids)} selected case(s): {sorted(selected_ids)}")
     else:
-        logger.info(f"Refreshing classifier fields on {len(cases)} cases from {GOLDEN_PATH.name}")
+        logger.info(f"Refreshing classifier_category on {len(cases)} cases from {GOLDEN_PATH.name}")
 
     flipped: list[tuple[str, str, str]] = []          # (case_id, old_cat, new_cat)
-    drifted: list[tuple[str, float, float]] = []      # (case_id, old_conf, new_conf)
     failed: list[str] = []
 
     for i, case in enumerate(cases, start=1):
@@ -101,7 +97,6 @@ def main():
             continue
 
         old_cat = case.get("classifier_category", "")
-        old_conf = float(case.get("classifier_confidence", 0.0) or 0.0)
 
         result = classify_review(review_text)
         if result is None:
@@ -110,29 +105,22 @@ def main():
             continue
 
         new_cat = result.primary_category
-        new_conf = float(result.confidence)
-
         case["classifier_category"] = new_cat
-        case["classifier_confidence"] = round(new_conf, 3)
 
         if new_cat != old_cat:
             flipped.append((case_id, old_cat, new_cat))
-            logger.info(f"[{i}/{len(cases)}] {case_id}: {old_cat!r} → {new_cat!r} (conf {old_conf:.2f} → {new_conf:.2f})")
-        elif abs(new_conf - old_conf) >= CONFIDENCE_DRIFT_THRESHOLD:
-            drifted.append((case_id, old_conf, new_conf))
-            logger.info(f"[{i}/{len(cases)}] {case_id}: same category, conf drift {old_conf:.2f} → {new_conf:.2f}")
+            logger.info(f"[{i}/{len(cases)}] {case_id}: {old_cat!r} → {new_cat!r}")
         else:
-            logger.info(f"[{i}/{len(cases)}] {case_id}: unchanged ({new_cat}, conf {new_conf:.2f})")
+            logger.info(f"[{i}/{len(cases)}] {case_id}: unchanged ({new_cat})")
 
     # Checkpoint summary
     print()
     print("=" * 70)
     print("REFRESH SUMMARY")
     print("=" * 70)
-    print(f"Total cases:                  {len(cases)}")
-    print(f"Category flips:               {len(flipped)}")
-    print(f"Confidence drifts (|Δ| ≥ {CONFIDENCE_DRIFT_THRESHOLD:.1f}): {len(drifted)}")
-    print(f"Failures:                     {len(failed)}")
+    print(f"Total cases:     {len(cases)}")
+    print(f"Category flips:  {len(flipped)}")
+    print(f"Failures:        {len(failed)}")
 
     if flipped:
         print("\nCATEGORY FLIPS (case_id: old → new):")
@@ -140,13 +128,6 @@ def main():
             print(f"  {case_id:<28} {old:<24} → {new}")
     else:
         print("\n(no category flips — if SKILL.md changed, this is suspicious; debug before running full eval)")
-
-    if drifted:
-        print("\nCONFIDENCE DRIFTS (case_id: old → new):")
-        for case_id, old, new in drifted:
-            delta = new - old
-            sign = "+" if delta >= 0 else ""
-            print(f"  {case_id:<28} {old:.2f} → {new:.2f}  ({sign}{delta:.2f})")
 
     if failed:
         print("\nFAILED CASES:")

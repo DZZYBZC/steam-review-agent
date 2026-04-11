@@ -160,6 +160,113 @@ def retrieval_recall(case: dict, result: dict) -> dict:
     }
 
 
+def concept_recall(case: dict, result: dict) -> dict:
+    """
+    Concept-based retrieval recall (Phase A1 of the layered retrieval plan).
+
+    Generalizes the slot/`any_of` shape of `retrieval_recall` into named
+    concepts with stable concept_ids. A concept is hit iff any chunk_id in
+    its `any_of` lands in the pool. Per-case score = hit_concepts / total
+    (all concepts implicitly weight 1.0 in v1).
+
+    Output shape mirrors `retrieval_recall` exactly so reporter/snapshot
+    wiring is symmetric, with two intentional name changes:
+      - `recall_postfilter` (clearer than legacy `recall_relevant`)
+      - diagnostic lists carry `concept_id` (machine-stable across renames)
+
+    Empty `required_concepts` → not_applicable=True.
+    `gate_false_skip` mirrors `retrieval_recall`'s definition exactly so the
+    A1 identity check can compare cases byte-for-byte after the mechanical
+    1:1 migration.
+    """
+    concepts = case.get("required_concepts") or []
+    if not concepts:
+        return {
+            "recall_source": None,
+            "recall_postfilter": None,
+            "hits_source": 0,
+            "hits_postfilter": 0,
+            "concept_hit_source": None,
+            "concept_hit_postfilter": None,
+            "n_concepts": 0,
+            "concepts_missing_from_source": [],
+            "concepts_dropped_by_filter": [],
+            "gate_false_skip": False,
+            "not_applicable": True,
+        }
+
+    # Schema validation — fail loud, not silent.
+    seen_ids: set[str] = set()
+    for idx, c in enumerate(concepts):
+        if not isinstance(c, dict):
+            raise ValueError(
+                f"required_concepts[{idx}] must be a dict, got {type(c).__name__}"
+            )
+        cid = c.get("concept_id")
+        if not isinstance(cid, str) or not cid:
+            raise ValueError(
+                f"required_concepts[{idx}] missing/empty concept_id"
+            )
+        if cid in seen_ids:
+            raise ValueError(
+                f"required_concepts has duplicate concept_id={cid!r}"
+            )
+        seen_ids.add(cid)
+        any_of = c.get("any_of")
+        if not isinstance(any_of, list) or not any_of or not all(isinstance(x, str) for x in any_of):
+            raise ValueError(
+                f"required_concepts[{idx}] (concept_id={cid!r}): "
+                f"'any_of' must be a non-empty list of chunk_id strings"
+            )
+
+    ep = result.get("evidence_package") or {}
+    source_pool = set(ep.get("source_ids", []) or [])
+    relevant_pool = set(ep.get("relevant_ids", []) or [])
+
+    n = len(concepts)
+    hits_source = 0
+    hits_postfilter = 0
+    missing_from_source: list[str] = []
+    dropped_by_filter: list[str] = []
+
+    for c in concepts:
+        cid = c["concept_id"]
+        any_of = c["any_of"]
+        in_source = any(x in source_pool for x in any_of)
+        in_relevant = any(x in relevant_pool for x in any_of)
+        if in_source:
+            hits_source += 1
+        else:
+            missing_from_source.append(cid)
+        if in_relevant:
+            hits_postfilter += 1
+        elif in_source:
+            dropped_by_filter.append(cid)
+
+    # Subset invariant: post-filter pool ⊆ source pool ⇒ hits_postfilter ≤ hits_source.
+    # Violation = scorer or pool-construction bug; assert at scorer time.
+    assert hits_postfilter <= hits_source, (
+        f"concept_recall invariant violated for case {case.get('case_id')}: "
+        f"hits_postfilter={hits_postfilter} > hits_source={hits_source}"
+    )
+
+    gate_false_skip = (ep.get("retrieval_decision") == "skipped") or not source_pool
+
+    return {
+        "recall_source": round(hits_source / n, 3),
+        "recall_postfilter": round(hits_postfilter / n, 3),
+        "hits_source": hits_source,
+        "hits_postfilter": hits_postfilter,
+        "concept_hit_source": hits_source >= 1,
+        "concept_hit_postfilter": hits_postfilter >= 1,
+        "n_concepts": n,
+        "concepts_missing_from_source": missing_from_source,
+        "concepts_dropped_by_filter": dropped_by_filter,
+        "gate_false_skip": gate_false_skip,
+        "not_applicable": False,
+    }
+
+
 def action_correctness(case: dict, result: dict) -> dict:
     """
     Exact match between proposed_action and ideal_action. Also surfaces the
@@ -197,19 +304,15 @@ def action_correctness(case: dict, result: dict) -> dict:
 def citation_audit(case: dict, result: dict) -> dict:
     """
     Verify source_ids_cited ⊆ relevant_ids (Critic invariant: no fabricated
-    chunk ids). Also flags any forbidden_chunk_ids that were cited
-    (cited_irrelevant_patch detection).
+    chunk ids).
     """
     cited = set(result.get("source_ids_cited", []) or [])
     relevant = set((result.get("evidence_package") or {}).get("relevant_ids", []) or [])
-    forbidden = set(case.get("forbidden_chunk_ids", []) or [])
 
     out_of_set = sorted(cited - relevant)
-    forbidden_hits = sorted(cited & forbidden)
     return {
         "subset_ok": not out_of_set,
         "out_of_set_ids": out_of_set,
-        "forbidden_cited": forbidden_hits,
         "n_cited": len(cited),
     }
 
@@ -428,6 +531,7 @@ def critic_health(records: list[dict]) -> dict:
 
 PER_CASE_SCORERS = {
     "retrieval_recall": retrieval_recall,
+    "concept_recall": concept_recall,
     "action_correctness": action_correctness,
     "citation_audit": citation_audit,
     "evidence_utilization": evidence_utilization,

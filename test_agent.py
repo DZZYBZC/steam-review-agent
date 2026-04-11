@@ -21,7 +21,7 @@ import logging
 from agent.graph import build_graph
 from agent.state import AgentState
 from pipeline.storage import get_connection, load_classified_reviews
-from config import TEST_APP_ID
+from config import TEST_APP_ID, PROPOSED_ACTIONS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -137,6 +137,7 @@ def run(category: str | None = None, review_id: str | None = None):
         "token_usage": {},
         "human_decision": "",
         "human_feedback": "",
+        "human_action_override": "",
         "run_id": "",
         "frozen_action": "",
         "action_freeze_applied": False,
@@ -160,7 +161,7 @@ def run(category: str | None = None, review_id: str | None = None):
         print(f"\nProposed action: {result.get('proposed_action', '???')}")
         print(f"Critique: {result.get('critique', 'none')}")
 
-        decision = input("\nApprove this draft? [y/n/auto] (auto = approve without prompt): ").strip().lower()
+        decision = input("\nApprove this draft? [y/n/a/auto] (a = approve with different action): ").strip().lower()
 
         if decision in ("y", "yes", "auto"):
             app.update_state(thread_config, {"human_decision": "approved"})
@@ -169,6 +170,24 @@ def run(category: str | None = None, review_id: str | None = None):
             app.update_state(thread_config, {
                 "human_decision": "rejected",
                 "human_feedback": feedback,
+            })
+        elif decision == "a":
+            current = result.get("proposed_action", "")
+            print(f"\nCurrent action: {current}")
+            choices = " | ".join(PROPOSED_ACTIONS)
+            override = ""
+            while True:
+                raw = input(f"Choose a new action [{choices}] (Enter to cancel): ").strip()
+                if raw == "":
+                    print("Cancelled — falling back to plain approve.")
+                    break
+                if raw in PROPOSED_ACTIONS:
+                    override = raw
+                    break
+                print(f"Invalid choice '{raw}'. Must be one of: {choices}")
+            app.update_state(thread_config, {
+                "human_decision": "approved",
+                "human_action_override": override,
             })
         else:
             print("Invalid input, treating as approve.")

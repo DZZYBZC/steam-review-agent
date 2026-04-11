@@ -79,8 +79,9 @@ All graph building happens in `agent/graph.py`:
 ## Human-in-the-loop
 - `interrupt_before=["human_approval"]` pauses the graph before the human gate
 - Caller injects decision via `app.update_state(config, {"human_decision": "approved"})` then resumes with `app.invoke(None, config)`
-- human_approval node is plain Python (no LLM) — reads human_decision/human_feedback, routes accordingly
-- On rejection, coordinator clears human_decision/human_feedback before re-entering the loop
+- human_approval node is plain Python (no LLM) — reads human_decision/human_feedback/human_action_override, routes accordingly
+- Human action override: caller can inject `{"human_decision": "approved", "human_action_override": "<action>"}` in one shot to approve the draft while swapping the action label. Validated against `config.PROPOSED_ACTIONS`; invalid values log a warning and fall through to the `frozen_action` restore path. Precedence: valid override > frozen_action > current (linear resolve, not branched — invalid override never skips the frozen restore)
+- On rejection, coordinator clears human_decision/human_feedback/human_action_override before re-entering the loop
 
 ## Graph flow
 ```

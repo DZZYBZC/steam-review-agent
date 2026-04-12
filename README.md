@@ -34,11 +34,12 @@ For the full data pipeline, eval suite, runtime/cost estimates, and other entry 
 
 ## What it does
 
-Ingests Steam reviews and routes each one through a LangGraph workflow with investigator / responder / critic agents plus a plain-Python coordinator and human approval gate: classify → retrieve patch notes → draft an evidence-grounded reply → critic gate → human approval. The interesting problem isn't generation — it's *defensible* generation that traces every claim back to a retrieved patch chunk.
+Ingests Steam reviews and routes each one through a LangGraph workflow: classify → retrieve patch notes → draft an evidence-grounded reply → critic gate → human approval. The interesting problem isn't generation — it's *defensible* generation that traces every claim back to a retrieved patch chunk.
 
-Approved drafts become few-shot examples for future runs; human-rejected drafts become cluster notes that warn the next investigator about known issues in the same category.
-
-**Not** a chatbot. **Not** an autoresponder. The human-in-the-loop gate is non-negotiable — the agent does the research and drafts; the human ships it.
+- Investigator / responder / critic agents + a plain-Python coordinator and human approval gate
+- Approved drafts become few-shot examples for future runs
+- Human-rejected drafts become cluster notes that warn the next investigator about known issues in the same category
+- **Not** a chatbot. **Not** an autoresponder. The human-in-the-loop gate is non-negotiable — the agent does the research and drafts; the human ships it.
 
 <details>
 <summary><strong>Project layout (annotated file tree)</strong></summary>
@@ -90,7 +91,7 @@ steam-review-agent/
 │   ├── judge-action/              # Eval judge: action severity classifier
 │   ├── judge-pairwise/            # Eval judge: revision improvement
 │   ├── judge-pool-sufficiency/    # Eval judge: retrieval-only — would the pool support an ideal answer?
-│   └── judge-draft-grounding/   # Eval judge: joint retrieval+drafting — does the pool support what the draft claims?
+│   └── judge-draft-grounding/    # Eval judge: joint retrieval+drafting — does the pool support what the draft claims?
 │
 ├── evals/                       # Evaluation harness
 │   ├── run_evals.py               # Main eval runner (loads cases, runs agent, scores, snapshots)
@@ -101,6 +102,7 @@ steam-review-agent/
 │   ├── _negative_controls_locked.md  # Pre-edit gate locks for every prompt iteration
 │   ├── _lock_controls.py          # CLI helper to materialize lock blocks from a run JSON
 │   ├── refresh_classifier_fields.py
+│   ├── migrate_slots_to_concepts.py # One-shot 1:1 backfill of must_include_chunk_ids → required_concepts (Phase A1)
 │   ├── scorers/
 │   │   ├── deterministic.py       # Deterministic scorers (action_correctness, concept_recall, evidence_sufficiency, ...)
 │   │   ├── gating_accuracy.py     # Retrieval-gating scorer
@@ -235,6 +237,8 @@ Five nodes: `coordinator` (plain Python), `investigator`, `responder`, `critic`,
 
 ---
 
+## Under the hood
+
 <details>
 <summary><strong>Retrieval pipeline (hybrid RAG)</strong></summary>
 
@@ -275,15 +279,31 @@ Implementation: `pipeline/retrieve.py`.
 </details>
 
 <details>
-<summary><strong>Feedback memory: audit log + cluster notes</strong></summary>
+<summary><strong>Memory architecture</strong></summary>
 
-Two stores feed forward into future runs.
+Three memory layers, each with a different lifetime and scope.
 
-**Audit log** — every completed run with full evidence, draft, critique, human decision, `run_id`. The responder loads recent approvals as few-shot examples, so the system adapts to the human approver's voice over time.
+**Working memory — `AgentState` (single run)**
+- LangGraph `TypedDict` threaded through every node in the graph
+- Holds the current review, evidence package, drafted response, critique, iteration count, and all routing signals (`stop_reason`, `reason_type`, `frozen_action`, etc.)
+- Scoped to a single run — created at coordinator entry, discarded at termination
+- Checkpointed to SQLite between nodes so the graph can resume at the human-approval interrupt
 
-**Cluster notes** — per-category institutional knowledge with a real lifecycle. `active`/`resolved` status (transitioned via `resolve_note.py`); notes older than 90 days are filtered at read time, never deleted. Four types: `known_issue` (auto from investigator, ≥2 sources), `response_history` (auto on approval), `human_feedback` (on rejection), `investigation`. Dedup: `source_review_id` first, then 24h time window. Investigator loads active, non-stale notes for the current category.
+**Episodic memory — audit log + cluster notes (cross-run)**
+- **Audit log** (`audit_log` table) — every completed run with full evidence, draft, critique, human decision, `run_id`. The responder loads recent approvals as few-shot examples, so the system adapts to the human approver's voice over time.
+- **Cluster notes** (`cluster_notes` table) — per-category institutional knowledge with a real lifecycle:
+  - `active`/`resolved` status (transitioned via `resolve_note.py`); notes older than 90 days filtered at read time, never deleted
+  - Four types: `known_issue` (auto from investigator, ≥2 sources), `response_history` (auto on approval), `human_feedback` (on rejection), `investigation`
+  - Dedup: `source_review_id` first, then 24h time window
+  - Investigator loads active, non-stale notes for the current category — can exit early (`no_response_needed`) if notes alone resolve the issue
+- Both live in `pipeline/storage.py`
 
-Both live in `pipeline/storage.py`.
+**Semantic memory — patch note vector store (persistent)**
+- ChromaDB collection indexed with `all-MiniLM-L6-v2` embeddings, plus a parallel in-memory BM25 index
+- Built from section-aware chunked patch notes (`pipeline/chunk.py` → `pipeline/retrieve.py`)
+- Queried at run time via RRF fusion (top 12) → cross-encoder rerank (top 5)
+- The investigator drives retrieval through Anthropic's tool-use API — it formulates queries, inspects results, and can reformulate up to 3 total calls
+- Persisted to disk (`chroma_db/`); BM25 index is rebuilt each run
 
 </details>
 
@@ -368,9 +388,13 @@ Full detail in `evals/ITERATION_LOG.md`.
 
 ## Results
 
-Latest full-eval run (56 cases, schema v7). Investigator upgraded to Sonnet 4.6; golden-set labels corrected on 5 cases after auditing action definitions against review text.
+Latest full-eval run (56 cases, schema v7).
 
-The metrics below cite four distinct populations: **total cases** (56 — the full golden set), **action-eligible** (total minus no-response cases and infra errors — varies slightly run-to-run due to stochastic no-response gating), **retrieval-eligible** (22 — cases with hand-annotated must-include chunk IDs), and **judge-eligible** (cases where the agent retrieved a non-empty post-filter pool, scored by the two retrieval judges — also varies run-to-run). Row labels reference these bases by name.
+The metrics below cite four distinct populations:
+- **Total cases** (56) — the full golden set
+- **Action-eligible** (varies run-to-run) — total minus no-response cases and infra errors
+- **Retrieval-eligible** (22) — cases with hand-annotated must-include chunk IDs
+- **Judge-eligible** (varies run-to-run) — cases where the agent retrieved a non-empty post-filter pool, scored by the two retrieval judges
 
 **Coverage & actions** (56 total cases across 5 games, 11–12 each)
 

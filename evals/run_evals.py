@@ -65,6 +65,9 @@ TERMINAL_STOP_REASONS = {
     "no_response_needed",
 }
 
+MAX_RETRIES = 2
+RETRY_BACKOFF_BASE = 5
+
 
 def load_cases(
     quick: bool = False,
@@ -301,13 +304,39 @@ def main():
     n_err = 0
     completed = 0
 
-    def _run(idx_case):
+    def _is_retryable(record: dict) -> bool:
+        """A run is retryable if it threw an exception OR the graph terminated with llm_error."""
+        if not record["ok"]:
+            return True
+        stop = (record.get("result") or {}).get("stop_reason", "")
+        return stop == "llm_error"
+
+    def _run_with_retry(idx_case):
         idx, case = idx_case
-        return idx, run_case(app, case)
+        for attempt in range(1, MAX_RETRIES + 2):  # 1-indexed, up to MAX_RETRIES+1
+            record = run_case(app, case)
+            if not _is_retryable(record):
+                return idx, record
+            # Transient failure — retry unless exhausted
+            if attempt <= MAX_RETRIES:
+                wait = RETRY_BACKOFF_BASE * (2 ** (attempt - 1))
+                reason = record.get("error") or f"stop_reason={record['result']['stop_reason']}"
+                logger.warning(
+                    f"[{case['case_id']}] Attempt {attempt} failed: {reason}. "
+                    f"Retrying in {wait}s ({MAX_RETRIES - attempt + 1} retries left)..."
+                )
+                time.sleep(wait)
+            else:
+                reason = record.get("error") or f"stop_reason={record['result']['stop_reason']}"
+                logger.error(
+                    f"[{case['case_id']}] All {MAX_RETRIES + 1} attempts failed: {reason}"
+                )
+                return idx, record
+        return idx, record  # unreachable, but satisfies type checkers
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_idx = {
-            executor.submit(_run, (i, case)): i
+            executor.submit(_run_with_retry, (i, case)): i
             for i, case in enumerate(cases)
         }
         for future in concurrent.futures.as_completed(future_to_idx):

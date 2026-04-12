@@ -61,7 +61,10 @@ logger = logging.getLogger(__name__)
 #       retrieved_chunks. Draft inputs: review, draft_response,
 #       retrieved_chunks. Output: {"ruling", "rationale"} where ruling ∈
 #       {supports, partially_supports, does_not_support}.
-JUDGE_INPUT_VERSION = 1
+#   v2: tightened edge-case rules in both skills (load-bearing definition,
+#       mixed-pool rule, worst-claim-wins, unsupported-certainty, new
+#       examples). Input/output shape unchanged.
+JUDGE_INPUT_VERSION = 2
 
 # Retrieval judges quote chunk text in the rationale, which can overflow the
 # global JUDGE_MAX_TOKENS=300. 600 buys headroom without affecting cache keys

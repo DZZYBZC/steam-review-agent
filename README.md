@@ -83,7 +83,7 @@ Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — `s
 4. **Cluster + stats** — group by category in a rolling time window and compute priority signals
 5. **Coordinator entry** — mint a `run_id` and route into the agent graph
 6. **Investigate** — classify the review's emotional tone (Haiku), then check a deterministic category gate (some categories like `other` skip retrieval entirely). Load active cluster notes for the category. If the LLM judges from notes alone that no response is needed, exit early (`no_response_needed`). Otherwise, the investigator LLM drives retrieval via Anthropic's tool-use API: it formulates a search query, calls `retrieve_patches` (hybrid vector + BM25 → RRF → cross-encoder rerank), inspects results, and can reformulate and call again (up to 3 total calls)
-7. **Draft** — generate a player-facing reply citing only chunks the investigator retrieved (Sonnet 4.6 — the only generative node)
+7. **Draft** — generate a player-facing reply citing only chunks the investigator retrieved (Sonnet 4.6)
 8. **Critique → Human approval** — validate the evidence chain, tone, and action choice. On approval, the graph interrupts for a manual decision. On action-only rejection, the coordinator freezes the responder's action and routes directly to human approval (no revision). On evidence or drafting rejection, route back to the coordinator for a revise loop (max 3 iterations)
 
 See the [annotated file tree](#9-project-layout) for exact file locations.
@@ -218,7 +218,7 @@ steam-review-agent/
 
 Five nodes: `coordinator` (plain Python), `investigator`, `responder`, `critic`, `human_approval`. Graph compiles with `interrupt_before=["human_approval"]` — every run pauses for human decision before completing.
 
-**Per-node model assignments.** Classifier, tone classifier, cluster summarizer, investigator, critic, and eval judges all run on **Haiku 4.5** — narrow extractive/classifier tasks. Only the responder runs on **Sonnet 4.6** (temp 0.4) because it's the only node generating player-visible prose. Heavyweight model where tone matters, nowhere else.
+**Per-node model assignments.** Classifier, tone classifier, cluster summarizer, critic, and eval judges all run on **Haiku 4.5** — narrow extractive/classifier tasks. The investigator and responder run on **Sonnet 4.6** — the investigator because query formulation and evidence evaluation benefit from a stronger model (sufficiency lifted ~14pp when upgraded from Haiku), the responder because it generates player-visible prose.
 
 ---
 
@@ -343,41 +343,39 @@ Full detail in `evals/M5_PLAN.md`.
 
 ## Results
 
-Latest full-eval run (56 cases). Source: `snapshot_20260411_174746.json` — the first schema-v7 layered-retrieval baseline (Phase A1 + A2 concept recall and sufficiency, Phase B split retrieval judges). Earlier schema-v6 snapshots are informative but not perfectly apples-to-apples.
+Latest full-eval run (56 cases, schema v7). Investigator upgraded to Sonnet 4.6; golden-set labels corrected on 5 cases after auditing action definitions against review text.
 
-<sub>*Three transient infra errors were rerun and merged case-by-case.*</sub>
-
-The metrics below cite four distinct populations: **total cases** (56 — the full golden set), **action-eligible** (40 — total minus no-response cases and infra errors), **retrieval-eligible** (22 — cases with hand-annotated must-include chunk IDs), and **judge-eligible** (30 — cases where the agent retrieved a non-empty post-filter pool, the population the two retrieval judges score). Row labels reference these bases by name.
+The metrics below cite four distinct populations: **total cases** (56 — the full golden set), **action-eligible** (total minus no-response cases and infra errors — varies slightly run-to-run due to stochastic no-response gating), **retrieval-eligible** (22 — cases with hand-annotated must-include chunk IDs), and **judge-eligible** (cases where the agent retrieved a non-empty post-filter pool, scored by the two retrieval judges — also varies run-to-run). Row labels reference these bases by name.
 
 | Metric | Value |
 |---|---|
 | Cases evaluated | **56 total cases** (across 5 games, 11–12 cases each) |
-| Action correctness | **77.5%** (31 / 40 action-eligible cases; 0 infra errors) |
-| Effective first-pass rate | **92.5%** (across action-eligible cases — critic approved or action-freeze override at iter0) |
+| Action correctness | **76.9%** (30 / 39 action-eligible cases; 0 infra errors) |
+| Effective first-pass rate | **84.6%** (across action-eligible cases — critic approved or action-freeze override at iter0) |
 | Gating accuracy | **94.3%** (across all 56 cases — 10 true_skip / 40 true_retrieve / 3 false_skip / 0 false_retrieve / 3 unknown) |
 | Hard grounding violations | **0** (across all 56 cases) |
 | Citation chain-of-custody | **100%** (across all 56 cases — `source_ids_cited ⊆ relevant_ids` deterministic) |
-| Concept recall — source / post-filter | **0.740 / 0.646** (across retrieval-eligible cases — Phase A2 named-concept generalization) |
-| Sufficiency — at-source / post-filter | **0.500 / 0.455** (across retrieval-eligible cases — Phase A2, with full sufficient-set annotation coverage) |
-| Judge: evidence vs gold | supports 10 / partial 14 / no_support 6 / judge_error 0 (across 30 judge-eligible cases) |
-| Judge: evidence vs draft | supports 20 / partial 10 / no_support 0 / judge_error 0 (across 30 judge-eligible cases) |
-| Retrieval-vs-draft disagreement | 11 agreement / 19 disagreement (of 30 judge-eligible cases) — within disagreements: **5 strong under-use, 0 strong over-claim**, 14 other |
-| Total tokens | **1,574,273** |
+| Concept recall — source / post-filter | **0.719 / 0.675** (across retrieval-eligible cases) |
+| Sufficiency — at-source / post-filter | **0.636 / 0.636** (across retrieval-eligible cases) |
+| Judge: evidence vs gold | supports 14 / partial 17 / no_support 4 / judge_error 0 (35 judge-eligible cases) |
+| Judge: evidence vs draft | supports 22 / partial 12 / no_support 1 / judge_error 0 (35 judge-eligible cases) |
+| Retrieval-vs-draft disagreement | 17 agreement / 18 disagreement (35 judge-eligible cases) — within disagreements: **2 strong under-use, 1 over-claim**, 15 other |
+| Total tokens | **~1.5M** |
 
 #### Where the numbers come from
 
 - **Retrieval — concept recall and sufficiency.** The concept row generalizes hand-listed slots into named concepts, so equivalent chunks the original annotator missed no longer mark a case as a miss. Sufficiency answers the operational question directly — *did the retriever bring back enough evidence to support the right answer?* — pre-declared at full annotation coverage and promoted to a primary retrieval metric per the layered-eval headline rule. Two additional diagnostics live in the snapshot but are omitted from the table for brevity: legacy slot recall (kept as a debuggability floor so historical snapshots remain comparable) and relevant-concept precision (share of kept chunks mapping to any annotated concept).
-- **Retrieval-vs-draft disagreement is the new dominant signal.** The two retrieval judges split usefulness into pure retrieval signal (could an ideal responder produce the right answer from this evidence?) and joint retrieval+drafting signal (does the evidence back what the draft actually claims?). The strong under-use diagonal — gold says the evidence is enough, draft fails to use it — flags responses that left load-bearing evidence on the floor. The strong over-claim diagonal — gold says the evidence isn't enough, draft asserts a fix anyway — flags fabricated claims. The current snapshot is dominated by under-use with zero over-claim, so the responder is conservative and the next retrieval-side improvement most likely lives on responder-prompt work, not on the retriever or filter.
-- **Action correctness.** Action-freeze (see [Critic ↔ revision loop](#critic-revision-loop)) preserves the responder's action when the critic over-corrects at the `monitor` ↔ `investigate` boundary. Zero infra errors in the parallel run after the three transient cases were merged in. Boundary-sharpening rules from Iter15 are still in effect; the metric carries ~5pp run-to-run variance from Haiku stochasticity across full runs with identical code.
+- **Retrieval-vs-draft disagreement is the new dominant signal.** The two retrieval judges split usefulness into pure retrieval signal (could an ideal responder produce the right answer from this evidence?) and joint retrieval+drafting signal (does the evidence back what the draft actually claims?). The strong under-use diagonal — gold says the evidence is enough, draft fails to use it — flags responses that left load-bearing evidence on the floor. The strong over-claim diagonal — gold says the evidence isn't enough, draft asserts a fix anyway — flags fabricated claims. Under-use dropped after upgrading the investigator to Sonnet (better evidence packages). Over-claim is near-zero — the responder remains conservative.
+- **Action correctness.** Action-freeze (see [Critic ↔ revision loop](#critic-revision-loop)) preserves the responder's action when the critic over-corrects at the `monitor` ↔ `investigate` boundary. Boundary-sharpening rules from Iter15 are still in effect; the metric carries ~5pp run-to-run variance from stochasticity across full runs with identical code.
 - **Critic approvals.** The critic still over-rejects on action grounds at the node level, but action-freeze intercepts those before they cause thrash. Boundary-sharpening rules were added to the critic prompt; the node-level over-rejection pattern persists, action-freeze does the heavy lifting at the system level. Zero cases hit max_iterations.
 - **Revisions — almost entirely cosmetic.** Nearly every revision routes through the deterministic neutral shortcut; only a handful are flagged as genuine improvements by the pairwise judge, and zero regress. Only drafting/evidence issues trigger revisions.
 
 ### Key takeaways
 
 - **Grounding and citation discipline are strong.** 100% citation chain-of-custody, zero hard grounding violations. The `source_ids → relevant_ids → source_ids_cited` subset check is doing its job — the responder cannot fabricate citations.
-- **Action correctness and throughput remain healthy.** Action correctness is in the high-70s, effective first-pass rate is above 90%, and zero cases hit max_iterations.
+- **Action correctness and throughput remain healthy.** Action correctness is in the mid-to-high 70s, effective first-pass rate is above 80%, and zero cases hit max_iterations.
 - **Revision loop is clean.** Zero regressions, a small handful of genuine improvements caught by the critic.
-- **Layered retrieval evaluation surfaces the retrieval-vs-drafting split.** Concept recall and sufficiency replace fragile slot-level recall as the primary retrieval health metrics; the split retrieval judges separate "did the pool support an ideal answer?" from "did the pool support what the draft actually said?" The current snapshot is dominated by under-use cases with zero over-claim — the responder is conservative, and the next retrieval-side win is responder-prompt work, not retriever-side work.
+- **Layered retrieval evaluation surfaces the retrieval-vs-drafting split.** Concept recall and sufficiency replace fragile slot-level recall as the primary retrieval health metrics; the split retrieval judges separate "did the pool support an ideal answer?" from "did the pool support what the draft actually said?" Under-use dropped after upgrading the investigator to Sonnet; over-claim is near-zero. The next retrieval-side win likely lives on responder-prompt work, not retriever-side work.
 
 <details>
 <summary><a id="open-gaps"></a><strong>Open gaps</strong></summary>
@@ -388,10 +386,6 @@ The metrics below cite four distinct populations: **total cases** (56 — the fu
 
 - **Pairwise semantic spot checks — deferred.** Structurally clean, but hand-validated spot checks are queued for the next clean run.
 
-- **Retrieval judge spot checks — queued.** Phase B is structurally clean (zero judge errors on both retrieval judges, locked into the eval guardrails), but the six hand-picked spot checks (three per judge — one per ruling) called for by the layered-retrieval plan are not yet locked by case ID. Plan calls for naming each spot's role before the next prompt edit on either retrieval skill.
-
-- **`_judge_base.py` extraction — queued.** Five sibling judges across four files now exist; the abstraction shape is visible and ready to pull out. The next clone should be the trigger.
-
 </details>
 
 ---
@@ -399,7 +393,7 @@ The metrics below cite four distinct populations: **total cases** (56 — the fu
 ## Tech stack
 
 - **Language:** Python 3.12
-- **LLM API:** Anthropic Claude (Haiku 4.5 for classifiers/investigator/critic/judges, Sonnet 4.6 for the responder)
+- **LLM API:** Anthropic Claude (Haiku 4.5 for classifiers/critic/judges, Sonnet 4.6 for investigator and responder)
 - **Agent framework:** LangGraph (used directly, not via LangChain)
 - **Validation:** Pydantic (only at LLM trust boundaries)
 - **Storage:** SQLite (reviews, audit log, audit log iterations, cluster notes, classifications, schema version)
@@ -448,10 +442,10 @@ export HF_TOKEN=...
 
 - **Data pipeline** (500 reviews, fresh fetch): ~5–10 min wall clock; cost dominated by classification (~500 Haiku calls × ~300 input tokens ≈ ~$0.10).
 - **Single-review agent run** (`test_agent.py`): ~30–60 sec including retrieval; ~5–15K total tokens depending on revision iterations; <$0.05 per review (Sonnet on the responder, Haiku elsewhere).
-- **Full eval suite** (`run_evals.py`, 56 cases): **~3 min wall clock at `--workers 10`** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + 5s busy_timeout to avoid lock contention). Sequential default (`--workers 4`) is closer to ~10 min; pre-parallelization sequential was 25–35 min. ~1.57M total tokens (per the latest snapshot); on the order of $2–3 per full run with all judges enabled.
+- **Full eval suite** (`run_evals.py`, 56 cases): **~3 min wall clock at `--workers 10`** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + 5s busy_timeout to avoid lock contention). Sequential default (`--workers 4`) is closer to ~10 min; pre-parallelization sequential was 25–35 min. ~1.5M total tokens; on the order of $2–3 per full run with all judges enabled.
 - **Cached judge re-score** (offline against a saved run JSON): ~30 sec; $0 (cache hit on every flagged case).
 
-Numbers are approximations grounded in the latest snapshot's `total_tokens=1,574,273`. Actual cost depends on Anthropic pricing at run time.
+Numbers are approximations from the latest eval run. Actual cost depends on Anthropic pricing at run time.
 
 </details>
 

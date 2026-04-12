@@ -637,10 +637,10 @@
       "review_text": "Bethesda has a problem that has always existed but it truly brings the whole experience down in Starfield: bland enemies. Think back to Fallout or Elder Scrolls. How often are your travels interrupted by random bands of raiders/bandits...",
       "classifier_category": "gameplay_mechanics",
       "annotated_category": "gameplay_mechanics",
-      "ideal_action": "monitor",
+      "ideal_action": "no_action",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Subjective design feedback \u2014 enemy variety / random encounter design. No patch will retrofit this. Ideal: monitor with calm acknowledgment. Failure: defensive_tone defending Bethesda's design; investigate_for_subjective.",
+      "notes": "Subjective design feedback \u2014 enemy variety / random encounter design. No patch will retrofit this. no_action per boundary rule: design-architecture annoyance with no measurable symptom, regression, or recurring post-update signal. Pure taste criticism about enemy variety. Failure: wrong_action_severity if monitor (over-acting on non-diagnostic design taste).",
       "quick": false
     },
     {
@@ -782,7 +782,7 @@
       "review_text": "Each new update brought performance issues but were more or less ironed out in the following weeks. The February performance patch, however, completely wrecked the game for me and there hasn't been any more patches for over a month. More than 900 hours invested into the game and it suddenly became a stuttery, unplayable mess.",
       "classifier_category": "performance_optimization",
       "annotated_category": "performance_optimization",
-      "ideal_action": "investigate",
+      "ideal_action": "escalate",
       "gate_should_skip": false,
       "must_include_chunk_ids": [
         "1818752592127214-15",
@@ -793,7 +793,7 @@
           ]
         }
       ],
-      "notes": "Specific complaint: a Feb performance patch regressed perf for a 900h player. The 'Commitment to Improving Stability' post (1818752592127214-15) discusses 1.041 update (Feb 2026) explicitly. Ver.1.040.03.01 (1823191198598921-6) addresses stability across platforms. Ideal: investigate (real regression deserves dev attention), cite the commitment post, do NOT claim 'this is fully fixed' or 'February patch was rolled back'. Failure: overclaimed_fix is the headline risk.",
+      "notes": "Specific complaint: a Feb performance patch regressed perf for a 900h player. The 'Commitment to Improving Stability' post (1818752592127214-15) discusses 1.041 update (Feb 2026) explicitly. Ver.1.040.03.01 (1823191198598921-6) addresses stability across platforms. Escalate per path (b): concrete hard-blocker ('stuttery, unplayable mess'), explicit persistence ('over a month' with no fix), post-patch regression framing. Cite the commitment post, do NOT claim 'this is fully fixed'. Failure: overclaimed_fix is the headline risk.",
       "quick": false,
       "required_concepts": [
         {
@@ -913,10 +913,10 @@
       "review_text": "You can be in the middle of ending a monster when suddenly the game crashes... this needs to be fixed ASAP it's been almost 2 years and the same error persist.",
       "classifier_category": "technical_issues",
       "annotated_category": "technical_issues",
-      "ideal_action": "investigate",
+      "ideal_action": "escalate",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Specific mid-hunt crash with explicit persistence ('almost 2 years and the same error persist'). The crash has a concrete scenario (mid-hunt), and the '2 years same error' language conveys persistence/reproducibility \u2014 enough concrete detail for triage. Ideal: investigate per boundary rules (single-user severe technical issue with scenario detail + persistence = investigate). Not escalate because no widespread/blast-radius framing and no every-session hard-blocker language. Ver.1.011 (1800991756290109-161) fixed a VRAM crash and the graphics drivers post (1811772772359267-0) notes confirmed crashes \u2014 relevant context but does NOT confirm this case is fixed. Failure: overclaimed_fix is the headline risk; wrong_action_severity if escalate (over-scaling on single anecdote without widespread framing).",
+      "notes": "Specific mid-hunt crash with explicit persistence ('almost 2 years and the same error persist'). The crash has a concrete scenario (mid-hunt), and the '2 years same error' language conveys persistence/reproducibility. Escalate per path (b): concrete hard-blocker symptom (crash mid-hunt) paired with explicit persistence/reproducibility ('almost 2 years and the same error persist') and blocker framing ('needs to be fixed ASAP'). Ver.1.011 (1800991756290109-161) fixed a VRAM crash and the graphics drivers post (1811772772359267-0) notes confirmed crashes \u2014 relevant context but does NOT confirm this case is fixed. Failure: overclaimed_fix is the headline risk.",
       "quick": false
     },
     {
@@ -926,7 +926,7 @@
       "review_text": "Enjoyable, but fiancee cant play because shes using an AMD card this needs to be fixed (because people with AMD cards deserve to play games too)",
       "classifier_category": "technical_issues",
       "annotated_category": "technical_issues",
-      "ideal_action": "investigate",
+      "ideal_action": "escalate",
       "gate_should_skip": false,
       "must_include_chunk_ids": [
         {
@@ -937,7 +937,7 @@
         },
         "1816849002009391-3"
       ],
-      "notes": "AMD GPU compatibility \u2014 direct match in patch corpus. Graphics drivers post (1811772772359267-0, -19) explicitly addresses AMD-side crashes with Adrenalin instructions. Ver.1.030.02.02 (1816849002009391-3) bug fixes. Ideal: investigate, cite the AMD-specific guidance honestly without claiming 100% fix. STRONG RECALL TEST \u2014 the corpus has very direct evidence here.",
+      "notes": "AMD GPU compatibility \u2014 direct match in patch corpus. Graphics drivers post (1811772772359267-0, -19) explicitly addresses AMD-side crashes with Adrenalin instructions. Ver.1.030.02.02 (1816849002009391-3) bug fixes. Escalate per path (b): concrete hard-blocker ('can't play') for an entire hardware class (AMD GPUs). Cite the AMD-specific guidance honestly without claiming 100% fix. STRONG RECALL TEST \u2014 the corpus has very direct evidence here.",
       "quick": true,
       "required_concepts": [
         {
@@ -1031,10 +1031,10 @@
       "review_text": "The story is absurd, the characters are insufferable, and the mechanics have been dumbed down to where an IGN game journalist could make progress. Be prepared for railroaded training wheels for the first 6-8 hours before the game allows you to hunt monsters how and when you want to.",
       "classifier_category": "story_presentation",
       "annotated_category": "gameplay_mechanics",
-      "ideal_action": "monitor",
+      "ideal_action": "no_action",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Design-philosophy complaint about story-led onboarding. Not bug-fixable. Ideal: monitor with calm acknowledgment. Failure: defensive_tone justifying the design; investigate_for_subjective.",
+      "notes": "Design-philosophy complaint about story-led onboarding. Not bug-fixable. no_action per boundary rule: design-architecture annoyance (pacing, difficulty feel, narrative structure) with no measurable symptom, regression, or post-update signal. 'Dumbed down mechanics' and 'railroaded training wheels' are taste judgments, not diagnostic of a product defect. Failure: wrong_action_severity if monitor (over-acting on non-diagnostic design taste).",
       "quick": false
     },
     {

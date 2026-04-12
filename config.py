@@ -81,9 +81,9 @@ RRF_K = 60
 RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 RERANKER_TOP_N = 5
 
-INVESTIGATOR_MODEL = "claude-haiku-4-5-20251001"
+INVESTIGATOR_MODEL = "claude-sonnet-4-6"
 INVESTIGATOR_TEMPERATURE = 0.1
-INVESTIGATOR_MAX_TOKENS = 1500  # Bumped from 400 to fit tool-use turns (text reasoning + tool_use blocks + final JSON)
+INVESTIGATOR_MAX_TOKENS = 1500
 
 RESPONDER_MODEL = "claude-sonnet-4-6"
 RESPONDER_TEMPERATURE = 0.4
@@ -100,9 +100,10 @@ CRITIC_MODEL = "claude-haiku-4-5-20251001"
 CRITIC_TEMPERATURE = 0.1
 CRITIC_MAX_TOKENS = 1000
 
-# Judge scorer (evals/scorers/judge_grounding.py).
-# Narrow single-question classifier; Haiku is fine. If rulings look unreliable
-# on the two-sided acceptance gate, upgrade in a follow-up iteration.
+# Judge scorers (shared across all five eval judges: grounding, action,
+# pairwise, evidence-vs-gold, evidence-vs-draft). Narrow single-question
+# classifiers; Haiku is fine. If rulings look unreliable on the two-sided
+# acceptance gate, upgrade in a follow-up iteration.
 JUDGE_MODEL = "claude-haiku-4-5-20251001"
 JUDGE_TEMPERATURE = 0.0
 JUDGE_MAX_TOKENS = 300

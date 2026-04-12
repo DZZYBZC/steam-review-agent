@@ -82,7 +82,7 @@ Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — `s
 3. **Classify** — assign one of 10 review categories with a confidence score (Haiku)
 4. **Cluster + stats** — group by category in a rolling time window and compute priority signals
 5. **Coordinator entry** — mint a `run_id` and route into the agent graph
-6. **Investigate** — classify the review's emotional tone (Haiku), then check a deterministic category gate (some categories like `other` skip retrieval entirely). Load active cluster notes for the category. If the LLM judges from notes alone that no response is needed, exit early (`no_response_needed`). Otherwise, the investigator LLM drives retrieval via Anthropic's tool-use API: it formulates a search query, calls `retrieve_patches` (hybrid vector + BM25 → RRF → cross-encoder rerank), inspects results, and can reformulate and call again (up to 3 total calls)
+6. **Investigate** — classify the review's emotional tone (Haiku), then check a deterministic category gate (some categories like `other` skip retrieval entirely). Load active cluster notes for the category. If the LLM judges from notes alone that no response is needed, exit early (`no_response_needed`). Otherwise, the investigator LLM (Sonnet 4.6) drives retrieval via Anthropic's tool-use API: it formulates a search query, calls `retrieve_patches` (hybrid vector + BM25 → RRF → cross-encoder rerank), inspects results, and can reformulate and call again (up to 3 total calls)
 7. **Draft** — generate a player-facing reply citing only chunks the investigator retrieved (Sonnet 4.6)
 8. **Critique → Human approval** — validate the evidence chain, tone, and action choice. On approval, the graph interrupts for a manual decision. On action-only rejection, the coordinator freezes the responder's action and routes directly to human approval (no revision). On evidence or drafting rejection, route back to the coordinator for a revise loop (max 3 iterations)
 
@@ -127,7 +127,7 @@ steam-review-agent/
 │   └── nodes/
 │       ├── coordinator.py         # Plain-Python routing (mints run_id, action-freeze interception)
 │       ├── investigator.py        # Tool-use retrieval + self-RAG retries + cluster-note loading
-│       ├── responder.py           # Drafts player-facing reply (Sonnet 4.6, only LLM-generative node)
+│       ├── responder.py           # Drafts player-facing reply (Sonnet 4.6)
 │       ├── critic.py              # Validates evidence chain, tone, action — writes per-iter audit
 │       └── human_approval.py      # Human-in-the-loop interrupt gate
 │

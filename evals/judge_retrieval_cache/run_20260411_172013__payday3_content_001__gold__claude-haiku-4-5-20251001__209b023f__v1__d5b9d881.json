@@ -1,0 +1,18 @@
+{
+  "ruling": "partially_supports",
+  "rationale": "Chunk 1827626365763153-0 directly addresses the online-only complaint via P2P hosting. Chunks 1811772772510824-4 and 1811772772510824-5 acknowledge mandatory account removal and heist improvements (reworks, randomization). However, no chunk specifically addresses the Starbreeze Nebula sign-in complaint \u2014 the notes identify three distinct issues (online-only, Nebula login, heist variety), and the pool grounds two of three load-bearing sub-issues.",
+  "cached_at": "2026-04-11T17:20:54.774420",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013",
+    "case_id": "payday3_content_001",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "d5b9d881"
+  },
+  "tokens": {
+    "input": 3298,
+    "output": 144
+  }
+}

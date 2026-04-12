@@ -1,0 +1,18 @@
+{
+  "ruling": "partially_supports",
+  "rationale": "The pool contains crash-fix chunks (1828894815567746-31 and others) addressing one axis, but is missing the load-bearing chunks for the other two axes: no 'Free Lanes' POI-density patch (1826992588604218-32) and no ship/loading optimization patch (1828894815567715-20) cited in the notes. An ideal responder could only ground the crashes sub-issue, not content sparsity or loading screens.",
+  "cached_at": "2026-04-11T17:21:26.252891",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013",
+    "case_id": "starfield_content_001",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "a72b0932"
+  },
+  "tokens": {
+    "input": 2872,
+    "output": 132
+  }
+}

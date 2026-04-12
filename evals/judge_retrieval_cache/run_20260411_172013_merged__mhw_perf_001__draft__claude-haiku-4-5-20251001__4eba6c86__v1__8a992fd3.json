@@ -1,0 +1,18 @@
+{
+  "ruling": "partially_supports",
+  "rationale": "Draft's claim that 'Ver.1.041 (February 2026) was intended to reduce CPU/GPU load through rendering optimizations and LOD improvements' is grounded in chunk 1818752592127214-15. However, the draft's assertion that 'we can't confirm from our patch notes whether it introduced the regression you're describing or whether a subsequent patch has addressed it' is not supported by the chunks \u2014 the chunks contain no information about whether subsequent patches addressed the regression, making this a claim beyond the evidence pool.",
+  "cached_at": "2026-04-11T17:47:22.726308",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "mhw_perf_001",
+    "judge_kind": "draft",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "4eba6c86",
+    "judge_input_version": 1,
+    "user_message_sha8": "8a992fd3"
+  },
+  "tokens": {
+    "input": 2795,
+    "output": 141
+  }
+}

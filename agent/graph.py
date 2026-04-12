@@ -60,6 +60,8 @@ def _create_checkpointer():
     if CHECKPOINT_BACKEND == "sqlite":
         import sqlite3
         conn = sqlite3.connect(CHECKPOINT_DB_PATH, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 5000")
         checkpointer = SqliteSaver(conn)
         # Store connection reference for cleanup
         checkpointer._conn = conn  # type: ignore[attr-defined]

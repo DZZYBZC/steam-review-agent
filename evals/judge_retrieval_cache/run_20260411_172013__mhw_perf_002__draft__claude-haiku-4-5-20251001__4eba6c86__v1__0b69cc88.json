@@ -1,0 +1,18 @@
+{
+  "ruling": "supports",
+  "rationale": "Draft's substantive claims about Free Title Update 4 (December 2025) CPU/GPU improvements, Steam-exclusive patch (late January 2026) with Steam-specific optimizations and preset adjustments, and Ver.1.041 (February 2026) with CPU/GPU rendering, LOD quality levels, effect caching, and spawn-time processing reductions are all directly grounded in chunks 1818752592127214-4, 1818752592127214-11, 1823191198598921-0, 1818752592127214-15, and 1825727806709972-1. The draft's hedge ('we can't confirm these have fully resolved performance on every hardware configuration') is also appropriate given the chunks' lack of universal resolution claims.",
+  "cached_at": "2026-04-11T17:22:34.575313",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013",
+    "case_id": "mhw_perf_002",
+    "judge_kind": "draft",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "4eba6c86",
+    "judge_input_version": 1,
+    "user_message_sha8": "0b69cc88"
+  },
+  "tokens": {
+    "input": 3230,
+    "output": 196
+  }
+}

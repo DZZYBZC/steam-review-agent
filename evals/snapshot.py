@@ -1,13 +1,12 @@
 """
-evals/snapshot.py — Versioned eval snapshots (M5 Step 8).
+evals/snapshot.py — Versioned eval snapshots.
 
 A snapshot is a small JSON file that captures the aggregate metrics from one
 eval run, plus the git SHA of the code that produced them. Two snapshots
 taken at different commits can be diffed to answer "did this change move
 the numbers, and in which direction?"
 
-Files land in evals/snapshots/snapshot_<timestamp>.json (gitignored — see
-D7 for the snapshots_archive/ pattern used at milestones).
+Files land in evals/snapshots/snapshot_<timestamp>.json.
 
 Public surface:
   - write_snapshot(scored, gating, judge, judge_action, pairwise, records, run_file, filters) -> Path
@@ -30,7 +29,7 @@ SNAPSHOTS_DIR = Path(__file__).resolve().parent / "snapshots"
 # (field renamed, removed, or semantics changed). Visible in the snapshot
 # payload and in the diff print path so transitions are interpretable.
 # See git log for the per-version history.
-SNAPSHOT_SCHEMA_VERSION = 6
+SNAPSHOT_SCHEMA_VERSION = 7
 
 # Metrics surfaced in the snapshot summary AND used for the one-line diff.
 # Order is preserved in the diff output. Each entry is a dotted path into
@@ -43,15 +42,13 @@ DIFF_METRICS: list[tuple[str, str, str]] = [
     # companion concept hit-rates and a filter-drop diagnostic.
     ("recall_source_mean",           "retrieval.recall_source_mean",       ".3f"),
     ("recall_relevant_mean",         "retrieval.recall_relevant_mean",     ".3f"),
-    # Layered retrieval Phase A1: concept_recall is the formula generalization
-    # of retrieval_recall over named concepts. Post the 1:1 mechanical
-    # migration, these are byte-equal to recall_source_mean / recall_relevant_mean.
-    # Phase A2 manual annotation will let them legitimately diverge.
+    # concept_recall generalizes retrieval_recall over named concepts.
+    # Values diverge from slot recall when manual annotation adds equivalents.
     ("concept_recall_source_mean",    "retrieval.concept_recall_source_mean",     ".3f"),
     ("concept_recall_postfilter_mean","retrieval.concept_recall_postfilter_mean", ".3f"),
     ("n_concept_unannotated_eligible","retrieval.n_concept_unannotated_eligible", "d"),
-    # Phase A2: sufficiency + filter-noise tripwire. sufficiency_postfilter_rate
-    # is the conditional headline (promoted when sufficient_sets coverage ≥ 80%).
+    # sufficiency_postfilter_rate is the conditional headline
+    # (promoted when sufficient_sets coverage ≥ 80%).
     ("sufficiency_at_source_rate",    "retrieval.sufficiency_at_source_rate",     ".3f"),
     ("sufficiency_postfilter_rate",   "retrieval.sufficiency_postfilter_rate",    ".3f"),
     ("sufficient_sets_coverage_pct",  "retrieval.sufficient_sets_coverage_pct",   ".1f"),
@@ -90,6 +87,28 @@ DIFF_METRICS: list[tuple[str, str, str]] = [
     ("judge_pw_judge_error",         "judge.pairwise.n_judge_error",         "d"),
     ("judge_pw_n_judged",            "judge.pairwise.n_judged",              "d"),
     ("judge_pw_n_deterministic",     "judge.pairwise.n_deterministic",       "d"),
+    # Schema v7: split retrieval judges. Two parallel sub-blocks. Predicate
+    # counts AND judge_error counts both sit in DIFF_METRICS so future drift
+    # in either is visible in snapshot diffs (not just terminal output).
+    # Disagreement bucket counts likewise live in the diff so the
+    # over-claim/under-use ratio is tracked across runs.
+    ("judge_evd_gold_supports",          "judge.evidence_vs_gold.n_supports",            "d"),
+    ("judge_evd_gold_partially_supports","judge.evidence_vs_gold.n_partially_supports",  "d"),
+    ("judge_evd_gold_does_not_support",  "judge.evidence_vs_gold.n_does_not_support",    "d"),
+    ("judge_evd_gold_judge_error",       "judge.evidence_vs_gold.n_judge_error",         "d"),
+    ("judge_evd_gold_predicate_count",   "judge.evidence_vs_gold.n_predicate_eligible",  "d"),
+    ("judge_evd_gold_n_judged",          "judge.evidence_vs_gold.n_judged",              "d"),
+    ("judge_evd_draft_supports",         "judge.evidence_vs_draft.n_supports",           "d"),
+    ("judge_evd_draft_partially_supports","judge.evidence_vs_draft.n_partially_supports","d"),
+    ("judge_evd_draft_does_not_support", "judge.evidence_vs_draft.n_does_not_support",   "d"),
+    ("judge_evd_draft_judge_error",      "judge.evidence_vs_draft.n_judge_error",        "d"),
+    ("judge_evd_draft_predicate_count",  "judge.evidence_vs_draft.n_predicate_eligible", "d"),
+    ("judge_evd_draft_n_judged",         "judge.evidence_vs_draft.n_judged",             "d"),
+    ("judge_evd_n_with_both_judges",                "judge.evidence_disagreement.n_with_both_judges",                "d"),
+    ("judge_evd_n_agreement",                       "judge.evidence_disagreement.n_agreement",                       "d"),
+    ("judge_evd_n_gold_supports_draft_no_support",  "judge.evidence_disagreement.n_gold_supports_draft_no_support",  "d"),
+    ("judge_evd_n_gold_no_support_draft_supports",  "judge.evidence_disagreement.n_gold_no_support_draft_supports",  "d"),
+    ("judge_evd_n_other_disagreement",              "judge.evidence_disagreement.n_other_disagreement",              "d"),
     ("critic_approval_overall",      "critic_health.approval_rate_overall",".3f"),
     ("critic_iter0_approval",        "critic_health.iter0_approval",       ".3f"),
     ("action_override_runs",         "action_freeze.n_runs_with_action_override", "d"),
@@ -172,6 +191,86 @@ def _build_judge_action_block(judge_action: dict[str, Any] | None) -> dict[str, 
     }
 
 
+def _build_evidence_judge_block(judge_retrieval: dict[str, Any] | None) -> dict[str, Any]:
+    """
+    Build a single retrieval-judge sub-block (used for both gold and draft
+    flavors). Mirrors the other judge block builders. Predicate count is
+    surfaced separately so the reporter and snapshot diffs can show the
+    drop-from-eligible-to-judged dropout chain.
+    """
+    if judge_retrieval is None:
+        rulings: dict[str, int] = {}
+        n_judged = 0
+        n_predicate_eligible = 0
+    else:
+        rulings = judge_retrieval.get("rulings", {}) or {}
+        n_judged = judge_retrieval.get("n_judged", 0)
+        n_predicate_eligible = judge_retrieval.get("n_predicate_eligible", 0)
+    return {
+        "n_predicate_eligible": n_predicate_eligible,
+        "n_judged":             n_judged,
+        "n_supports":           rulings.get("supports", 0),
+        "n_partially_supports": rulings.get("partially_supports", 0),
+        "n_does_not_support":   rulings.get("does_not_support", 0),
+        "n_judge_error":        rulings.get("judge_error", 0),
+    }
+
+
+def _build_evidence_disagreement_block(
+    judge_gold: dict[str, Any] | None,
+    judge_draft: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """
+    Build the disagreement bucket counts. Strict bucket definitions per the
+    plan: a case enters the disagreement tally only if BOTH judges actually
+    ran on it AND neither ruling is judge_error.
+
+    Buckets partition the both-ran population:
+      - n_gold_supports_draft_no_support : gold=supports AND draft=does_not_support
+      - n_gold_no_support_draft_supports : gold=does_not_support AND draft=supports
+      - n_other_disagreement             : any other disagreement (incl. partially_supports)
+      - n_agreement                      : exact ruling match
+    """
+    g_per_case = (judge_gold or {}).get("per_case", {}) or {}
+    d_per_case = (judge_draft or {}).get("per_case", {}) or {}
+
+    both_ids = [
+        cid for cid in g_per_case
+        if cid in d_per_case
+        and g_per_case[cid].get("ruling") != "judge_error"
+        and d_per_case[cid].get("ruling") != "judge_error"
+    ]
+    n_with_both = len(both_ids)
+    n_gold_sup_draft_no = 0
+    n_gold_no_draft_sup = 0
+    n_other = 0
+    n_agree = 0
+    for cid in both_ids:
+        g = g_per_case[cid]["ruling"]
+        d = d_per_case[cid]["ruling"]
+        if g == d:
+            n_agree += 1
+        elif g == "supports" and d == "does_not_support":
+            n_gold_sup_draft_no += 1
+        elif g == "does_not_support" and d == "supports":
+            n_gold_no_draft_sup += 1
+        else:
+            n_other += 1
+
+    # Invariant: buckets must partition the both-ran population.
+    assert (
+        n_gold_sup_draft_no + n_gold_no_draft_sup + n_other + n_agree == n_with_both
+    ), "evidence-judge disagreement buckets do not partition n_with_both_judges"
+
+    return {
+        "n_with_both_judges":              n_with_both,
+        "n_agreement":                     n_agree,
+        "n_gold_supports_draft_no_support": n_gold_sup_draft_no,
+        "n_gold_no_support_draft_supports": n_gold_no_draft_sup,
+        "n_other_disagreement":            n_other,
+    }
+
+
 def _build_pairwise_block(pairwise: dict[str, Any] | None) -> dict[str, Any]:
     """
     Build the `pairwise` sub-block of the judge aggregate (schema v5). Mirrors
@@ -207,6 +306,8 @@ def _build_aggregates(
     judge: dict[str, Any] | None,
     judge_action: dict[str, Any] | None,
     pairwise: dict[str, Any] | None,
+    judge_evd_gold: dict[str, Any] | None,
+    judge_evd_draft: dict[str, Any] | None,
     records: list[dict],
 ) -> dict[str, Any]:
     """
@@ -265,10 +366,9 @@ def _build_aggregates(
     n_lost_to_filter = sum(len(s.get("dropped_by_filter") or []) for s in eligible)
     n_cases_with_drops = sum(1 for s in eligible if s.get("dropped_by_filter"))
 
-    # Concept recall (Phase A1). Same eligibility rules as retrieval_recall:
+    # Concept recall. Same eligibility rules as retrieval_recall:
     # not_applicable cases are excluded entirely; gate_false_skip cases are
-    # excluded from the mean. After the 1:1 mechanical migration the
-    # eligible-set and means must be identical to retrieval_recall above.
+    # excluded from the mean.
     concept_scored = [
         s["concept_recall"] for s in per_case.values()
         if not s["concept_recall"].get("not_applicable")
@@ -277,18 +377,17 @@ def _build_aggregates(
     concept_recall_source_mean = _mean([s["recall_source"] for s in concept_eligible])
     concept_recall_postfilter_mean = _mean([s["recall_postfilter"] for s in concept_eligible])
     # Annotation-coverage gauge: cases that are retrieval-eligible (have
-    # must_include_chunk_ids) but lack required_concepts. Post-A1 mechanical
-    # migration this should be 0; if it ever climbs, the migration didn't
-    # cover a newly-added case and concept recall silently shrinks.
+    # must_include_chunk_ids) but lack required_concepts. Should be 0; if it
+    # climbs, a newly-added case wasn't migrated and concept recall silently shrinks.
     n_concept_unannotated_eligible = sum(
         1 for s in per_case.values()
         if not s["retrieval_recall"].get("not_applicable")
         and s["concept_recall"].get("not_applicable")
     )
 
-    # Evidence sufficiency (Phase A2). A case is sufficient at a pool iff any
-    # declared sufficient_set is fully covered there. Cases without
-    # sufficient_sets are not_applicable and excluded from the rate.
+    # Evidence sufficiency. A case is sufficient at a pool iff any declared
+    # sufficient_set is fully covered there. Cases without sufficient_sets
+    # are not_applicable and excluded from the rate.
     suff_scored = [
         s["evidence_sufficiency"] for s in per_case.values()
         if not s["evidence_sufficiency"].get("not_applicable")
@@ -306,8 +405,8 @@ def _build_aggregates(
         if n_retrieval_eligible else None
     )
 
-    # Relevant-concept precision (Phase A2). Tripwire for filter noise
-    # relative to the annotator-listed concept pool.
+    # Relevant-concept precision. Diagnostic for filter noise relative to
+    # the annotator-listed concept pool.
     precision_scored = [
         s["relevant_concept_precision"] for s in per_case.values()
         if not s["relevant_concept_precision"].get("not_applicable")
@@ -429,9 +528,12 @@ def _build_aggregates(
             "low_conf_with_cite_flag_count": n_low_conf_with_cite_flag,
         },
         "judge": {
-            "low_conf_with_cite": _build_judge_grounding_block(judge),
-            "action":             _build_judge_action_block(judge_action),
-            "pairwise":           _build_pairwise_block(pairwise),
+            "low_conf_with_cite":   _build_judge_grounding_block(judge),
+            "action":               _build_judge_action_block(judge_action),
+            "pairwise":             _build_pairwise_block(pairwise),
+            "evidence_vs_gold":     _build_evidence_judge_block(judge_evd_gold),
+            "evidence_vs_draft":    _build_evidence_judge_block(judge_evd_draft),
+            "evidence_disagreement": _build_evidence_disagreement_block(judge_evd_gold, judge_evd_draft),
         },
         "critic_health": {
             "approval_rate_overall": ch["approval_rate_overall"],
@@ -464,6 +566,8 @@ def write_snapshot(
     judge: dict[str, Any] | None,
     judge_action: dict[str, Any] | None,
     pairwise: dict[str, Any] | None,
+    judge_evd_gold: dict[str, Any] | None,
+    judge_evd_draft: dict[str, Any] | None,
     records: list[dict],
     run_file: Path | str,
     filters: dict,
@@ -477,7 +581,10 @@ def write_snapshot(
         "git_sha": _git_sha(),
         "run_file": str(run_file),
         "filters": filters,
-        "aggregates": _build_aggregates(scored, gating, judge, judge_action, pairwise, records),
+        "aggregates": _build_aggregates(
+            scored, gating, judge, judge_action, pairwise,
+            judge_evd_gold, judge_evd_draft, records,
+        ),
     }
     out = SNAPSHOTS_DIR / f"snapshot_{timestamp}.json"
     with out.open("w") as f:
@@ -554,6 +661,10 @@ def diff_snapshots(prev: dict, curr: dict) -> list[str]:
             (3, 6): "judge_action (v3→v4), pairwise (v4→v5), AND retrieval recalibration (v5→v6)",
             (2, 6): "judge_grounding (v2→v3), judge_action (v3→v4), pairwise (v4→v5), AND retrieval recalibration (v5→v6)",
             (1, 6): "full schema evolution (v1→v6)",
+            (6, 7): "split retrieval judges added: judge_evidence_vs_gold (pure retrieval) and judge_evidence_vs_draft (joint retrieval+drafting), with disagreement bucket counts",
+            (5, 7): "retrieval recalibration (v5→v6) AND split retrieval judges (v6→v7)",
+            (4, 7): "pairwise (v4→v5), retrieval recalibration (v5→v6), AND split retrieval judges (v6→v7)",
+            (1, 7): "full schema evolution (v1→v7)",
         }
         note = annotations.get((prev_v, curr_v), "schema shape changed")
         lines.append(

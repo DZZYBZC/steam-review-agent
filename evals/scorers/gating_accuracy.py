@@ -1,5 +1,5 @@
 """
-evals/scorers/gating_accuracy.py — Gate-decision scorer (M5 Step 5b).
+evals/scorers/gating_accuracy.py — Gate-decision scorer.
 
 The Investigator's deterministic `_should_retrieve` gate skips retrieval
 when classifier_category not in RETRIEVAL_CATEGORIES (i.e., for `other`).

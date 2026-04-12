@@ -1,0 +1,18 @@
+{
+  "ruling": "supports",
+  "rationale": "Chunk 1823825466499688-7 directly supports the gold answer: it explicitly cites 'less occurrences of lag, stuttering and rubberbanding' from P2P playtest, providing the evidence needed to acknowledge intervention without overclaiming a complete fix. The chunk grounds a monitor posture by showing measurable improvement rather than resolution.",
+  "cached_at": "2026-04-11T17:20:52.688880",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013",
+    "case_id": "payday3_multi_002",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "444ca260"
+  },
+  "tokens": {
+    "input": 3167,
+    "output": 103
+  }
+}

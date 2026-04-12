@@ -1,0 +1,18 @@
+{
+  "ruling": "partially_supports",
+  "rationale": "Chunk 1808061939339147-69 grounds only one of the three Ver.1.021 IG fixes (midair combo); the notes explicitly require citing raw/elem scaling (chunk -68) and leaping strike hit detection (-70) as well, plus the Ver.1.040 descending thrust patch (-208). Pool is missing 3 of 4 load-bearing patches needed to honestly address the full scope of IG balance work.",
+  "cached_at": "2026-04-11T17:21:37.872904",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013",
+    "case_id": "mhw_balance_001",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "ac7b3532"
+  },
+  "tokens": {
+    "input": 2762,
+    "output": 128
+  }
+}

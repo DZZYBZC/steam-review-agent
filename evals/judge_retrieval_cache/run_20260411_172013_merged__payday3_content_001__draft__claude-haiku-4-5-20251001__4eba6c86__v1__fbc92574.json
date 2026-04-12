@@ -1,0 +1,18 @@
+{
+  "ruling": "partially_supports",
+  "rationale": "Draft's claims about peer-to-peer hosting being 'now live' (chunk 1827626365763153-0) and mandatory account system removal 'in progress' (chunk 1811772772510824-4) are grounded. However, the draft asserts 'the team is actively reworking launch heists with improvements to mission structure, objective types, and randomization to make them more rewarding across all difficulties' \u2014 chunk 1823191198599924-6 confirms the rework and improvements but does not explicitly state this is intended to address the player's specific complaint about shallow heist variation and lack of reward, nor does it promise these changes will resolve the engagement drop the player experienced.",
+  "cached_at": "2026-04-11T17:46:54.670913",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "payday3_content_001",
+    "judge_kind": "draft",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "4eba6c86",
+    "judge_input_version": 1,
+    "user_message_sha8": "fbc92574"
+  },
+  "tokens": {
+    "input": 3049,
+    "output": 180
+  }
+}

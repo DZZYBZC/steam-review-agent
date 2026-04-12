@@ -1,0 +1,18 @@
+{
+  "ruling": "partially_supports",
+  "rationale": "Draft's claims about Update 1.2.5 redesigning Constructible Tooltips (chunk 1811772772410550-11), adding green up/red down arrows (chunk 1811772772410550-100), and surfacing base yields, warehouse improvements, and adjacency upfront in the Production Menu (chunk 1811772772410550-98) are all grounded. However, the draft's assertion that 'the specific natural yield appearing twice redundancy was fully resolved' or even partially resolved is not supported by any chunk \u2014 the chunks describe general UI improvements but do not mention the 'natural yield tab appearing twice' issue specifically, so the hedge 'we can't confirm whether...was fully resolved' is appropriate but the framing that Update 1.2.5 'targeted exactly this' overstates the chunks' specificity to the player's complaint.",
+  "cached_at": "2026-04-11T17:47:05.183407",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "civ7_ui_001",
+    "judge_kind": "draft",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "4eba6c86",
+    "judge_input_version": 1,
+    "user_message_sha8": "014dcd47"
+  },
+  "tokens": {
+    "input": 2817,
+    "output": 217
+  }
+}

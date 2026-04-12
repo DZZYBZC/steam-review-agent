@@ -30,13 +30,14 @@ steam-review-agent/
 ├── evals/                 # Eval harness (M5)
 │   ├── run_evals.py           # Eval runner — loads golden.json, runs graph, writes run JSON
 │   ├── reporter.py            # Stratified terminal report
-│   ├── snapshot.py            # Versioned eval snapshots (schema v6) with cross-snapshot diffing
+│   ├── snapshot.py            # Versioned eval snapshots (schema v7) with cross-snapshot diffing
 │   ├── scorers/               # Deterministic + LLM judge scorers
 │   │   ├── deterministic.py   # Action correctness, retrieval recall, citation audit, grounding band
 │   │   ├── gating_accuracy.py # Investigator gate confusion matrix
 │   │   ├── judge_grounding.py # LLM judge for low_conf_with_cite flag
 │   │   ├── judge_action.py    # LLM judge for wrong_action_severity
-│   │   └── pairwise.py        # LLM judge for revision-loop improvement
+│   │   ├── pairwise.py        # LLM judge for revision-loop improvement
+│   │   └── judge_retrieval.py # LLM judge — split: evidence_vs_gold + evidence_vs_draft
 │   └── test_sets/             # Golden set + regression seeds
 ├── config.py              # All configuration (models, temperatures, thresholds)
 ├── utils.py               # Shared utilities (load_skill with frontmatter parsing)
@@ -70,7 +71,7 @@ steam-review-agent/
 - Test agent (single review, real LLM calls): `python test_agent.py [--category <cat>] [--review-id <id>] [--list]`
 - Test graph compilation: `python test_graph.py`
 - Manage cluster notes: `python resolve_note.py {list <app_id> <category> | resolve <note_id> | reactivate <note_id>}`
-- Run evals (full): `python evals/run_evals.py`
+- Run evals (full): `python evals/run_evals.py` (default `--workers 4`; use `--workers 10` for ~3 min wall clock)
 - Run evals (quick subset): `python evals/run_evals.py --quick`
 - Run evals (single case): `python evals/run_evals.py --case-id <case_id>`
 - Run evals (by category): `python evals/run_evals.py --category <category>`

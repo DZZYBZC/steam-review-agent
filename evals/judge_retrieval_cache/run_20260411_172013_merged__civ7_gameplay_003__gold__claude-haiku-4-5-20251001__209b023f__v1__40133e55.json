@@ -1,0 +1,18 @@
+{
+  "ruling": "partially_supports",
+  "rationale": "The chunks address one sub-issue (age-transition structure and continuity mode in 1.2.3\u20131.2.4, plus Test of Time feature allowing same-civ play), but do not ground the player's core complaints about stripped civilization-building mechanics, lack of world customization at game start, or unrecognizable leaders. Chunk 1823191198616991-30 mentions leader personality differentiation but does not address the 'unrecognizable' complaint substantively. An ideal responder could acknowledge design evolution but would lack material to directly address the three main grievances.",
+  "cached_at": "2026-04-11T17:45:53.344993",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "civ7_gameplay_003",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "40133e55"
+  },
+  "tokens": {
+    "input": 3275,
+    "output": 156
+  }
+}

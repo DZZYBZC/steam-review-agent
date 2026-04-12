@@ -1,0 +1,18 @@
+{
+  "ruling": "supports",
+  "rationale": "Chunk 1801617199561563-32 explicitly acknowledges Hotseat Multiplayer as a promised feature currently being scoped without a specific delivery date, which grounds the gold answer's posture: recognize the gap, cite team acknowledgment, avoid unsourced claims about when it will ship, and set monitor.",
+  "cached_at": "2026-04-11T17:21:15.497807",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013",
+    "case_id": "civ7_content_001",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "c6da4cf7"
+  },
+  "tokens": {
+    "input": 2805,
+    "output": 95
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "ruling": "partially_supports",
+  "rationale": "Chunks 1828894815567746-17 and 1828894815567715-29 ground base/outpost building and ship building improvements respectively, but the pool lacks any direct fix for flight controls (the notes explicitly flag this as 'NO direct fix'), and ship combat chunks (5510784213098362871-115, 5766372999940259445-5) only address difficulty tuning, not the 'subpar' combat mechanics complaint. An ideal responder could acknowledge building improvements but would be forced to hedge or omit the flight controls concern entirely.",
+  "cached_at": "2026-04-11T17:46:11.269589",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "starfield_gameplay_001",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "9ebe1ab2"
+  },
+  "tokens": {
+    "input": 3038,
+    "output": 152
+  }
+}

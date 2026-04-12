@@ -1,0 +1,18 @@
+{
+  "ruling": "supports",
+  "rationale": "The pool contains multiple performance patch chunks (Ver.1.040, commitment post describing Title Update 4 CPU/GPU optimizations, Ver.1.041 with additional optimization, and post-update summary of improvements) that an ideal responder can cite to acknowledge ongoing work. Critically, the notes specify the gold answer must NOT defensively argue 'we shipped patches so complaint is invalid' \u2014 instead, acknowledge the patches exist while validating the player's experience that they haven't fully resolved the issue. The chunks provide the factual basis for 'we have shipped multiple performance updates' without forcing a defensive tone; a competent responder can use these to say 'we recognize your frustration despite our efforts' and set monitor.",
+  "cached_at": "2026-04-11T17:46:21.716559",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "mhw_perf_002",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "6e69165f"
+  },
+  "tokens": {
+    "input": 3465,
+    "output": 179
+  }
+}

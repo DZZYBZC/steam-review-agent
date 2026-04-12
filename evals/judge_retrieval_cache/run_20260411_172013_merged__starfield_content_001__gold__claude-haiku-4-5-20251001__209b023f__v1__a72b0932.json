@@ -1,0 +1,18 @@
+{
+  "ruling": "partially_supports",
+  "rationale": "The pool contains crash-fix chunks (1828894815567746-31 and others) addressing one axis, but is missing the two critical load-bearing chunks the notes specify: 1826992588604218-32 (Free Lanes POI density fix for content sparsity) and 1828894815567715-20 (ship optimization for loading screens). An ideal responder can only ground the crashes axis, not the content sparsity or loading-screen axes the gold answer requires.",
+  "cached_at": "2026-04-11T17:46:15.848525",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "starfield_content_001",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "a72b0932"
+  },
+  "tokens": {
+    "input": 2872,
+    "output": 135
+  }
+}

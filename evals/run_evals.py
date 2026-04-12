@@ -1,5 +1,5 @@
 """
-evals/run_evals.py — Eval runner skeleton (M5 Step 4).
+evals/run_evals.py — Eval runner.
 
 Loads cases from evals/test_sets/golden.json, runs each through the agent
 graph end-to-end with auto-approval at the human gate, and writes raw
@@ -11,13 +11,11 @@ Usage:
     python evals/run_evals.py --app-id 1716740      # filter by app
     python evals/run_evals.py --category technical_issues
     python evals/run_evals.py --case-id mhw_tech_002
-
-Step 4 is a skeleton: scorers (Step 5) and the reporter (Step 7) consume
-the JSON file this writes. This file does not score or pretty-print results
-beyond a one-line per-case progress log and a terminal summary.
+    python evals/run_evals.py --workers 10          # parallel execution
 """
 
 import argparse
+import concurrent.futures
 import datetime as dt
 import json
 import logging
@@ -38,6 +36,10 @@ from evals.scorers.deterministic import score_records
 from evals.scorers.gating_accuracy import gating_accuracy_batch
 from evals.scorers.judge_action import judge_action_batch
 from evals.scorers.judge_grounding import judge_grounding_batch
+from evals.scorers.judge_retrieval import (
+    judge_evidence_vs_draft_batch,
+    judge_evidence_vs_gold_batch,
+)
 from evals.scorers.pairwise import pairwise_batch
 from evals.snapshot import diff_snapshots, load_latest_snapshot, write_snapshot
 
@@ -119,7 +121,7 @@ def load_cases(
 
 
 def build_initial_state(case: dict) -> AgentState:
-    """Mirror test_agent.py:115 — build the AgentState entry shape."""
+    """Build the AgentState entry shape for a golden-set case."""
     return {
         "app_id": case["app_id"],
         "review_id": case["review_id"],
@@ -171,8 +173,7 @@ def run_case(app, case: dict) -> dict:
     try:
         result = app.invoke(state, config=thread_config)
 
-        # Auto-approve loop. Mirrors test_agent.py:150 but never prompts.
-        # Bound by AGENT_MAX_ITERATIONS via the graph; we add a hard cap as a
+        # Auto-approve loop — bound by AGENT_MAX_ITERATIONS via the graph; we add a hard cap as a
         # safety net in case interrupt cycles ever exceed expected count.
         gate_passes = 0
         while result.get("stop_reason") not in TERMINAL_STOP_REASONS:
@@ -255,6 +256,7 @@ def main():
     parser.add_argument("--app-id", type=str, default=None, help="Filter by Steam app id")
     parser.add_argument("--category", type=str, default=None, help="Filter by annotated/classifier category")
     parser.add_argument("--case-id", type=str, default=None, help="Run a single case by case_id")
+    parser.add_argument("--workers", type=int, default=4, help="Parallel workers for case execution (default: 4)")
     args = parser.parse_args()
 
     filters = {
@@ -279,23 +281,57 @@ def main():
     logger.info("Building agent graph...")
     app = build_graph()
 
-    records: list[dict] = []
+    # Best-effort warmup of the retrieval lazy-loaders (sentence-transformer
+    # embedder, cross-encoder reranker, ChromaDB client) on the main thread,
+    # so worker threads don't race on first init. Performance-only — never
+    # fatal. If warmup fails for any reason, the first real case pays the
+    # lazy-load cost itself.
+    try:
+        from pipeline.retrieve import retrieve as _warmup_retrieve
+        _warmup_retrieve(query_text="warmup", app_id=cases[0]["app_id"])
+        logger.info("Retrieval models warmed.")
+    except Exception as e:
+        logger.warning(f"Retrieval warmup failed (non-fatal): {type(e).__name__}: {e}")
+
+    workers = max(1, args.workers)
+    logger.info(f"Running {len(cases)} case(s) with workers={workers}")
+
+    records: list[dict | None] = [None] * len(cases)
     n_ok = 0
     n_err = 0
-    for i, case in enumerate(cases, start=1):
-        logger.info(f"[{i}/{len(cases)}] {case['case_id']} (app={case['app_id']}, category={case.get('annotated_category', '?')})")
-        record = run_case(app, case)
-        records.append(record)
-        if record["ok"]:
-            n_ok += 1
-            r = record["result"]
-            logger.info(
-                f"    -> stop={r['stop_reason']} action={r['proposed_action'] or '-'} "
-                f"iters={r['iteration_count']} elapsed={record['elapsed_seconds']}s"
-            )
-        else:
-            n_err += 1
-            logger.info(f"    -> ERROR: {record['error']}")
+    completed = 0
+
+    def _run(idx_case):
+        idx, case = idx_case
+        return idx, run_case(app, case)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_idx = {
+            executor.submit(_run, (i, case)): i
+            for i, case in enumerate(cases)
+        }
+        for future in concurrent.futures.as_completed(future_to_idx):
+            idx, record = future.result()
+            records[idx] = record
+            completed += 1
+            case = cases[idx]
+            if record["ok"]:
+                n_ok += 1
+                r = record["result"]
+                logger.info(
+                    f"[{completed}/{len(cases)}] {case['case_id']} "
+                    f"(app={case['app_id']}, category={case.get('annotated_category', '?')}) "
+                    f"-> stop={r['stop_reason']} action={r['proposed_action'] or '-'} "
+                    f"iters={r['iteration_count']} elapsed={record['elapsed_seconds']}s"
+                )
+            else:
+                n_err += 1
+                logger.info(
+                    f"[{completed}/{len(cases)}] {case['case_id']} -> ERROR: {record['error']}"
+                )
+
+    # All futures completed — records is now order-aligned with cases.
+    records = [r for r in records if r is not None]
 
     out_path = write_run_file(records, filters)
 
@@ -310,14 +346,25 @@ def main():
         cases, records, scored, run_file_basename=out_path.stem
     )
     pairwise = pairwise_batch(cases, records, run_file_basename=out_path.stem)
+    judge_evd_gold = judge_evidence_vs_gold_batch(
+        cases, records, run_file_basename=out_path.stem
+    )
+    judge_evd_draft = judge_evidence_vs_draft_batch(
+        cases, records, run_file_basename=out_path.stem
+    )
     print()
-    print_report(cases, records, scored, gating, judge, judge_action, pairwise)
+    print_report(
+        cases, records, scored, gating, judge, judge_action, pairwise,
+        judge_evd_gold, judge_evd_draft,
+    )
 
     # Snapshot. Look up the previous snapshot BEFORE writing the new one so
     # we don't compare it against itself.
     prev_snapshot = load_latest_snapshot()
     snap_path = write_snapshot(
-        scored, gating, judge, judge_action, pairwise, records, run_file=out_path, filters=filters
+        scored, gating, judge, judge_action, pairwise,
+        judge_evd_gold, judge_evd_draft,
+        records, run_file=out_path, filters=filters,
     )
     print(f"Raw run file: {out_path}")
     print(f"Snapshot:     {snap_path}")

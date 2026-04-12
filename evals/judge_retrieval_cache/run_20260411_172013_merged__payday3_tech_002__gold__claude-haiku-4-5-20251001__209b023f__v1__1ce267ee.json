@@ -1,0 +1,18 @@
+{
+  "ruling": "does_not_support",
+  "rationale": "The notes specify 'no patch in corpus advertises a fix' for offline-mode net-handshake bug and warn that P2P chunks are tangential and must be disowned. Chunk 1811772772510824-3 explicitly states offline mode 'is not a feasible route' and the team is abandoning it \u2014 this directly contradicts the gold answer's posture of investigating an unfixed bug. Chunk 1811772772510824-4 mentions P2P hosting, which the notes identify as irrelevant to the offline-mode issue. An ideal responder would be misled into either claiming offline mode was deprioritized (wrong framing for investigate) or citing P2P as a workaround (cited_irrelevant_patch violation).",
+  "cached_at": "2026-04-11T17:45:40.784187",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "payday3_tech_002",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "1ce267ee"
+  },
+  "tokens": {
+    "input": 3212,
+    "output": 199
+  }
+}

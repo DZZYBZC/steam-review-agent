@@ -1,0 +1,18 @@
+{
+  "ruling": "partially_supports",
+  "rationale": "The pool contains multiple crash-fix patches (chunks 1821922921809503-56 through -59, 1809869179987885-94 through -98) that demonstrate ongoing crash remediation, supporting an 'investigate' posture. However, the notes reference 'same crash patches apply' from poe2_tech_001 and warn against 'overclaimed_fix' \u2014 the pool shows specific, narrow crash fixes (Firestorm, Hollow Palm, controller input, specific uniques) but lacks either a comprehensive crash-fix summary or explicit acknowledgment that these specific fixes may not address the player's particular crash scenario. An ideal responder could acknowledge that crashes are being addressed without overclaiming, but the granularity mismatch (specific skill/item crashes vs. generic 'too many bugs and crashes') creates hedging risk.",
+  "cached_at": "2026-04-11T17:46:40.173176",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "poe2_tech_002",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "8133cc77"
+  },
+  "tokens": {
+    "input": 3054,
+    "output": 212
+  }
+}

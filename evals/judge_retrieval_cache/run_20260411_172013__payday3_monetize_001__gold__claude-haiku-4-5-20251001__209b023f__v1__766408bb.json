@@ -1,0 +1,18 @@
+{
+  "ruling": "supports",
+  "rationale": "The review is a pure pricing/business-model complaint about DLC strategy, not a bug or technical issue. The case notes correctly identify this as non-actionable subjective feedback requiring no_action. The retrieved chunks contain information about free content (Skills 2.0 update, First World Bank free DLC, free-play-when-invited mechanics) that an ideal responder could cite to acknowledge the game's free-content offerings, but the gold answer does not require these chunks \u2014 it requires only that the responder recognize the complaint as design feedback outside the scope of bug triage and take no action. The absence of DLC-pricing-justification material is appropriate; an ideal responder would not argue DLC value (per case notes) and would simply decline to engage. The pool's presence of free-content information does not contradict the no_action posture.",
+  "cached_at": "2026-04-11T17:21:03.299412",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013",
+    "case_id": "payday3_monetize_001",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "766408bb"
+  },
+  "tokens": {
+    "input": 3025,
+    "output": 209
+  }
+}

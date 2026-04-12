@@ -140,7 +140,9 @@ steam-review-agent/
 │   ├── critique-draft/            # Critic quality-gate checklist
 │   ├── judge-grounding/           # Eval judge: low-confidence citation classifier
 │   ├── judge-action/              # Eval judge: action severity classifier
-│   └── judge-pairwise/            # Eval judge: revision improvement
+│   ├── judge-pairwise/            # Eval judge: revision improvement
+│   ├── judge-evidence-vs-gold/    # Eval judge: retrieval-only — would the pool support an ideal answer?
+│   └── judge-evidence-vs-draft/   # Eval judge: joint retrieval+drafting — does the pool support what the draft claims?
 │
 ├── evals/                       # Evaluation harness
 │   ├── run_evals.py               # Main eval runner (loads cases, runs agent, scores, snapshots)
@@ -152,11 +154,12 @@ steam-review-agent/
 │   ├── _lock_controls.py          # CLI helper to materialize lock blocks from a run JSON
 │   ├── refresh_classifier_fields.py
 │   ├── scorers/
-│   │   ├── deterministic.py       # Deterministic scorers (action_correctness, etc.)
+│   │   ├── deterministic.py       # Deterministic scorers (action_correctness, concept_recall, evidence_sufficiency, ...)
 │   │   ├── gating_accuracy.py     # Retrieval-gating scorer
 │   │   ├── judge_grounding.py     # LLM judge — low_conf_with_cite ruling
 │   │   ├── judge_action.py        # LLM judge — wrong_action_severity ruling
-│   │   └── pairwise.py            # LLM judge — revision improvement
+│   │   ├── pairwise.py            # LLM judge — revision improvement
+│   │   └── judge_retrieval.py     # LLM judge — split: evidence_vs_gold (retrieval-only) + evidence_vs_draft (joint retrieval+drafting)
 │   └── test_sets/
 │       ├── golden.json            # Hand-curated eval cases with expected actions + must_include sources
 │       └── regression.json        # Regression seeds added during eval-driven prompt edits
@@ -228,7 +231,7 @@ Seven choices that look like accidents until you know why:
 - **Coordinator is plain Python, not an LLM.** Routing logic is a five-line if-statement. An LLM here would burn tokens and add non-determinism to the *control flow* — exactly where you want determinism.
 - **Reranker scores are not passed to the investigator.** Uncalibrated floats anchor LLM reasoning on reranker noise. Reranker orders; investigator reasons about content.
 - **Pydantic at LLM trust boundary, TypedDict inside the graph.** Validation on every state transition is expensive and catches nothing new. The boundary is LLM → Python; inside the graph is already Python.
-- **Three sibling judge files, not a base class.** Cloned intentionally. The right `_judge_base.py` shape is visible *because* three exercised files exist — guessing from one would pick the wrong abstraction.
+- **Sibling judge files, not a base class.** Cloned intentionally. Five sibling judges across four files now exist; the right `_judge_base.py` shape is visible *because* multiple exercised files exist — guessing from one would pick the wrong abstraction.
 - **`judge_error` is its own ruling.** Collapsing API/parse/validation failures into `tolerable_disagreement` silently undercounts real failures. Dedicated bucket surfaces infra misfires in the snapshot diff.
 - **Cluster-note staleness filters at read time, not write time.** 90-day-old notes are filtered out of investigator context, not deleted. Preserves audit trail; reactivation is one row.
 
@@ -284,9 +287,9 @@ The agent matters; the eval system is what made it iterable. Each block below is
 <details>
 <summary><strong>Layered scoring, cache key, and judge_error isolation</strong></summary>
 
-**Layered scoring.** Deterministic scorers run first (`deterministic.py`, `gating_accuracy.py`) and catch hard violations cheaply. LLM judges only see cases the deterministic scorers flag. Three sibling judges: `judge_grounding.py` (low-confidence citations), `judge_action.py` (action-severity disagreements), `pairwise.py` (did the revision loop improve the draft).
+**Layered scoring.** Deterministic scorers run first (`deterministic.py`, `gating_accuracy.py`) and catch hard violations cheaply. LLM judges only see cases the deterministic scorers flag. Five sibling judges across four files: `judge_grounding.py` (low-confidence citations), `judge_action.py` (action-severity disagreements), `pairwise.py` (did the revision loop improve the draft), and `judge_retrieval.py` housing **two** judges that share infrastructure but score independently — `evidence_vs_gold` (would the post-filter pool support an ideal answer?) and `evidence_vs_draft` (does the pool support what the draft actually claims?). The delta between the two surfaces responder over-claim vs under-use.
 
-**Cache key.** 6-component sha256 over `run_file_basename`, `case_id`, `JUDGE_MODEL`, `skill_sha8`, `JUDGE_INPUT_VERSION`, `user_message_sha8`. Identical inputs → free re-run; any input change invalidates cleanly. `skill_sha8` prevents cross-judge collisions in the shared cache directory.
+**Cache key.** sha256 over `run_file_basename`, `case_id`, `JUDGE_MODEL`, `skill_sha8`, `JUDGE_INPUT_VERSION`, `user_message_sha8`. The retrieval judges add a 7th component (`judge_kind` ∈ {`gold`, `draft`}) so the two sibling judges share `judge_retrieval_cache/` without collision. Identical inputs → free re-run; any input change invalidates cleanly. `skill_sha8` prevents cross-judge collisions in the shared cache directory.
 
 **Isolated `judge_error` bucket.** API / parse / schema failures are ruled `judge_error`, not absorbed into `tolerable_disagreement`. Surfaces separately in the snapshot, diff, and reporter — a misfiring judge can never pass as healthy.
 
@@ -306,7 +309,7 @@ The agent matters; the eval system is what made it iterable. Each block below is
 <details>
 <summary><strong>Eval iteration arc (chronological)</strong></summary>
 
-Fifteen iterations. Three reverted, one partial success, eleven shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
+Nineteen iterations. Three reverted, one partial success, fifteen shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
 
 | # | Name | Outcome | Key signal |
 |---|------|---------|------------|
@@ -316,7 +319,7 @@ Fifteen iterations. Three reverted, one partial success, eleven shipped — hone
 | 4 | `multi_part_complaint` edit | shipped | First eval-driven prompt edit. Locked gate, clean win, established lock-before-edit discipline |
 | 5 | `action_severity_precedence` | **reverted** | Narrow metric improved but aggregate action correctness regressed 65→49% and 12 runs hit max_iterations |
 | 6 | Pairwise scorer | shipped | "Is the revision loop earning its tokens?" Surfaced that revisions were mostly cosmetic. Schema v5 |
-| 7 | Retrieval scorer + gold recal | shipped | Source vs post-filter recall split, concept hit-rate, `any_of` equivalence groups. Schema v6 |
+| 7 | Retrieval scorer + gold recall | shipped | Source vs post-filter recall split, concept hit-rate, `any_of` equivalence groups. Schema v6 |
 | 8 | Single-axis rubric | partial | Refactored 4 actions into one axis. Action correctness recovered but critic-workload regressed |
 | 9 | Rubric remedial (4R) | shipped | Tightened Iter8's rubric. Action correctness held; critic regression persisted |
 | 10 | Header-block rearrangement | **reverted** | Critic still cited rung definitions verbatim. Hypothesis falsified at smoke test |
@@ -325,6 +328,12 @@ Fifteen iterations. Three reverted, one partial success, eleven shipped — hone
 | 13 | Action-freeze | shipped | Graph-level interception of action-only critic rejections. Action correctness 0.651 → 0.780, max-iter 7 → 0 |
 | 14 | Few-shot examples | shipped | Responder few-shot examples + `parse_llm_json` robustness fix. Infra errors 5 → 0 |
 | 15 | Boundary sharpening | shipped | 7 disambiguation rules across all skills + 3 golden corrections. Action correctness 71.1% → 76.9%, category_drift 4 → 1 |
+| 16 | `[infra]` Parallel eval execution | shipped | SQLite WAL + busy_timeout on storage + checkpointer; ThreadPoolExecutor + `--workers` flag in `run_evals`; warmup-on-main-thread for retrieval models. Wall-clock 25–35 min sequential → ~3 min at workers=10. Iteration speed only — no quality movement |
+| 17 | Phase A1 — concept_recall + 1:1 migration | shipped | New `concept_recall` scorer; mechanical backfill of slots → `required_concepts`. Identity check vs `retrieval_recall` byte-equal per case (the whole point of A1 in isolation) |
+| 18 | Phase A2 — manual concept cleanup + sufficiency | shipped | Manual concept merges, equivalent-chunk additions, `sufficient_sets` authoring (100% coverage across retrieval-eligible). Adds `evidence_sufficiency` + `relevant_concept_precision`. First snapshot where concept recall legitimately diverges from slot recall |
+| 19 | Phase B — split retrieval judges | shipped | `judge_evidence_vs_gold` (retrieval-only) and `judge_evidence_vs_draft` (joint), shared infra in `judge_retrieval.py`. Schema v7. Disentangles "is the evidence enough for an ideal answer?" from "does the evidence back the draft's actual claims?" |
+
+*Why Iter16 used threads, not asyncio:* the agent graph, Anthropic SDK calls, LangGraph checkpointer, and SQLite are all sync; switching to asyncio would have meant rewriting every node, every tool call, every DB access, and every test, for an I/O-bound workload where the GIL releases during the wait and a thread pool gives effectively the same throughput. WAL + busy_timeout on the SQLite connections handles the only real shared-state contention — a two-line pragma change instead of a graph rewrite.
 
 Full detail in `evals/M5_PLAN.md`.
 
@@ -334,42 +343,54 @@ Full detail in `evals/M5_PLAN.md`.
 
 ## Results
 
-Latest full-eval run (56 cases). Source: `snapshot_20260410_052557.json` (schema v6). This snapshot reflects boundary-sharpening disambiguation rules added to all skill prompts, plus three golden annotation corrections to align with the sharpened rubric. Comparisons to earlier snapshots are informative but not perfectly apples-to-apples.
+Latest full-eval run (56 cases). Source: `snapshot_20260411_174746.json` — the first schema-v7 layered-retrieval baseline (Phase A1 + A2 concept recall and sufficiency, Phase B split retrieval judges). Earlier schema-v6 snapshots are informative but not perfectly apples-to-apples.
+
+<sub>*Three transient infra errors were rerun and merged case-by-case.*</sub>
+
+The metrics below cite four distinct populations: **total cases** (56 — the full golden set), **action-eligible** (40 — total minus no-response cases and infra errors), **retrieval-eligible** (22 — cases with hand-annotated must-include chunk IDs), and **judge-eligible** (30 — cases where the agent retrieved a non-empty post-filter pool, the population the two retrieval judges score). Row labels reference these bases by name.
 
 | Metric | Value |
 |---|---|
-| Cases evaluated | **56** (across 5 games, 11–12 cases each) |
-| Action correctness | **76.9%** (30 / 39, excludes 17 no-response cases) |
-| Effective first-pass rate | **87.2%** (critic approved or action-freeze override at iter0) |
-| Gating accuracy | **94.2%** (10 true_skip / 39 true_retrieve / 3 false_skip / 0 false_retrieve / 4 unknown) |
-| Hard grounding violations | **0** |
-| Retrieval — source recall@5 | **0.453** (retrieved top-5 before investigator filter, eligible cases) |
-| Retrieval — post-filter recall@5 | **0.272** (after investigator's Self-RAG filter) |
-| Total tokens | 1,574,723 |
+| Cases evaluated | **56 total cases** (across 5 games, 11–12 cases each) |
+| Action correctness | **77.5%** (31 / 40 action-eligible cases; 0 infra errors) |
+| Effective first-pass rate | **92.5%** (across action-eligible cases — critic approved or action-freeze override at iter0) |
+| Gating accuracy | **94.3%** (across all 56 cases — 10 true_skip / 40 true_retrieve / 3 false_skip / 0 false_retrieve / 3 unknown) |
+| Hard grounding violations | **0** (across all 56 cases) |
+| Citation chain-of-custody | **100%** (across all 56 cases — `source_ids_cited ⊆ relevant_ids` deterministic) |
+| Concept recall — source / post-filter | **0.740 / 0.646** (across retrieval-eligible cases — Phase A2 named-concept generalization) |
+| Sufficiency — at-source / post-filter | **0.500 / 0.455** (across retrieval-eligible cases — Phase A2, with full sufficient-set annotation coverage) |
+| Judge: evidence vs gold | supports 10 / partial 14 / no_support 6 / judge_error 0 (across 30 judge-eligible cases) |
+| Judge: evidence vs draft | supports 20 / partial 10 / no_support 0 / judge_error 0 (across 30 judge-eligible cases) |
+| Retrieval-vs-draft disagreement | 11 agreement / 19 disagreement (of 30 judge-eligible cases) — within disagreements: **5 strong under-use, 0 strong over-claim**, 14 other |
+| Total tokens | **1,574,273** |
 
 #### Where the numbers come from
 
-- **Retrieval recall (0.453 source / 0.272 post-filter).** The 0.181 gap is the investigator's Self-RAG filter — it aggressively prunes low-relevance chunks. The retrieval stack was unchanged in this iteration; the observed recall swing from earlier runs is most plausibly explained by investigator query stochasticity and small-pool variance (on a 23-case eligible pool, a single case flipping from 1.0 → 0.0 moves the mean by ~0.04). Remaining hard-zero cases are chunking fragmentation across version-stamped patches.
-- **Action correctness (76.9%).** Action-freeze (see [Critic ↔ revision loop](#critic-revision-loop)) preserves the responder's action when the critic over-corrects at the `monitor` ↔ `investigate` boundary. Judge breakdown of 9 remaining mismatches: **3 over + 3 missed + 1 drift + 2 tolerable + 0 judge_error**. Boundary-sharpening disambiguation rules collapsed category_drift from 4 → 1 by resolving ambiguous mid-ladder cases. The metric has ~5pp run-to-run variance from Haiku stochasticity across full runs with identical code.
-- **Critic approvals (53.8% raw iter-0, 87.2% effective).** The critic over-rejects on action grounds at the node level, but action-freeze intercepts those before they cause thrash. Boundary-sharpening rules were added to the critic prompt, but the node-level over-rejection pattern persists; action-freeze still does the heavy lifting at the system level. Zero cases hit max_iterations.
-- **Revisions — almost entirely cosmetic.** 34 of 39 neutral via the deterministic shortcut, 5 improved, 0 regressed. Only drafting/evidence issues trigger revisions.
+- **Retrieval — concept recall and sufficiency.** The concept row generalizes hand-listed slots into named concepts, so equivalent chunks the original annotator missed no longer mark a case as a miss. Sufficiency answers the operational question directly — *did the retriever bring back enough evidence to support the right answer?* — pre-declared at full annotation coverage and promoted to a primary retrieval metric per the layered-eval headline rule. Two additional diagnostics live in the snapshot but are omitted from the table for brevity: legacy slot recall (kept as a debuggability floor so historical snapshots remain comparable) and relevant-concept precision (share of kept chunks mapping to any annotated concept).
+- **Retrieval-vs-draft disagreement is the new dominant signal.** The two retrieval judges split usefulness into pure retrieval signal (could an ideal responder produce the right answer from this evidence?) and joint retrieval+drafting signal (does the evidence back what the draft actually claims?). The strong under-use diagonal — gold says the evidence is enough, draft fails to use it — flags responses that left load-bearing evidence on the floor. The strong over-claim diagonal — gold says the evidence isn't enough, draft asserts a fix anyway — flags fabricated claims. The current snapshot is dominated by under-use with zero over-claim, so the responder is conservative and the next retrieval-side improvement most likely lives on responder-prompt work, not on the retriever or filter.
+- **Action correctness.** Action-freeze (see [Critic ↔ revision loop](#critic-revision-loop)) preserves the responder's action when the critic over-corrects at the `monitor` ↔ `investigate` boundary. Zero infra errors in the parallel run after the three transient cases were merged in. Boundary-sharpening rules from Iter15 are still in effect; the metric carries ~5pp run-to-run variance from Haiku stochasticity across full runs with identical code.
+- **Critic approvals.** The critic still over-rejects on action grounds at the node level, but action-freeze intercepts those before they cause thrash. Boundary-sharpening rules were added to the critic prompt; the node-level over-rejection pattern persists, action-freeze does the heavy lifting at the system level. Zero cases hit max_iterations.
+- **Revisions — almost entirely cosmetic.** Nearly every revision routes through the deterministic neutral shortcut; only a handful are flagged as genuine improvements by the pairwise judge, and zero regress. Only drafting/evidence issues trigger revisions.
 
 ### Key takeaways
 
 - **Grounding and citation discipline are strong.** 100% citation chain-of-custody, zero hard grounding violations. The `source_ids → relevant_ids → source_ids_cited` subset check is doing its job — the responder cannot fabricate citations.
-- **Action correctness and throughput are healthy.** 76.9% action correctness, 87.2% effective first-pass rate, zero max-iterations cases.
-- **Revision loop is clean.** 0 regressions, 5 genuine improvements (grounding fixes caught by the critic).
+- **Action correctness and throughput remain healthy.** Action correctness is in the high-70s, effective first-pass rate is above 90%, and zero cases hit max_iterations.
+- **Revision loop is clean.** Zero regressions, a small handful of genuine improvements caught by the critic.
+- **Layered retrieval evaluation surfaces the retrieval-vs-drafting split.** Concept recall and sufficiency replace fragile slot-level recall as the primary retrieval health metrics; the split retrieval judges separate "did the pool support an ideal answer?" from "did the pool support what the draft actually said?" The current snapshot is dominated by under-use cases with zero over-claim — the responder is conservative, and the next retrieval-side win is responder-prompt work, not retriever-side work.
 
 <details>
 <summary><a id="open-gaps"></a><strong>Open gaps</strong></summary>
 
-- **Retrieval recall.** Source 0.453 / post-filter 0.272. Still the weakest metric on the board. The retrieval stack was unchanged in this iteration; the observed swing from earlier runs is most plausibly explained by investigator query stochasticity and small-pool variance. The core gap remains the investigator's Self-RAG filter aggressively pruning useful chunks before drafting. Next: (a) audit filter drops on cases where the retriever surfaced the right chunk but the investigator discarded it, (b) tighten section-aware chunking on multi-version patches.
+- **Retrieval recall.** Post-filter is still the dominant gap, but the layered metrics give the next investigation a sharper target than before — most of the strong under-use cases have full sufficiency at the post-filter pool, meaning the evidence is there and the responder is not consuming it. Two next steps: (a) audit the under-use cases for prompt-side fixes that get the responder to actually consume the load-bearing chunk, (b) tighten section-aware chunking on the small remaining set of multi-version patches.
 
-- **Critic node-level over-rejection.** The system-level churn is solved (action-freeze), but the critic *node itself* still over-rejects at the `monitor` ↔ `investigate` boundary (53.8% raw iter-0 approval). Disambiguation rules were added to the critic prompt but the over-rejection pattern persists; action-freeze still does the heavy lifting. Broad rubric rewrites look closed as a lever for the critic's raw over-rejection problem; targeted boundary-sharpening rules improved action correctness but did not materially lift raw iter-0 approval. Any further improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node).
+- **Critic node-level over-rejection.** The system-level churn is solved (action-freeze), but the critic *node itself* still over-rejects on action grounds at the `monitor` ↔ `investigate` boundary. Disambiguation rules were added to the critic prompt but the over-rejection pattern persists; action-freeze still does the heavy lifting. Broad rubric rewrites look closed as a lever; targeted boundary-sharpening rules improved action correctness but did not materially lift raw iter-0 approval. Any further improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node).
 
-- **Pairwise semantic spot checks — deferred.** Structurally clean (39 judged, 0 pairwise judge_error), but hand-validated spot checks are queued for the next clean run.
+- **Pairwise semantic spot checks — deferred.** Structurally clean, but hand-validated spot checks are queued for the next clean run.
 
-- **`_judge_base.py` extraction — queued.** Three sibling judge files exist; the abstraction shape is visible, but one more clone is cheaper than premature DRY.
+- **Retrieval judge spot checks — queued.** Phase B is structurally clean (zero judge errors on both retrieval judges, locked into the eval guardrails), but the six hand-picked spot checks (three per judge — one per ruling) called for by the layered-retrieval plan are not yet locked by case ID. Plan calls for naming each spot's role before the next prompt edit on either retrieval skill.
+
+- **`_judge_base.py` extraction — queued.** Five sibling judges across four files now exist; the abstraction shape is visible and ready to pull out. The next clone should be the trigger.
 
 </details>
 
@@ -420,17 +441,17 @@ export HF_TOKEN=...
 | `python main.py <app_id> [max_reviews]` | Run the data pipeline end-to-end: fetch → clean → classify → cluster → stats. Default `max_reviews=500`. Add `--skip-fetch` to reuse rows already in the database. |
 | `python test_agent.py [--category CAT] [--review-id ID]` | Run a single real review through the live agent graph with real LLM calls. Pauses at the human approval gate for a manual decision. Use `--list` to print the available cases. |
 | `python test_graph.py` | End-to-end graph smoke test on a hardcoded "game crashes in dungeon" review. Auto-approves at the human gate. ~3-5 real LLM calls, ~30s wall clock, costs a few cents. |
-| `python evals/run_evals.py` | Run the full eval suite (56 golden cases). `--quick` for a subset, `--case-id <id>` for a single case, `--app-id <id>` and `--category <cat>` for filters. Writes a snapshot to `evals/snapshots/` and a raw run JSON to `evals/runs/`. |
+| `python evals/run_evals.py` | Run the full eval suite (56 golden cases). `--quick` for a subset, `--case-id <id>` for a single case, `--app-id <id>` and `--category <cat>` for filters, `--workers N` to control parallelism (default 4). Writes a snapshot to `evals/snapshots/` and a raw run JSON to `evals/runs/`. |
 | `python resolve_note.py {list <app_id> <category> \| resolve <note_id> \| reactivate <note_id>}` | Manage the cluster notes lifecycle. |
 
 ### Expected runtime and cost (rough)
 
 - **Data pipeline** (500 reviews, fresh fetch): ~5–10 min wall clock; cost dominated by classification (~500 Haiku calls × ~300 input tokens ≈ ~$0.10).
 - **Single-review agent run** (`test_agent.py`): ~30–60 sec including retrieval; ~5–15K total tokens depending on revision iterations; <$0.05 per review (Sonnet on the responder, Haiku elsewhere).
-- **Full eval suite** (`run_evals.py`, 56 cases): ~25–35 min wall clock; ~1.57M total tokens (per the latest snapshot); on the order of $2–3 per full run with all judges enabled.
+- **Full eval suite** (`run_evals.py`, 56 cases): **~3 min wall clock at `--workers 10`** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + 5s busy_timeout to avoid lock contention). Sequential default (`--workers 4`) is closer to ~10 min; pre-parallelization sequential was 25–35 min. ~1.57M total tokens (per the latest snapshot); on the order of $2–3 per full run with all judges enabled.
 - **Cached judge re-score** (offline against a saved run JSON): ~30 sec; $0 (cache hit on every flagged case).
 
-Numbers are approximations grounded in the latest snapshot's `total_tokens=1,574,723`. Actual cost depends on Anthropic pricing at run time.
+Numbers are approximations grounded in the latest snapshot's `total_tokens=1,574,273`. Actual cost depends on Anthropic pricing at run time.
 
 </details>
 
@@ -444,7 +465,7 @@ Five things I'd carry into the next project:
 - **Lock the eval gate before every prompt edit.** The clean wins were locked first; the blow-ups weren't. Without the lock file, prompt editing is gambling with stochastic feedback.
 - **Prompt-text edits have limits — know when to move to graph-level interventions.** Rearranging and removing the critic's rung definitions both failed identically: the model reconstructed the semantics from action names alone. Two failed experiments closed the class empirically. Accepting the critic's judgment as-is and intercepting at the graph level was a smaller, more targeted fix than any prompt edit could have been.
 - **`judge_error` gets its own bucket.** Collapsing infra failures into a substantive ruling silently undercounts real failures. One extra column in the snapshot is a small price for misfiring judges that can't pass as healthy.
-- **Sibling-clone, then extract.** Three judge files were cloned intentionally. The right `_judge_base.py` shape is only visible because three real usages exist — guessing from one example would have picked the wrong abstraction.
+- **Sibling-clone, then extract.** Judge files were cloned intentionally rather than abstracted early. The right `_judge_base.py` shape is only visible because multiple real usages exist — guessing from one example would have picked the wrong abstraction.
 - **Eval-driven boundary analysis beats broad prompt rewrites.** Analyzing the specific wrong cases to extract targeted disambiguation rules (7 boundary patterns from 11 mismatches) moved action correctness more reliably than broad rubric refactors. Narrow contrastive rules ("X, not Y") sharpen decision boundaries without destabilizing adjacent cases.
 
 </details>
@@ -452,9 +473,19 @@ Five things I'd carry into the next project:
 <details>
 <summary><strong>What's next</strong></summary>
 
-- **Improve retrieval recall.** 0.453 source / 0.272 post-filter — still the weakest metric. Small retrieval interventions (reranker top-N increase, zero-keep fallback) were hard to measure cleanly in the full-agent harness — Haiku's run-to-run variance across 56 cases swamped the signal from changes affecting 5-7 cases. A retrieval-only replay eval (isolating the retrieval pipeline from LLM stochasticity) is a plausible next step before attempting further runtime changes.
+**Retrieval**
+
+- **Get the responder to consume load-bearing chunks.** The dominant signal in the disagreement display is strong under-use — the pool already supports the answer in most cases; the responder is leaving evidence on the floor. Highest-leverage next move is responder-side prompt work informed by the under-use cases.
+- **Retrieval-only replay eval.** Isolating retrieval-pipeline edits from full-agent stochasticity is still useful for any future retriever or chunker change; the layered metrics give it a sharper headline than before.
+
+**Judged eval discipline**
+
+- **Lock retrieval judge spot checks.** Six cases (three per judge — one per ruling) hand-picked from the current snapshot, named by case ID and expected ruling, before any future edit to either retrieval skill. Mirrors the spot-check rung-coverage discipline from earlier iterations.
 - **Finish pairwise semantic spot checks.** Structurally clean; hand-validated spot checks deferred to the next clean run.
-- **Extract `_judge_base.py`.** Three sibling judge files exist — abstraction shape is visible and ready to pull out.
 - **Vs-baseline pairwise comparison.** Current pairwise scorer compares iter-0 vs final draft within a run. Cross-run comparison (before/after a prompt edit) would surface whether iteration-level improvements compound across the eval suite.
+
+**Code cleanup**
+
+- **Extract `_judge_base.py`.** Five sibling judges across four files now exist — abstraction shape is visible and ready to pull out. The next clone should be the trigger.
 
 </details>

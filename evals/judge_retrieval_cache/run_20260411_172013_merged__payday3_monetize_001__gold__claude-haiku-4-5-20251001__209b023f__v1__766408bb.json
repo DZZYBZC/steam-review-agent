@@ -1,0 +1,18 @@
+{
+  "ruling": "supports",
+  "rationale": "The review is a pure pricing/business-model complaint about DLC strategy, not a bug or technical issue. The case notes specify ideal_action=no_action because DLC strategy is 'not bug-fixable' and falls under subjective design feedback. The retrieved chunks contain information about free content (Skills 2.0 update, First World Bank free DLC, free-play-when-invited mechanics) that an ideal responder could use to acknowledge the game's free-content offerings without being defensive, or simply decline to engage on the business model itself. The absence of bug-fix patches is appropriate here since no fix is needed \u2014 the gold answer is to not escalate or investigate a non-technical complaint. The pool supports the no_action posture.",
+  "cached_at": "2026-04-11T17:45:50.876670",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "payday3_monetize_001",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "766408bb"
+  },
+  "tokens": {
+    "input": 3025,
+    "output": 187
+  }
+}

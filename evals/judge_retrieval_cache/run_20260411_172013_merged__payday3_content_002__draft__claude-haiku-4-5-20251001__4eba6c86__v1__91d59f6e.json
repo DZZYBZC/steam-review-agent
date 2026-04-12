@@ -1,0 +1,18 @@
+{
+  "ruling": "supports",
+  "rationale": "Draft's three substantive claims are all grounded: (1) 'free Smash & Grab mode based on existing heists' is in chunks 1803527891469208-0 and 1802354289595370-8; (2) 'ability to play DLC heists for free when invited by a friend who owns them' is in chunks 1810503566386486-2 and 1800357164538151-4; (3) 'reworks to launch heists improving mission structure and randomization' is in chunk 1823191198599924-6. The draft's honest hedge\u2014'those are variants and access mechanisms, not a substantially expanded free heist pool, so we're not going to claim they fully address what you're describing'\u2014correctly acknowledges that the chunks do not contain evidence of a major free map expansion, which is the appropriate reading of the evidence.",
+  "cached_at": "2026-04-11T17:46:56.911659",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "payday3_content_002",
+    "judge_kind": "draft",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "4eba6c86",
+    "judge_input_version": 1,
+    "user_message_sha8": "91d59f6e"
+  },
+  "tokens": {
+    "input": 3017,
+    "output": 223
+  }
+}

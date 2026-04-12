@@ -1,5 +1,5 @@
 """
-evals/reporter.py — Stratified terminal report (M5 Step 7).
+evals/reporter.py — Stratified terminal report.
 
 Consumes the output of evals.scorers.deterministic.score_records() and
 evals.scorers.gating_accuracy.gating_accuracy_batch() and prints a
@@ -165,7 +165,7 @@ def _per_category_section(cases: list[dict], scored: dict) -> list[str]:
 
 def _layered_retrieval_section(scored: dict) -> list[str]:
     """
-    Phase A2 layered retrieval display. Rows, cheapest → most semantic:
+    Layered retrieval display. Rows, cheapest → most semantic:
       - gold slot recall (diagnostic; legacy retrieval_recall)
       - concept recall
       - relevant-concept precision
@@ -543,6 +543,127 @@ def _pairwise_section(pairwise: dict | None) -> list[str]:
     return lines
 
 
+def _retrieval_judges_section(
+    scored: dict,
+    records: list[dict],
+    judge_evd_gold: dict | None,
+    judge_evd_draft: dict | None,
+) -> list[str]:
+    """
+    Split retrieval judges. Two parallel rows showing distribution
+    plus the dropout chain (predicate → judged), then a disagreement
+    bucket subsection.
+
+    Each judge row format:
+        supports K  partial K  no_support K  judge_error K  [n_judged=K, predicate=P/M, judge_pool=M]
+
+    M = judge-eligible pool: cases the agent successfully ran retrieval for
+    (non-empty relevant_ids). This is intentionally BROADER than the
+    deterministic retrieval-eligible base (cases with must_include_chunk_ids),
+    because the judges depend only on relevant_ids + notes/draft, not on
+    deterministic annotations. A case can be judged without ever having a
+    gold chunk slot, and excluding those would silently shrink the judge
+    base. The deterministic-eligible (must_include) base is still reported
+    in the layered retrieval section above.
+    """
+    lines = ["", _hr(), "RETRIEVAL JUDGES (split: gold vs draft)", _hr()]
+
+    if not judge_evd_gold and not judge_evd_draft:
+        lines.append("  (retrieval judges not run for this report)")
+        return lines
+
+    # M = judge-eligible pool: records where the agent produced non-empty
+    # relevant_ids. The judges' per-case predicates are strict subsets of
+    # this base, so P ≤ M always.
+    M = sum(
+        1 for r in records
+        if r.get("ok")
+        and ((r.get("result") or {}).get("evidence_package") or {}).get("relevant_ids")
+    )
+
+    def _judge_row(label: str, j: dict | None) -> list[str]:
+        out: list[str] = []
+        if not j:
+            out.append(f"  {label:<32} (not run)")
+            return out
+        rulings = j.get("rulings", {}) or {}
+        n_judged = j.get("n_judged", 0)
+        n_pred = j.get("n_predicate_eligible", 0)
+        n_cached = j.get("n_from_cache", 0)
+        n_err = rulings.get("judge_error", 0)
+        out.append(
+            f"  {label:<32} supports {rulings.get('supports', 0):>2}  "
+            f"partial {rulings.get('partially_supports', 0):>2}  "
+            f"no_support {rulings.get('does_not_support', 0):>2}  "
+            f"judge_error {n_err:>2}    "
+            f"[n_judged={n_judged}, predicate={n_pred}/{M}, judge_pool={M}, cache {n_cached}/{n_judged}]"
+        )
+        if n_err > 0:
+            ids = [
+                cid for cid, r in (j.get("per_case", {}) or {}).items()
+                if r.get("ruling") == "judge_error"
+            ]
+            out.append(
+                f"  ⚠ judge infrastructure misfired on {n_err} case(s): "
+                f"{', '.join(ids[:5])}{' …' if len(ids) > 5 else ''}"
+            )
+        return out
+
+    model = (judge_evd_gold or judge_evd_draft or {}).get("model", "?")
+    lines.append(f"  model: {model}")
+    lines.extend(_judge_row("evidence vs gold", judge_evd_gold))
+    lines.extend(_judge_row("evidence vs draft", judge_evd_draft))
+
+    # Disagreement bucket subsection — both judges must have run on a case.
+    g_per_case = (judge_evd_gold or {}).get("per_case", {}) or {}
+    d_per_case = (judge_evd_draft or {}).get("per_case", {}) or {}
+    both_ids = [
+        cid for cid in g_per_case
+        if cid in d_per_case
+        and g_per_case[cid].get("ruling") != "judge_error"
+        and d_per_case[cid].get("ruling") != "judge_error"
+    ]
+    n_both = len(both_ids)
+    if n_both:
+        n_g_sup_d_no = 0
+        n_g_no_d_sup = 0
+        n_other = 0
+        n_agree = 0
+        g_sup_d_no_ids: list[str] = []
+        g_no_d_sup_ids: list[str] = []
+        for cid in both_ids:
+            g = g_per_case[cid]["ruling"]
+            d = d_per_case[cid]["ruling"]
+            if g == d:
+                n_agree += 1
+            elif g == "supports" and d == "does_not_support":
+                n_g_sup_d_no += 1
+                g_sup_d_no_ids.append(cid)
+            elif g == "does_not_support" and d == "supports":
+                n_g_no_d_sup += 1
+                g_no_d_sup_ids.append(cid)
+            else:
+                n_other += 1
+        n_total_disagree = n_both - n_agree
+        lines.append("")
+        lines.append("  retrieval-vs-draft disagreement (per case, both judges ran):")
+        lines.append(f"    n_with_both_judges                             : {n_both:>3}")
+        lines.append(
+            f"    gold=supports         & draft=does_not_support : {n_g_sup_d_no:>3}"
+            + (f"   ← {', '.join(g_sup_d_no_ids[:5])}" if g_sup_d_no_ids else "")
+            + "   (responder over-claims against good evidence)"
+        )
+        lines.append(
+            f"    gold=does_not_support & draft=supports         : {n_g_no_d_sup:>3}"
+            + (f"   ← {', '.join(g_no_d_sup_ids[:5])}" if g_no_d_sup_ids else "")
+            + "   (responder under-uses / claims-without-basis)"
+        )
+        lines.append(f"    other_disagreement                             : {n_other:>3}")
+        lines.append(f"    total disagreements                            : {n_total_disagree:>3} / {n_both}")
+
+    return lines
+
+
 def _critic_health_section(scored: dict) -> list[str]:
     ch = scored["batch"]["critic_health"]
     lines = ["", _hr(), "CRITIC HEALTH (from audit_log_iterations)", _hr()]
@@ -595,6 +716,8 @@ def build_report(
     judge: dict[str, Any] | None = None,
     judge_action: dict[str, Any] | None = None,
     pairwise: dict[str, Any] | None = None,
+    judge_evd_gold: dict[str, Any] | None = None,
+    judge_evd_draft: dict[str, Any] | None = None,
 ) -> str:
     """
     Assemble the full stratified report as a single string.
@@ -621,6 +744,7 @@ def build_report(
         _judge_grounding_section(judge),
         _judge_action_section(judge_action),
         _pairwise_section(pairwise),
+        _retrieval_judges_section(scored, records, judge_evd_gold, judge_evd_draft),
         _critic_health_section(scored),
         _gating_section(gating),
     ]
@@ -636,5 +760,10 @@ def print_report(
     judge: dict[str, Any] | None = None,
     judge_action: dict[str, Any] | None = None,
     pairwise: dict[str, Any] | None = None,
+    judge_evd_gold: dict[str, Any] | None = None,
+    judge_evd_draft: dict[str, Any] | None = None,
 ) -> None:
-    print(build_report(cases, records, scored, gating, judge, judge_action, pairwise))
+    print(build_report(
+        cases, records, scored, gating, judge, judge_action, pairwise,
+        judge_evd_gold, judge_evd_draft,
+    ))

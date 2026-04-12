@@ -1,5 +1,5 @@
 """
-evals/scorers/deterministic.py — Pure-function scorers (M5 Step 5).
+evals/scorers/deterministic.py — Pure-function scorers.
 
 Each per-case scorer takes (case, result) and returns a small dict.
 Batch-level scorers take (all_records) and return aggregate dicts.
@@ -162,7 +162,7 @@ def retrieval_recall(case: dict, result: dict) -> dict:
 
 def concept_recall(case: dict, result: dict) -> dict:
     """
-    Concept-based retrieval recall (Phase A1 of the layered retrieval plan).
+    Concept-based retrieval recall.
 
     Generalizes the slot/`any_of` shape of `retrieval_recall` into named
     concepts with stable concept_ids. A concept is hit iff any chunk_id in
@@ -175,9 +175,8 @@ def concept_recall(case: dict, result: dict) -> dict:
       - diagnostic lists carry `concept_id` (machine-stable across renames)
 
     Empty `required_concepts` → not_applicable=True.
-    `gate_false_skip` mirrors `retrieval_recall`'s definition exactly so the
-    A1 identity check can compare cases byte-for-byte after the mechanical
-    1:1 migration.
+    `gate_false_skip` mirrors `retrieval_recall`'s definition so the two
+    scorers share the same eligible set.
     """
     concepts = case.get("required_concepts") or []
     if not concepts:
@@ -269,7 +268,7 @@ def concept_recall(case: dict, result: dict) -> dict:
 
 def evidence_sufficiency(case: dict, result: dict) -> dict:
     """
-    Pre-declared sufficient_sets test (Phase A2 of the layered retrieval plan).
+    Pre-declared sufficient_sets test.
 
     A case is sufficient at a given pool iff at least one declared
     sufficient_set has all its concept_ids hit in that pool. Binary per case,
@@ -359,7 +358,7 @@ def evidence_sufficiency(case: dict, result: dict) -> dict:
 
 def relevant_concept_precision(case: dict, result: dict) -> dict:
     """
-    Post-filter chunk-level precision against annotated concepts (Phase A2).
+    Post-filter chunk-level precision against annotated concepts.
 
     Of the chunks the investigator kept (relevant_ids, deduped to a set),
     what fraction belong to ANY required_concept's any_of pool? Surfaces

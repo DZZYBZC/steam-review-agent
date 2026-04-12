@@ -1,0 +1,18 @@
+{
+  "ruling": "partially_supports",
+  "rationale": "The chunk describes enemy modifiers added in a recent update, which shows some responsiveness to combat variety concerns, but does not directly address the player's core complaint about bland enemy *types* and random encounter frequency \u2014 the gold answer needs to acknowledge the feedback as subjective design input without claiming a fix, and this chunk risks being misread as a resolution to a complaint it only tangentially touches.",
+  "cached_at": "2026-04-11T17:21:24.430292",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013",
+    "case_id": "starfield_gameplay_002",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "f28cd79e"
+  },
+  "tokens": {
+    "input": 2736,
+    "output": 108
+  }
+}

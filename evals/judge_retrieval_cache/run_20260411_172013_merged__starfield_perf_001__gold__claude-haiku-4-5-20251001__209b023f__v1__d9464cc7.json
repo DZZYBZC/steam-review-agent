@@ -1,0 +1,18 @@
+{
+  "ruling": "does_not_support",
+  "rationale": "The retrieved chunks describe Free Lanes and Cruise Mode, which allow continuous space travel without loading screens between planets in a system \u2014 directly addressing the player's core complaint about loading-screen frequency. An ideal responder given these chunks would be tempted to cite them as a fix, contradicting the gold answer's requirement to set no_action and avoid overclaimed_fix. The notes explicitly state the complaint is an architectural design choice with no actionable signal, and that Ship Optimization patches do not address the core issue \u2014 yet these chunks present a feature that materially reduces loading-screen transitions, creating a misleading evidence pool that points toward a fix the gold answer must disown.",
+  "cached_at": "2026-04-11T17:46:05.076176",
+  "cache_key_components": {
+    "run_file_basename": "run_20260411_172013_merged",
+    "case_id": "starfield_perf_001",
+    "judge_kind": "gold",
+    "judge_model": "claude-haiku-4-5-20251001",
+    "skill_sha8": "209b023f",
+    "judge_input_version": 1,
+    "user_message_sha8": "d9464cc7"
+  },
+  "tokens": {
+    "input": 3008,
+    "output": 169
+  }
+}

@@ -259,7 +259,7 @@ def main():
     parser.add_argument("--app-id", type=str, default=None, help="Filter by Steam app id")
     parser.add_argument("--category", type=str, default=None, help="Filter by annotated/classifier category")
     parser.add_argument("--case-id", type=str, default=None, help="Run a single case by case_id")
-    parser.add_argument("--workers", type=int, default=4, help="Parallel workers for case execution (default: 4)")
+    parser.add_argument("--workers", type=int, default=10, help="Parallel workers for case execution (default: 10)")
     args = parser.parse_args()
 
     filters = {

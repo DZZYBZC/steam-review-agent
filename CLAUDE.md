@@ -71,7 +71,7 @@ steam-review-agent/
 - Test agent (single review, real LLM calls): `python test_agent.py [--category <cat>] [--review-id <id>] [--list]`
 - Test graph compilation: `python test_graph.py`
 - Manage cluster notes: `python resolve_note.py {list <app_id> <category> | resolve <note_id> | reactivate <note_id>}`
-- Run evals (full): `python evals/run_evals.py` (default `--workers 4`; use `--workers 10` for ~3 min wall clock)
+- Run evals (full): `python evals/run_evals.py` (default `--workers 10`, ~3 min wall clock)
 - Run evals (quick subset): `python evals/run_evals.py --quick`
 - Run evals (single case): `python evals/run_evals.py --case-id <case_id>`
 - Run evals (by category): `python evals/run_evals.py --category <category>`

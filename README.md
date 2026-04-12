@@ -496,14 +496,14 @@ export HF_TOKEN=...
 | `python main.py <app_id> [max_reviews]` | Run the data pipeline end-to-end: fetch → clean → classify → cluster → stats. Default `max_reviews=500`. Add `--skip-fetch` to reuse rows already in the database. |
 | `python test_agent.py [--category CAT] [--review-id ID]` | Run a single real review through the live agent graph with real LLM calls. Pauses at the human approval gate for a manual decision. Use `--list` to print the available cases. |
 | `python test_graph.py` | End-to-end graph smoke test on a hardcoded "game crashes in dungeon" review. Auto-approves at the human gate. ~3-5 real LLM calls, ~30s wall clock, costs a few cents. |
-| `python evals/run_evals.py` | Run the full eval suite (56 golden cases). `--quick` for a subset, `--case-id <id>` for a single case, `--app-id <id>` and `--category <cat>` for filters, `--workers N` to control parallelism (default 4). Writes a snapshot to `evals/snapshots/` and a raw run JSON to `evals/runs/`. |
+| `python evals/run_evals.py` | Run the full eval suite (56 golden cases). `--quick` for a subset, `--case-id <id>` for a single case, `--app-id <id>` and `--category <cat>` for filters, `--workers N` to control parallelism (default 10). Writes a snapshot to `evals/snapshots/` and a raw run JSON to `evals/runs/`. |
 | `python resolve_note.py {list <app_id> <category> \| resolve <note_id> \| reactivate <note_id>}` | Manage the cluster notes lifecycle. |
 
 ### Expected runtime and cost (rough)
 
 - **Data pipeline** (500 reviews, fresh fetch): ~5–10 min wall clock; cost dominated by classification (~500 Haiku calls × ~300 input tokens ≈ ~$0.10).
 - **Single-review agent run** (`test_agent.py`): ~30–60 sec including retrieval; ~5–15K total tokens depending on revision iterations; <$0.05 per review (Sonnet on the responder, Haiku elsewhere).
-- **Full eval suite** (`run_evals.py`, 56 cases): **~3 min wall clock at `--workers 10`** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + 5s busy_timeout to avoid lock contention). Sequential default (`--workers 4`) is closer to ~10 min; pre-parallelization sequential was 25–35 min. ~1.5M total tokens; on the order of $2–3 per full run with all judges enabled.
+- **Full eval suite** (`run_evals.py`, 56 cases): **~3 min wall clock at `--workers 10`** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + 5s busy_timeout to avoid lock contention). Sequential (`--workers 1`) is closer to ~25 min; pre-parallelization sequential was 25–35 min. ~1.5M total tokens; on the order of $2–3 per full run with all judges enabled.
 - **Cached judge re-score** (offline against a saved run JSON): ~30 sec; $0 (cache hit on every flagged case).
 
 Numbers are approximations from the latest eval run. Actual cost depends on Anthropic pricing at run time.

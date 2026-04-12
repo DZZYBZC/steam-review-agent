@@ -3,13 +3,13 @@ evals/scorers/judge_retrieval.py — Split retrieval judges.
 
 Two LLM judges that share input plumbing but answer different questions:
 
-  - judge_evidence_vs_gold  (kind="gold")  : Pure retrieval signal.
+  - judge_pool_sufficiency  (kind="gold")  : Pure retrieval signal.
         Inputs: review, ideal_action, case_notes, retrieved_chunks.
         Question: "could an ideal responder produce the gold-intent answer
         from this evidence pool alone?"
         Never sees the draft. Never penalizes the responder.
 
-  - judge_evidence_vs_draft (kind="draft") : Joint retrieval+drafting signal.
+  - judge_draft_grounding   (kind="draft") : Joint retrieval+drafting signal.
         Inputs: review, draft_response, retrieved_chunks.
         Question: "do these chunks actually support the claims the draft makes?"
         Never sees the gold answer.
@@ -73,8 +73,8 @@ RETRIEVAL_JUDGE_MAX_TOKENS = 600
 
 JUDGE_CACHE_DIR = Path(__file__).resolve().parents[1] / "judge_retrieval_cache"
 
-GOLD_SKILL_NAME = "judge-evidence-vs-gold"
-DRAFT_SKILL_NAME = "judge-evidence-vs-draft"
+GOLD_SKILL_NAME = "judge-pool-sufficiency"
+DRAFT_SKILL_NAME = "judge-draft-grounding"
 GOLD_SKILL_PATH = Path(__file__).resolve().parents[2] / "skills" / GOLD_SKILL_NAME / "SKILL.md"
 DRAFT_SKILL_PATH = Path(__file__).resolve().parents[2] / "skills" / DRAFT_SKILL_NAME / "SKILL.md"
 
@@ -359,7 +359,7 @@ def _judge_one(
     }
 
 
-def judge_evidence_vs_gold(
+def judge_pool_sufficiency(
     case: dict,
     record: dict,
     run_file_basename: str,
@@ -391,7 +391,7 @@ def judge_evidence_vs_gold(
     )
 
 
-def judge_evidence_vs_draft(
+def judge_draft_grounding(
     case: dict,
     record: dict,
     run_file_basename: str,
@@ -454,7 +454,7 @@ def _run_batch(
     n_from_cache = 0
 
     judge_fn = (
-        judge_evidence_vs_gold if judge_kind == "gold" else judge_evidence_vs_draft
+        judge_pool_sufficiency if judge_kind == "gold" else judge_draft_grounding
     )
 
     for record in records:
@@ -488,25 +488,25 @@ def _run_batch(
     }
 
 
-def judge_evidence_vs_gold_batch(
+def judge_pool_sufficiency_batch(
     cases: list[dict],
     records: list[dict],
     run_file_basename: str | None = None,
 ) -> dict:
     """
-    Run the gold-judge over every case where the predicate fires
+    Run the pool-sufficiency judge over every case where the predicate fires
     (non-empty relevant_ids AND non-empty notes-or-ideal_action).
     """
     return _run_batch(cases, records, run_file_basename, "gold")
 
 
-def judge_evidence_vs_draft_batch(
+def judge_draft_grounding_batch(
     cases: list[dict],
     records: list[dict],
     run_file_basename: str | None = None,
 ) -> dict:
     """
-    Run the draft-judge over every case where the predicate fires
+    Run the draft-grounding judge over every case where the predicate fires
     (non-empty relevant_ids AND non-empty drafted_response).
     """
     return _run_batch(cases, records, run_file_basename, "draft")

@@ -214,6 +214,13 @@ def _layered_retrieval_section(scored: dict) -> list[str]:
     ]
     precision_mean = _mean([s["precision"] for s in precision_pool])
 
+    # citation-concept precision
+    cite_prec_pool = [
+        s["citation_concept_precision"] for s in per_case.values()
+        if not s["citation_concept_precision"].get("not_applicable")
+    ]
+    cite_prec_mean = _mean([s["precision"] for s in cite_prec_pool])
+
     # sufficiency
     suff_pool = [
         s["evidence_sufficiency"] for s in per_case.values()
@@ -242,6 +249,8 @@ def _layered_retrieval_section(scored: dict) -> list[str]:
         f"    [n_scored={len(concept_pool)}, eligible={M}]",
         f"  relevant-concept prec. : {_fmt_float(precision_mean, 3)}"
         f"    [n_scored={len(precision_pool)}, eligible={M}]",
+        f"  citation-concept prec. : {_fmt_float(cite_prec_mean, 3)}"
+        f"    [n_scored={len(cite_prec_pool)}, eligible={M}]",
     ]
     suff_line = (
         f"  sufficiency rate       : src {_fmt_float(suff_src, 3)}    post {_fmt_float(suff_post, 3)}"
@@ -611,8 +620,8 @@ def _retrieval_judges_section(
 
     model = (judge_evd_gold or judge_evd_draft or {}).get("model", "?")
     lines.append(f"  model: {model}")
-    lines.extend(_judge_row("evidence vs gold", judge_evd_gold))
-    lines.extend(_judge_row("evidence vs draft", judge_evd_draft))
+    lines.extend(_judge_row("pool sufficiency", judge_evd_gold))
+    lines.extend(_judge_row("draft grounding", judge_evd_draft))
 
     # Disagreement bucket subsection — both judges must have run on a case.
     g_per_case = (judge_evd_gold or {}).get("per_case", {}) or {}

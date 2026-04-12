@@ -53,6 +53,7 @@ DIFF_METRICS: list[tuple[str, str, str]] = [
     ("sufficiency_postfilter_rate",   "retrieval.sufficiency_postfilter_rate",    ".3f"),
     ("sufficient_sets_coverage_pct",  "retrieval.sufficient_sets_coverage_pct",   ".1f"),
     ("relevant_concept_precision_mean","retrieval.relevant_concept_precision_mean",".3f"),
+    ("citation_concept_precision_mean","retrieval.citation_concept_precision_mean",".3f"),
     ("concept_hit_source_rate",      "retrieval.concept_hit_source_rate",  ".3f"),
     ("concept_hit_relevant_rate",    "retrieval.concept_hit_relevant_rate",".3f"),
     ("n_lost_to_filter",             "retrieval.n_lost_to_filter",         "d"),
@@ -92,18 +93,18 @@ DIFF_METRICS: list[tuple[str, str, str]] = [
     # in either is visible in snapshot diffs (not just terminal output).
     # Disagreement bucket counts likewise live in the diff so the
     # over-claim/under-use ratio is tracked across runs.
-    ("judge_evd_gold_supports",          "judge.evidence_vs_gold.n_supports",            "d"),
-    ("judge_evd_gold_partially_supports","judge.evidence_vs_gold.n_partially_supports",  "d"),
-    ("judge_evd_gold_does_not_support",  "judge.evidence_vs_gold.n_does_not_support",    "d"),
-    ("judge_evd_gold_judge_error",       "judge.evidence_vs_gold.n_judge_error",         "d"),
-    ("judge_evd_gold_predicate_count",   "judge.evidence_vs_gold.n_predicate_eligible",  "d"),
-    ("judge_evd_gold_n_judged",          "judge.evidence_vs_gold.n_judged",              "d"),
-    ("judge_evd_draft_supports",         "judge.evidence_vs_draft.n_supports",           "d"),
-    ("judge_evd_draft_partially_supports","judge.evidence_vs_draft.n_partially_supports","d"),
-    ("judge_evd_draft_does_not_support", "judge.evidence_vs_draft.n_does_not_support",   "d"),
-    ("judge_evd_draft_judge_error",      "judge.evidence_vs_draft.n_judge_error",        "d"),
-    ("judge_evd_draft_predicate_count",  "judge.evidence_vs_draft.n_predicate_eligible", "d"),
-    ("judge_evd_draft_n_judged",         "judge.evidence_vs_draft.n_judged",             "d"),
+    ("judge_evd_gold_supports",          "judge.pool_sufficiency.n_supports",            "d"),
+    ("judge_evd_gold_partially_supports","judge.pool_sufficiency.n_partially_supports",  "d"),
+    ("judge_evd_gold_does_not_support",  "judge.pool_sufficiency.n_does_not_support",    "d"),
+    ("judge_evd_gold_judge_error",       "judge.pool_sufficiency.n_judge_error",         "d"),
+    ("judge_evd_gold_predicate_count",   "judge.pool_sufficiency.n_predicate_eligible",  "d"),
+    ("judge_evd_gold_n_judged",          "judge.pool_sufficiency.n_judged",              "d"),
+    ("judge_evd_draft_supports",         "judge.draft_grounding.n_supports",           "d"),
+    ("judge_evd_draft_partially_supports","judge.draft_grounding.n_partially_supports","d"),
+    ("judge_evd_draft_does_not_support", "judge.draft_grounding.n_does_not_support",   "d"),
+    ("judge_evd_draft_judge_error",      "judge.draft_grounding.n_judge_error",        "d"),
+    ("judge_evd_draft_predicate_count",  "judge.draft_grounding.n_predicate_eligible", "d"),
+    ("judge_evd_draft_n_judged",         "judge.draft_grounding.n_judged",             "d"),
     ("judge_evd_n_with_both_judges",                "judge.evidence_disagreement.n_with_both_judges",                "d"),
     ("judge_evd_n_agreement",                       "judge.evidence_disagreement.n_agreement",                       "d"),
     ("judge_evd_n_gold_supports_draft_no_support",  "judge.evidence_disagreement.n_gold_supports_draft_no_support",  "d"),
@@ -413,6 +414,13 @@ def _build_aggregates(
     ]
     relevant_concept_precision_mean = _mean([s["precision"] for s in precision_scored])
 
+    # Citation-concept precision (same as above but scoped to cited chunks).
+    cite_precision_scored = [
+        s["citation_concept_precision"] for s in per_case.values()
+        if not s["citation_concept_precision"].get("not_applicable")
+    ]
+    citation_concept_precision_mean = _mean([s["precision"] for s in cite_precision_scored])
+
     # Citation subset
     n_cite_ok = sum(1 for s in per_case.values() if s["citation_audit"]["subset_ok"])
     cite_rate = (n_cite_ok / n_scored) if n_scored else None
@@ -517,6 +525,8 @@ def _build_aggregates(
             "n_retrieval_eligible": n_retrieval_eligible,
             "relevant_concept_precision_mean": relevant_concept_precision_mean,
             "n_relevant_concept_precision_scored": len(precision_scored),
+            "citation_concept_precision_mean": citation_concept_precision_mean,
+            "n_citation_concept_precision_scored": len(cite_precision_scored),
         },
         "citation": {
             "subset_ok_rate": cite_rate,
@@ -531,8 +541,8 @@ def _build_aggregates(
             "low_conf_with_cite":   _build_judge_grounding_block(judge),
             "action":               _build_judge_action_block(judge_action),
             "pairwise":             _build_pairwise_block(pairwise),
-            "evidence_vs_gold":     _build_evidence_judge_block(judge_evd_gold),
-            "evidence_vs_draft":    _build_evidence_judge_block(judge_evd_draft),
+            "pool_sufficiency":     _build_evidence_judge_block(judge_evd_gold),
+            "draft_grounding":    _build_evidence_judge_block(judge_evd_draft),
             "evidence_disagreement": _build_evidence_disagreement_block(judge_evd_gold, judge_evd_draft),
         },
         "critic_health": {
@@ -661,7 +671,7 @@ def diff_snapshots(prev: dict, curr: dict) -> list[str]:
             (3, 6): "judge_action (v3→v4), pairwise (v4→v5), AND retrieval recalibration (v5→v6)",
             (2, 6): "judge_grounding (v2→v3), judge_action (v3→v4), pairwise (v4→v5), AND retrieval recalibration (v5→v6)",
             (1, 6): "full schema evolution (v1→v6)",
-            (6, 7): "split retrieval judges added: judge_evidence_vs_gold (pure retrieval) and judge_evidence_vs_draft (joint retrieval+drafting), with disagreement bucket counts",
+            (6, 7): "split retrieval judges added: judge_pool_sufficiency (pure retrieval) and judge_draft_grounding (joint retrieval+drafting), with disagreement bucket counts",
             (5, 7): "retrieval recalibration (v5→v6) AND split retrieval judges (v6→v7)",
             (4, 7): "pairwise (v4→v5), retrieval recalibration (v5→v6), AND split retrieval judges (v6→v7)",
             (1, 7): "full schema evolution (v1→v7)",

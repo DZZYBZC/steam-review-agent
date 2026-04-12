@@ -1,6 +1,3 @@
-"""
-agent/utils.py — Shared helpers for agent nodes.
-"""
 
 import json
 

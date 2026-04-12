@@ -28,7 +28,7 @@ export HF_TOKEN=hf_...
 python test_graph.py
 ```
 
-For the full data pipeline, eval suite, runtime/cost estimates, and other entry points, see [Run it yourself](#10-run-it-yourself) below.
+For the full data pipeline, eval suite, runtime/cost estimates, and other entry points, see [Run it yourself](#run-it-yourself) below.
 
 ---
 
@@ -41,59 +41,7 @@ Approved drafts become few-shot examples for future runs; human-rejected drafts 
 **Not** a chatbot. **Not** an autoresponder. The human-in-the-loop gate is non-negotiable — the agent does the research and drafts; the human ships it.
 
 <details>
-<summary><strong>Worked example — one real review through the full graph</strong></summary>
-
-An actual approved run pulled from `audit_log` (app `2246340`, review `222426809`, run `e6d61c72`). Classifier → `technical_issues`, confidence 0.7. Retrieval hit 5 chunks across 5 different patch versions; the critic approved on the first iteration.
-
-**Review (input):**
-
-> Enjoyable, but fiancee cant play because shes using an AMD card this needs to be fixed (because people with AMD cards deserve to play games too)
-
-**Evidence package (investigator output — what the retriever actually found):**
-
-- `[Ver.1.030.02.02] Bug Fixes: Fixed an issue where the game might fail to launch on certain PCs using AMD Radeon graphics cards.`
-- `[Ver.1.040.03.02] Video Driver Version: Some issues have been identified with AMD Radeon drivers versions 25.10.2 and higher on certain PCs using AMD Radeon graphics cards such as the AMD Radeon RX 5500 XT/7800 XT.`
-- `[Ver.1.041.00.00] Video Driver Version: (same note, repeated)`
-- `[Ver.1.041.01.00] Video Driver Version: (same note, repeated)`
-- `[Ver.1.041.02.00] Video Driver Version: (same note, repeated)`
-
-**Investigator summary:** Ver.1.030.02.02 fixed a launch failure, but subsequent patches flag ongoing driver-compatibility issues on specific AMD cards that remain unresolved. Partial fix + persistent unresolved issue → confidence 0.7.
-
-**Draft response (responder output, Sonnet 4.6):**
-
-> Your fiancée absolutely deserves to play — AMD compatibility is something we've been actively working on. Ver.1.030.02.02 fixed a launch failure affecting certain AMD Radeon cards, but we've since identified ongoing issues with AMD Radeon driver versions 25.10.2 and higher on specific cards including the RX 5500 XT and RX 7800 XT, flagged across several recent patch updates. If her card falls into that category, rolling back to a driver version below 25.10.2 may help in the meantime. We don't have a confirmed permanent fix for the newer driver compatibility issue yet, but the team is aware and it's being tracked.
-
-**Proposed action:** `monitor` — known area, partially addressed, no confirmed fix yet.
-
-**Critic verdict (approved, iteration 0):**
-
-> Cites specific patches and driver versions directly from the evidence, appropriately hedges the unresolved issue, offers a practical workaround (driver rollback). All claims trace to the evidence package. Tone matches the review's constructive nature. `monitor` is appropriate given 0.7 confidence and an ongoing, tracked issue without a confirmed fix.
-
-Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — `source_ids_cited ⊆ relevant_ids` verified deterministically by the critic. The responder cannot cite a patch the investigator did not retrieve.
-
-</details>
-
----
-
-## How the agent processes a single review
-
-1. **Ingest** — fetch reviews from the Steam Web API and persist them
-2. **Clean + dedupe** — strip markup and drop near-duplicates above the configured threshold
-3. **Classify** — assign one of 10 review categories with a confidence score (Haiku)
-4. **Cluster + stats** — group by category in a rolling time window and compute priority signals
-5. **Coordinator entry** — mint a `run_id` and route into the agent graph
-6. **Investigate** — classify the review's emotional tone (Haiku), then check a deterministic category gate (some categories like `other` skip retrieval entirely). Load active cluster notes for the category. If the LLM judges from notes alone that no response is needed, exit early (`no_response_needed`). Otherwise, the investigator LLM (Sonnet 4.6) drives retrieval via Anthropic's tool-use API: it formulates a search query, calls `retrieve_patches` (hybrid vector + BM25 → RRF → cross-encoder rerank), inspects results, and can reformulate and call again (up to 3 total calls)
-7. **Draft** — generate a player-facing reply citing only chunks the investigator retrieved (Sonnet 4.6)
-8. **Critique → Human approval** — validate the evidence chain, tone, and action choice. On approval, the graph interrupts for a manual decision. On action-only rejection, the coordinator freezes the responder's action and routes directly to human approval (no revision). On evidence or drafting rejection, route back to the coordinator for a revise loop (max 3 iterations)
-
-See the [annotated file tree](#9-project-layout) for exact file locations.
-
----
-
-## Architecture
-
-<details>
-<summary><a id="9-project-layout"></a><strong>Project layout (annotated file tree)</strong></summary>
+<summary><strong>Project layout (annotated file tree)</strong></summary>
 
 ```
 steam-review-agent/
@@ -141,8 +89,8 @@ steam-review-agent/
 │   ├── judge-grounding/           # Eval judge: low-confidence citation classifier
 │   ├── judge-action/              # Eval judge: action severity classifier
 │   ├── judge-pairwise/            # Eval judge: revision improvement
-│   ├── judge-evidence-vs-gold/    # Eval judge: retrieval-only — would the pool support an ideal answer?
-│   └── judge-evidence-vs-draft/   # Eval judge: joint retrieval+drafting — does the pool support what the draft claims?
+│   ├── judge-pool-sufficiency/    # Eval judge: retrieval-only — would the pool support an ideal answer?
+│   └── judge-draft-grounding/   # Eval judge: joint retrieval+drafting — does the pool support what the draft claims?
 │
 ├── evals/                       # Evaluation harness
 │   ├── run_evals.py               # Main eval runner (loads cases, runs agent, scores, snapshots)
@@ -159,7 +107,7 @@ steam-review-agent/
 │   │   ├── judge_grounding.py     # LLM judge — low_conf_with_cite ruling
 │   │   ├── judge_action.py        # LLM judge — wrong_action_severity ruling
 │   │   ├── pairwise.py            # LLM judge — revision improvement
-│   │   └── judge_retrieval.py     # LLM judge — split: evidence_vs_gold (retrieval-only) + evidence_vs_draft (joint retrieval+drafting)
+│   │   └── judge_retrieval.py     # LLM judge — split: pool_sufficiency (retrieval-only) + draft_grounding (joint retrieval+drafting)
 │   └── test_sets/
 │       ├── golden.json            # Hand-curated eval cases with expected actions + must_include sources
 │       └── regression.json        # Regression seeds added during eval-driven prompt edits
@@ -171,6 +119,65 @@ steam-review-agent/
 **Naming clash gotcha:** `skills/` holds runtime SKILL.md files loaded by `utils.load_skill()`; `.claude/skills/` holds project-convention skills read by Claude Code only. Different systems, same directory name.
 
 </details>
+
+<details>
+<summary><strong>Worked example — one real review through the full graph</strong></summary>
+
+An actual approved run pulled from `audit_log` (app `2246340`, review `222426809`, run `e6d61c72`). Classifier → `technical_issues`, confidence 0.7. Retrieval hit 5 chunks across 5 different patch versions; the critic approved on the first iteration.
+
+**Review (input):**
+
+> Enjoyable, but fiancee cant play because shes using an AMD card this needs to be fixed (because people with AMD cards deserve to play games too)
+
+**Evidence package (investigator output — what the retriever actually found):**
+
+- `[Ver.1.030.02.02] Bug Fixes: Fixed an issue where the game might fail to launch on certain PCs using AMD Radeon graphics cards.`
+- `[Ver.1.040.03.02] Video Driver Version: Some issues have been identified with AMD Radeon drivers versions 25.10.2 and higher on certain PCs using AMD Radeon graphics cards such as the AMD Radeon RX 5500 XT/7800 XT.`
+- `[Ver.1.041.00.00] Video Driver Version: (same note, repeated)`
+- `[Ver.1.041.01.00] Video Driver Version: (same note, repeated)`
+- `[Ver.1.041.02.00] Video Driver Version: (same note, repeated)`
+
+**Investigator summary:** Ver.1.030.02.02 fixed a launch failure, but subsequent patches flag ongoing driver-compatibility issues on specific AMD cards that remain unresolved. Partial fix + persistent unresolved issue → confidence 0.7.
+
+**Draft response (responder output, Sonnet 4.6):**
+
+> Your fiancée absolutely deserves to play — AMD compatibility is something we've been actively working on. Ver.1.030.02.02 fixed a launch failure affecting certain AMD Radeon cards, but we've since identified ongoing issues with AMD Radeon driver versions 25.10.2 and higher on specific cards including the RX 5500 XT and RX 7800 XT, flagged across several recent patch updates. If her card falls into that category, rolling back to a driver version below 25.10.2 may help in the meantime. We don't have a confirmed permanent fix for the newer driver compatibility issue yet, but the team is aware and it's being tracked.
+
+**Proposed action:** `monitor` — known area, partially addressed, no confirmed fix yet.
+
+**Critic verdict (approved, iteration 0):**
+
+> Cites specific patches and driver versions directly from the evidence, appropriately hedges the unresolved issue, offers a practical workaround (driver rollback). All claims trace to the evidence package. Tone matches the review's constructive nature. `monitor` is appropriate given 0.7 confidence and an ongoing, tracked issue without a confirmed fix.
+
+Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — `source_ids_cited ⊆ relevant_ids` verified deterministically by the critic. The responder cannot cite a patch the investigator did not retrieve.
+
+</details>
+
+---
+
+## How the agent processes a single review
+
+1. **Ingest** — fetch reviews from the Steam Web API and persist them
+2. **Clean + dedupe** — strip markup and drop near-duplicates above the configured threshold
+3. **Classify** — assign one of 10 review categories with a confidence score (Haiku)
+4. **Cluster + stats** — group by category in a rolling time window and compute priority signals
+5. **Coordinator entry** — mint a `run_id` and route into the agent graph
+6. **Investigate**
+   - Classify the review's emotional tone (Haiku)
+   - Check a deterministic category gate — some categories like `other` skip retrieval entirely
+   - Load active cluster notes for the category
+   - If the LLM judges from notes alone that no response is needed, exit early (`no_response_needed`)
+   - Otherwise, the investigator LLM (Sonnet 4.6) drives retrieval via Anthropic's tool-use API: formulate a search query, call `retrieve_patches` (hybrid vector + BM25 → RRF → cross-encoder rerank), inspect results, and optionally reformulate and call again (up to 3 total calls)
+7. **Draft** — generate a player-facing reply citing only chunks the investigator retrieved (Sonnet 4.6)
+8. **Critique → Human approval**
+   - Validate the evidence chain, tone, and action choice
+   - On approval → graph interrupts for a manual human decision
+   - On action-only rejection → coordinator freezes the responder's action and routes directly to human approval (no revision)
+   - On evidence or drafting rejection → route back to the coordinator for a revise loop (max 3 iterations)
+
+---
+
+## Architecture
 
 ```
           ┌────────────────────┐
@@ -218,24 +225,15 @@ steam-review-agent/
 
 Five nodes: `coordinator` (plain Python), `investigator`, `responder`, `critic`, `human_approval`. Graph compiles with `interrupt_before=["human_approval"]` — every run pauses for human decision before completing.
 
-**Per-node model assignments.** Classifier, tone classifier, cluster summarizer, critic, and eval judges all run on **Haiku 4.5** — narrow extractive/classifier tasks. The investigator and responder run on **Sonnet 4.6** — the investigator because query formulation and evidence evaluation benefit from a stronger model (sufficiency lifted ~14pp when upgraded from Haiku), the responder because it generates player-visible prose.
+**Why the coordinator is plain Python, not an LLM:** the workflow is fixed and the branching is knowable in advance. Model-side tool-calling would trade a five-line Python router for a stochastic dispatcher that costs tokens every hop and can't be locked down in evals. Tool-calling earns its place when the path isn't knowable; this path is.
+
+**Per-node model assignments:**
+- **Haiku 4.5** — classifier, tone classifier, cluster summarizer, critic, and all eval judges (narrow extractive/classifier tasks)
+- **Sonnet 4.6** — investigator and responder
+  - Investigator: query formulation and evidence evaluation benefit from a stronger model (sufficiency lifted ~14pp when upgraded from Haiku)
+  - Responder: generates player-visible prose
 
 ---
-
-<details>
-<summary><strong>Key design decisions and alternatives rejected</strong></summary>
-
-Seven choices that look like accidents until you know why:
-
-- **Deterministic graph orchestration, not model-side tool selection.** The workflow is fixed and the branching is knowable in advance. Model-side tool-calling would trade a five-line Python router for a stochastic dispatcher that costs tokens every hop and can't be locked down in evals. Tool-calling earns its place when the path isn't knowable; this path is.
-- **Coordinator is plain Python, not an LLM.** Routing logic is a five-line if-statement. An LLM here would burn tokens and add non-determinism to the *control flow* — exactly where you want determinism.
-- **Reranker scores are not passed to the investigator.** Uncalibrated floats anchor LLM reasoning on reranker noise. Reranker orders; investigator reasons about content.
-- **Pydantic at LLM trust boundary, TypedDict inside the graph.** Validation on every state transition is expensive and catches nothing new. The boundary is LLM → Python; inside the graph is already Python.
-- **Sibling judge files, not a base class.** Cloned intentionally. Five sibling judges across four files now exist; the right `_judge_base.py` shape is visible *because* multiple exercised files exist — guessing from one would pick the wrong abstraction.
-- **`judge_error` is its own ruling.** Collapsing API/parse/validation failures into `tolerable_disagreement` silently undercounts real failures. Dedicated bucket surfaces infra misfires in the snapshot diff.
-- **Cluster-note staleness filters at read time, not write time.** 90-day-old notes are filtered out of investigator context, not deleted. Preserves audit trail; reactivation is one row.
-
-</details>
 
 <details>
 <summary><strong>Retrieval pipeline (hybrid RAG)</strong></summary>
@@ -253,11 +251,22 @@ Implementation: `pipeline/retrieve.py`.
 <details>
 <summary><a id="critic-revision-loop"></a><strong>Critic ↔ revision loop and run identity</strong></summary>
 
-**Three rejection kinds.** A `drafting` rejection routes the responder into a re-draft without re-investigating; an `evidence` rejection routes back through the coordinator to the investigator, with the critic's `retrieval_hint` seeding the next query; an `action` rejection (only the action check failed, all other checks passed) is intercepted by the coordinator before it reaches the responder. Each iteration writes to `audit_log_iterations` (draft, critique, reason type, hint) for offline analysis.
+**Three rejection kinds.**
+- `drafting` — routes the responder into a re-draft without re-investigating
+- `evidence` — routes back through the coordinator to the investigator, with the critic's `retrieval_hint` seeding the next query
+- `action` — only the action check failed, all other checks passed; intercepted by the coordinator before it reaches the responder
+- Each iteration writes to `audit_log_iterations` (draft, critique, reason type, hint) for offline analysis
 
-**Action-freeze override.** When the critic rejects solely on action grounds (`reason_type="action"`), the coordinator freezes the responder's current `proposed_action` and routes directly to `human_approval`, skipping the revision loop entirely. The freeze persists until the human acts: approval ends the run with the frozen action; rejection clears the freeze and re-enters the revision loop normally. Action-only thrash loops are broken at the first rejection.
+**Action-freeze override.**
+- When the critic rejects solely on action grounds (`reason_type="action"`), the coordinator freezes the responder's current `proposed_action` and routes directly to `human_approval`, skipping the revision loop
+- Approval ends the run with the frozen action; rejection clears the freeze and re-enters the revision loop normally
+- Action-only thrash loops are broken at the first rejection
 
-**Human action override at the gate.** The human approval step is not a binary approve/reject. On approval, the caller can inject an optional `human_action_override` (one of `config.PROPOSED_ACTIONS`) to swap the action label in a single shot — useful when the draft reads fine but the reviewer disagrees with the `proposed_action`, which otherwise would cost a full revision cycle with no guarantee the redraft lands on the desired action. Precedence on approve is resolved linearly: valid override > `frozen_action` > current action, so an invalid override (typo) falls through to the existing frozen-action restore rather than silently skipping it. Rejection ignores the override and clears it on the way back into the revision loop.
+**Human action override at the gate.**
+- Not a binary approve/reject — on approval, the caller can inject an optional `human_action_override` (one of `config.PROPOSED_ACTIONS`) to swap the action label in a single shot
+- Useful when the draft reads fine but the reviewer disagrees with the `proposed_action`, which otherwise would cost a full revision cycle
+- Precedence on approve: valid override > `frozen_action` > current action (invalid override falls through to frozen-action restore)
+- Rejection ignores the override and clears it on the way back into the revision loop
 
 **Run identity.** Coordinator mints a UUID `run_id` on first entry; both `audit_log` and `audit_log_iterations` carry it, so a review's full revision history can be reassembled from the DB alone.
 
@@ -287,9 +296,21 @@ The agent matters; the eval system is what made it iterable. Each block below is
 <details>
 <summary><strong>Layered scoring, cache key, and judge_error isolation</strong></summary>
 
-**Layered scoring.** Deterministic scorers run first (`deterministic.py`, `gating_accuracy.py`) and catch hard violations cheaply. LLM judges only see cases the deterministic scorers flag. Five sibling judges across four files: `judge_grounding.py` (low-confidence citations), `judge_action.py` (action-severity disagreements), `pairwise.py` (did the revision loop improve the draft), and `judge_retrieval.py` housing **two** judges that share infrastructure but score independently — `evidence_vs_gold` (would the post-filter pool support an ideal answer?) and `evidence_vs_draft` (does the pool support what the draft actually claims?). The delta between the two surfaces responder over-claim vs under-use.
+**Layered scoring.**
+- Deterministic scorers run first (`deterministic.py`, `gating_accuracy.py`) and catch hard violations cheaply
+- LLM judges gate on different criteria: grounding and action judges only see cases the deterministic scorers flag; pairwise and retrieval judges run on all eligible cases independently
+- Five sibling judges across four files:
+  - `judge_grounding.py` — low-confidence citations
+  - `judge_action.py` — action-severity disagreements
+  - `pairwise.py` — did the revision loop improve the draft
+  - `judge_retrieval.py` — houses **two** judges that share infrastructure but score independently: `pool_sufficiency` (would the post-filter pool support an ideal answer?) and `draft_grounding` (does the pool support what the draft actually claims?)
+- The delta between the two retrieval judges surfaces responder over-claim vs under-use
 
-**Cache key.** sha256 over `run_file_basename`, `case_id`, `JUDGE_MODEL`, `skill_sha8`, `JUDGE_INPUT_VERSION`, `user_message_sha8`. The retrieval judges add a 7th component (`judge_kind` ∈ {`gold`, `draft`}) so the two sibling judges share `judge_retrieval_cache/` without collision. Identical inputs → free re-run; any input change invalidates cleanly. `skill_sha8` prevents cross-judge collisions in the shared cache directory.
+**Cache key.**
+- sha256 over `run_file_basename`, `case_id`, `JUDGE_MODEL`, `skill_sha8`, `JUDGE_INPUT_VERSION`, `user_message_sha8`
+- Retrieval judges add a 7th component (`judge_kind` ∈ {`gold`, `draft`}) so the two sibling judges share `judge_retrieval_cache/` without collision
+- Identical inputs → free re-run; any input change invalidates cleanly
+- `skill_sha8` prevents cross-judge collisions in the shared cache directory
 
 **Isolated `judge_error` bucket.** API / parse / schema failures are ruled `judge_error`, not absorbed into `tolerable_disagreement`. Surfaces separately in the snapshot, diff, and reporter — a misfiring judge can never pass as healthy.
 
@@ -298,7 +319,11 @@ The agent matters; the eval system is what made it iterable. Each block below is
 <details>
 <summary><strong>Lock-then-edit discipline and snapshot diff</strong></summary>
 
-**Lock the gate before any prompt edit.** Acceptance gate written to `evals/_negative_controls_locked.md` before every eval-driven edit: positive cases that must improve, negative cases that must not regress, semantic spot checks, aggregate metric. Stop rule: one coordinated edit + one rerun. **Cache proof = offline re-score against the saved JSON**, not a second live run (a second live run mints a fresh `run_file_basename` and forces 100% cache miss — proves nothing).
+**Lock the gate before any prompt edit.**
+- Acceptance gate written to `evals/_negative_controls_locked.md` before every eval-driven edit
+- Gate includes: positive cases that must improve, negative cases that must not regress, semantic spot checks, aggregate metric
+- Stop rule: one coordinated edit + one rerun
+- Cache proof = offline re-score against the saved JSON, not a second live run (a second live run mints a fresh `run_file_basename` and forces 100% cache miss)
 
 **Snapshot diff with schema versioning.** Every snapshot carries `schema_version`; the diff annotates version transitions (e.g., `4 → 5: pairwise judge added`). No silent metric drift.
 
@@ -331,7 +356,7 @@ Nineteen iterations. Three reverted, one partial success, fifteen shipped — ho
 | 16 | `[infra]` Parallel eval execution | shipped | SQLite WAL + busy_timeout on storage + checkpointer; ThreadPoolExecutor + `--workers` flag in `run_evals`; warmup-on-main-thread for retrieval models. Wall-clock 25–35 min sequential → ~3 min at workers=10. Iteration speed only — no quality movement |
 | 17 | Phase A1 — concept_recall + 1:1 migration | shipped | New `concept_recall` scorer; mechanical backfill of slots → `required_concepts`. Identity check vs `retrieval_recall` byte-equal per case (the whole point of A1 in isolation) |
 | 18 | Phase A2 — manual concept cleanup + sufficiency | shipped | Manual concept merges, equivalent-chunk additions, `sufficient_sets` authoring (100% coverage across retrieval-eligible). Adds `evidence_sufficiency` + `relevant_concept_precision`. First snapshot where concept recall legitimately diverges from slot recall |
-| 19 | Phase B — split retrieval judges | shipped | `judge_evidence_vs_gold` (retrieval-only) and `judge_evidence_vs_draft` (joint), shared infra in `judge_retrieval.py`. Schema v7. Disentangles "is the evidence enough for an ideal answer?" from "does the evidence back the draft's actual claims?" |
+| 19 | Phase B — split retrieval judges | shipped | `judge_pool_sufficiency` (retrieval-only) and `judge_draft_grounding` (joint), shared infra in `judge_retrieval.py`. Schema v7. Disentangles "is the evidence enough for an ideal answer?" from "does the evidence back the draft's actual claims?" |
 
 *Why Iter16 used threads, not asyncio:* the agent graph, Anthropic SDK calls, LangGraph checkpointer, and SQLite are all sync; switching to asyncio would have meant rewriting every node, every tool call, every DB access, and every test, for an I/O-bound workload where the GIL releases during the wait and a thread pool gives effectively the same throughput. WAL + busy_timeout on the SQLite connections handles the only real shared-state contention — a two-line pragma change instead of a graph rewrite.
 
@@ -347,46 +372,59 @@ Latest full-eval run (56 cases, schema v7). Investigator upgraded to Sonnet 4.6;
 
 The metrics below cite four distinct populations: **total cases** (56 — the full golden set), **action-eligible** (total minus no-response cases and infra errors — varies slightly run-to-run due to stochastic no-response gating), **retrieval-eligible** (22 — cases with hand-annotated must-include chunk IDs), and **judge-eligible** (cases where the agent retrieved a non-empty post-filter pool, scored by the two retrieval judges — also varies run-to-run). Row labels reference these bases by name.
 
+**Coverage & actions** (56 total cases across 5 games, 11–12 each)
+
 | Metric | Value |
 |---|---|
-| Cases evaluated | **56 total cases** (across 5 games, 11–12 cases each) |
 | Action correctness | **76.9%** (30 / 39 action-eligible cases; 0 infra errors) |
 | Effective first-pass rate | **84.6%** (across action-eligible cases — critic approved or action-freeze override at iter0) |
 | Gating accuracy | **94.3%** (across all 56 cases — 10 true_skip / 40 true_retrieve / 3 false_skip / 0 false_retrieve / 3 unknown) |
-| Hard grounding violations | **0** (across all 56 cases) |
-| Citation chain-of-custody | **100%** (across all 56 cases — `source_ids_cited ⊆ relevant_ids` deterministic) |
-| Concept recall — source / post-filter | **0.719 / 0.675** (across retrieval-eligible cases) |
-| Sufficiency — at-source / post-filter | **0.636 / 0.636** (across retrieval-eligible cases) |
-| Judge: evidence vs gold | supports 14 / partial 17 / no_support 4 / judge_error 0 (35 judge-eligible cases) |
-| Judge: evidence vs draft | supports 22 / partial 12 / no_support 1 / judge_error 0 (35 judge-eligible cases) |
-| Retrieval-vs-draft disagreement | 17 agreement / 18 disagreement (35 judge-eligible cases) — within disagreements: **2 strong under-use, 1 over-claim**, 15 other |
-| Total tokens | **~1.5M** |
+
+**Retrieval quality** (22 retrieval-eligible cases — cases with hand-annotated must-include chunk IDs)
+
+| Metric | Value |
+|---|---|
+| Concept recall — source / post-filter | **0.719 / 0.675** |
+| Sufficiency — at-source / post-filter | **0.636 / 0.636** |
+| Relevant-concept precision (pool) | **0.326** (cases with a non-empty post-filter pool) |
+| Citation-concept precision (cited) | **0.406** (cases where the responder cited at least one chunk) |
+
+**Judge rulings** (35 judge-eligible cases — cases where the agent retrieved a non-empty post-filter pool)
+
+| Metric | Value |
+|---|---|
+| Pool sufficiency | supports 14 / partial 17 / no_support 4 / judge_error 0 |
+| Draft grounding | supports 22 / partial 12 / no_support 1 / judge_error 0 |
+| Disagreement | 17 agreement / 18 disagreement — within disagreements: **2 strong under-use, 1 over-claim**, 15 other |
 
 #### Where the numbers come from
 
-- **Retrieval — concept recall and sufficiency.** The concept row generalizes hand-listed slots into named concepts, so equivalent chunks the original annotator missed no longer mark a case as a miss. Sufficiency answers the operational question directly — *did the retriever bring back enough evidence to support the right answer?* — pre-declared at full annotation coverage and promoted to a primary retrieval metric per the layered-eval headline rule. Two additional diagnostics live in the snapshot but are omitted from the table for brevity: legacy slot recall (kept as a debuggability floor so historical snapshots remain comparable) and relevant-concept precision (share of kept chunks mapping to any annotated concept).
-- **Retrieval-vs-draft disagreement is the new dominant signal.** The two retrieval judges split usefulness into pure retrieval signal (could an ideal responder produce the right answer from this evidence?) and joint retrieval+drafting signal (does the evidence back what the draft actually claims?). The strong under-use diagonal — gold says the evidence is enough, draft fails to use it — flags responses that left load-bearing evidence on the floor. The strong over-claim diagonal — gold says the evidence isn't enough, draft asserts a fix anyway — flags fabricated claims. Under-use dropped after upgrading the investigator to Sonnet (better evidence packages). Over-claim is near-zero — the responder remains conservative.
-- **Action correctness.** Action-freeze (see [Critic ↔ revision loop](#critic-revision-loop)) preserves the responder's action when the critic over-corrects at the `monitor` ↔ `investigate` boundary. Boundary-sharpening rules from Iter15 are still in effect; the metric carries ~5pp run-to-run variance from stochasticity across full runs with identical code.
-- **Critic approvals.** The critic still over-rejects on action grounds at the node level, but action-freeze intercepts those before they cause thrash. Boundary-sharpening rules were added to the critic prompt; the node-level over-rejection pattern persists, action-freeze does the heavy lifting at the system level. Zero cases hit max_iterations.
-- **Revisions — almost entirely cosmetic.** Nearly every revision routes through the deterministic neutral shortcut; only a handful are flagged as genuine improvements by the pairwise judge, and zero regress. Only drafting/evidence issues trigger revisions.
+- **Retrieval — concept recall, sufficiency, and precision.**
+  - Concept row generalizes hand-listed slots into named concepts — equivalent chunks the original annotator missed no longer mark a case as a miss
+  - Sufficiency answers the operational question directly: *did the retriever bring back enough evidence to support the right answer?* Pre-declared at full annotation coverage, promoted to a primary retrieval metric
+  - Legacy slot recall lives in the snapshot but is omitted from the table for brevity (kept as a debuggability floor so historical snapshots remain comparable)
+  - Pool precision = share of investigator-kept chunks mapping to any annotated concept
+  - Citation precision = same metric scoped to chunks the responder actually cited
+  - When citation > pool, the responder is selectively picking better chunks out of a noisy pool
+- **Retrieval-vs-draft disagreement is the new dominant signal.**
+  - Two retrieval judges split usefulness into pure retrieval signal (could an ideal responder produce the right answer from this evidence?) and joint retrieval+drafting signal (does the evidence back what the draft actually claims?)
+  - Strong under-use diagonal: gold says evidence is enough, draft fails to use it — flags responses that left load-bearing evidence on the floor
+  - Strong over-claim diagonal: gold says evidence isn't enough, draft asserts a fix anyway — flags fabricated claims
+  - Under-use dropped after upgrading the investigator to Sonnet (better evidence packages)
+  - Over-claim is near-zero — the responder remains conservative
 
-### Key takeaways
+### Open gaps
 
-- **Grounding and citation discipline are strong.** 100% citation chain-of-custody, zero hard grounding violations. The `source_ids → relevant_ids → source_ids_cited` subset check is doing its job — the responder cannot fabricate citations.
-- **Action correctness and throughput remain healthy.** Action correctness is in the mid-to-high 70s, effective first-pass rate is above 80%, and zero cases hit max_iterations.
-- **Revision loop is clean.** Zero regressions, a small handful of genuine improvements caught by the critic.
-- **Layered retrieval evaluation surfaces the retrieval-vs-drafting split.** Concept recall and sufficiency replace fragile slot-level recall as the primary retrieval health metrics; the split retrieval judges separate "did the pool support an ideal answer?" from "did the pool support what the draft actually said?" Under-use dropped after upgrading the investigator to Sonnet; over-claim is near-zero. The next retrieval-side win likely lives on responder-prompt work, not retriever-side work.
+- **Retrieval recall.**
+  - Post-filter is still the dominant gap, but layered metrics give the next investigation a sharper target
+  - Most strong under-use cases have full sufficiency at the post-filter pool — the evidence is there, the responder is not consuming it
+  - Next steps: (a) audit under-use cases for prompt-side fixes that get the responder to consume load-bearing chunks, (b) tighten section-aware chunking on the remaining multi-version patches
 
-<details>
-<summary><a id="open-gaps"></a><strong>Open gaps</strong></summary>
-
-- **Retrieval recall.** Post-filter is still the dominant gap, but the layered metrics give the next investigation a sharper target than before — most of the strong under-use cases have full sufficiency at the post-filter pool, meaning the evidence is there and the responder is not consuming it. Two next steps: (a) audit the under-use cases for prompt-side fixes that get the responder to actually consume the load-bearing chunk, (b) tighten section-aware chunking on the small remaining set of multi-version patches.
-
-- **Critic node-level over-rejection.** The system-level churn is solved (action-freeze), but the critic *node itself* still over-rejects on action grounds at the `monitor` ↔ `investigate` boundary. Disambiguation rules were added to the critic prompt but the over-rejection pattern persists; action-freeze still does the heavy lifting. Broad rubric rewrites look closed as a lever; targeted boundary-sharpening rules improved action correctness but did not materially lift raw iter-0 approval. Any further improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node).
-
-- **Pairwise semantic spot checks — deferred.** Structurally clean, but hand-validated spot checks are queued for the next clean run.
-
-</details>
+- **Critic node-level over-rejection.**
+  - System-level churn is solved (action-freeze), but the critic *node itself* still over-rejects on action grounds at the `monitor` ↔ `investigate` boundary
+  - Disambiguation rules were added to the critic prompt — over-rejection pattern persists; action-freeze still does the heavy lifting
+  - Broad rubric rewrites look closed as a lever; targeted boundary-sharpening rules improved action correctness but did not materially lift raw iter-0 approval
+  - Further improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node)
 
 ---
 
@@ -405,8 +443,7 @@ The metrics below cite four distinct populations: **total cases** (56 — the fu
 
 ---
 
-<details>
-<summary><a id="10-run-it-yourself"></a><strong>Run it yourself (full setup and entry points)</strong></summary>
+## Run it yourself
 
 ### Prerequisites
 
@@ -446,40 +483,3 @@ export HF_TOKEN=...
 - **Cached judge re-score** (offline against a saved run JSON): ~30 sec; $0 (cache hit on every flagged case).
 
 Numbers are approximations from the latest eval run. Actual cost depends on Anthropic pricing at run time.
-
-</details>
-
----
-
-<details>
-<summary><strong>Design notes — what I learned</strong></summary>
-
-Five things I'd carry into the next project:
-
-- **Lock the eval gate before every prompt edit.** The clean wins were locked first; the blow-ups weren't. Without the lock file, prompt editing is gambling with stochastic feedback.
-- **Prompt-text edits have limits — know when to move to graph-level interventions.** Rearranging and removing the critic's rung definitions both failed identically: the model reconstructed the semantics from action names alone. Two failed experiments closed the class empirically. Accepting the critic's judgment as-is and intercepting at the graph level was a smaller, more targeted fix than any prompt edit could have been.
-- **`judge_error` gets its own bucket.** Collapsing infra failures into a substantive ruling silently undercounts real failures. One extra column in the snapshot is a small price for misfiring judges that can't pass as healthy.
-- **Sibling-clone, then extract.** Judge files were cloned intentionally rather than abstracted early. The right `_judge_base.py` shape is only visible because multiple real usages exist — guessing from one example would have picked the wrong abstraction.
-- **Eval-driven boundary analysis beats broad prompt rewrites.** Analyzing the specific wrong cases to extract targeted disambiguation rules (7 boundary patterns from 11 mismatches) moved action correctness more reliably than broad rubric refactors. Narrow contrastive rules ("X, not Y") sharpen decision boundaries without destabilizing adjacent cases.
-
-</details>
-
-<details>
-<summary><strong>What's next</strong></summary>
-
-**Retrieval**
-
-- **Get the responder to consume load-bearing chunks.** The dominant signal in the disagreement display is strong under-use — the pool already supports the answer in most cases; the responder is leaving evidence on the floor. Highest-leverage next move is responder-side prompt work informed by the under-use cases.
-- **Retrieval-only replay eval.** Isolating retrieval-pipeline edits from full-agent stochasticity is still useful for any future retriever or chunker change; the layered metrics give it a sharper headline than before.
-
-**Judged eval discipline**
-
-- **Lock retrieval judge spot checks.** Six cases (three per judge — one per ruling) hand-picked from the current snapshot, named by case ID and expected ruling, before any future edit to either retrieval skill. Mirrors the spot-check rung-coverage discipline from earlier iterations.
-- **Finish pairwise semantic spot checks.** Structurally clean; hand-validated spot checks deferred to the next clean run.
-- **Vs-baseline pairwise comparison.** Current pairwise scorer compares iter-0 vs final draft within a run. Cross-run comparison (before/after a prompt edit) would surface whether iteration-level improvements compound across the eval suite.
-
-**Code cleanup**
-
-- **Extract `_judge_base.py`.** Five sibling judges across four files now exist — abstraction shape is visible and ready to pull out. The next clone should be the trigger.
-
-</details>

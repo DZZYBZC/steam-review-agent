@@ -1,5 +1,5 @@
 ---
-name: judge-evidence-vs-gold
+name: judge-pool-sufficiency
 description: >
   System prompt for the retrieval-only judge. Rules whether the evidence the
   investigator surfaced is sufficient for an *ideal* responder to produce the

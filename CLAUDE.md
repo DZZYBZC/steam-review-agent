@@ -37,7 +37,7 @@ steam-review-agent/
 │   │   ├── judge_grounding.py # LLM judge for low_conf_with_cite flag
 │   │   ├── judge_action.py    # LLM judge for wrong_action_severity
 │   │   ├── pairwise.py        # LLM judge for revision-loop improvement
-│   │   └── judge_retrieval.py # LLM judge — split: evidence_vs_gold + evidence_vs_draft
+│   │   └── judge_retrieval.py # LLM judge — split: pool_sufficiency + draft_grounding
 │   └── test_sets/             # Golden set + regression seeds
 ├── config.py              # All configuration (models, temperatures, thresholds)
 ├── utils.py               # Shared utilities (load_skill with frontmatter parsing)

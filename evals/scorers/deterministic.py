@@ -430,6 +430,41 @@ def action_correctness(case: dict, result: dict) -> dict:
     }
 
 
+def citation_concept_precision(case: dict, result: dict) -> dict:
+    """
+    Of the chunks the responder cited (source_ids_cited, deduped), what
+    fraction belong to ANY required_concept's any_of pool?
+
+    Companion to relevant_concept_precision (which measures the full
+    post-filter pool). If citation precision > pool precision, the responder
+    is selectively citing the better chunks.
+
+    Empty required_concepts OR empty cited set → not_applicable.
+    """
+    concepts = case.get("required_concepts") or []
+    cited_set = set(result.get("source_ids_cited") or [])
+    if not concepts or not cited_set:
+        return {
+            "precision": None,
+            "n_cited_in_concept": 0,
+            "n_cited": len(cited_set),
+            "not_applicable": True,
+        }
+
+    concept_chunk_set: set[str] = set()
+    for c in concepts:
+        for x in c.get("any_of") or []:
+            concept_chunk_set.add(x)
+
+    in_concept = len(cited_set & concept_chunk_set)
+    return {
+        "precision": round(in_concept / len(cited_set), 3),
+        "n_cited_in_concept": in_concept,
+        "n_cited": len(cited_set),
+        "not_applicable": False,
+    }
+
+
 def citation_audit(case: dict, result: dict) -> dict:
     """
     Verify source_ids_cited ⊆ relevant_ids (Critic invariant: no fabricated
@@ -663,6 +698,7 @@ PER_CASE_SCORERS = {
     "concept_recall": concept_recall,
     "evidence_sufficiency": evidence_sufficiency,
     "relevant_concept_precision": relevant_concept_precision,
+    "citation_concept_precision": citation_concept_precision,
     "action_correctness": action_correctness,
     "citation_audit": citation_audit,
     "evidence_utilization": evidence_utilization,

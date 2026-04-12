@@ -37,8 +37,8 @@ from evals.scorers.gating_accuracy import gating_accuracy_batch
 from evals.scorers.judge_action import judge_action_batch
 from evals.scorers.judge_grounding import judge_grounding_batch
 from evals.scorers.judge_retrieval import (
-    judge_evidence_vs_draft_batch,
-    judge_evidence_vs_gold_batch,
+    judge_draft_grounding_batch,
+    judge_pool_sufficiency_batch,
 )
 from evals.scorers.pairwise import pairwise_batch
 from evals.snapshot import diff_snapshots, load_latest_snapshot, write_snapshot
@@ -375,10 +375,10 @@ def main():
         cases, records, scored, run_file_basename=out_path.stem
     )
     pairwise = pairwise_batch(cases, records, run_file_basename=out_path.stem)
-    judge_evd_gold = judge_evidence_vs_gold_batch(
+    judge_evd_gold = judge_pool_sufficiency_batch(
         cases, records, run_file_basename=out_path.stem
     )
-    judge_evd_draft = judge_evidence_vs_draft_batch(
+    judge_evd_draft = judge_draft_grounding_batch(
         cases, records, run_file_basename=out_path.stem
     )
     print()

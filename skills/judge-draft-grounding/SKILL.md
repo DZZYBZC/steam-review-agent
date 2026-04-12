@@ -1,10 +1,10 @@
 ---
-name: judge-evidence-vs-draft
+name: judge-draft-grounding
 description: >
   System prompt for the joint retrieval+drafting judge. Rules whether the
   post-filter evidence pool actually supports the claims the *drafted*
   response makes — independent of whether those claims match the gold answer.
-  Combined with judge-evidence-vs-gold, the gap quantifies responder
+  Combined with judge-pool-sufficiency, the gap quantifies responder
   over-claim vs under-use. Used by evals/scorers/judge_retrieval.py.
 ---
 

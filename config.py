@@ -1,5 +1,5 @@
 """
-Loads environment variables from .env file and retrieves them.
+Configuration — models, temperatures, thresholds, retrieval params, env vars.
 """
 
 import os
@@ -101,7 +101,7 @@ CRITIC_TEMPERATURE = 0.1
 CRITIC_MAX_TOKENS = 1000
 
 # Judge scorers (shared across all five eval judges: grounding, action,
-# pairwise, evidence-vs-gold, evidence-vs-draft). Narrow single-question
+# pairwise, pool-sufficiency, draft-grounding). Narrow single-question
 # classifiers; Haiku is fine. If rulings look unreliable on the two-sided
 # acceptance gate, upgrade in a follow-up iteration.
 JUDGE_MODEL = "claude-haiku-4-5-20251001"

@@ -98,7 +98,6 @@ def list_reviews():
 
 
 def run(category: str | None = None, review_id: str | None = None):
-    # 1. Load a real review
     review = load_review(category=category, review_id=review_id)
     if not review:
         return
@@ -107,11 +106,9 @@ def run(category: str | None = None, review_id: str | None = None):
     print(f">>> Category: {review['primary_category']}")
     print(f">>> Text: {review['review_text'][:150]}...")
 
-    # 2. Build graph
     logger.info("Building agent graph...")
     app = build_graph()
 
-    # 4. Build initial state
     test_state: AgentState = {
         "app_id": TEST_APP_ID,
         "review_id": review["review_id"],
@@ -145,14 +142,12 @@ def run(category: str | None = None, review_id: str | None = None):
         "first_override_at_iteration": -1,
     }
 
-    # 5. Run — graph pauses at human_approval interrupt
     thread_config = {"configurable": {"thread_id": f"test-{review['review_id']}"}}
     logger.info(f"Running agent on review '{review['review_id']}'...")
     print()
 
     result = app.invoke(test_state, config=thread_config)
 
-    # 6. Human review loop
     while result.get("stop_reason") != "human_approved":
         print("\n" + "-" * 60)
         print("HUMAN REVIEW GATE")
@@ -199,24 +194,20 @@ def run(category: str | None = None, review_id: str | None = None):
         if result.get("stop_reason") in ("max_iterations_reached",):
             break
 
-    # 7. Diagnostic report
     print("\n" + "=" * 60)
     print("AGENT DIAGNOSTIC REPORT")
     print("=" * 60)
 
-    # -- Input --
     print(f"\nReview ID:       {review['review_id']}")
     print(f"Category:        {review['primary_category']}")
     print(f"Tone:            {result.get('review_tone', '???')}")
     print(f"Review:          {review['review_text'][:200]}")
 
-    # -- Termination --
     print(f"\nStop reason:     {result.get('stop_reason', '???')}")
     print(f"Iterations:      {result.get('iteration_count', 0)}")
     print(f"Critic approved: {result.get('approved', False)}")
     print(f"Human decision:  {result.get('human_decision', '???')}")
 
-    # -- Evidence --
     evidence = result.get("evidence_package", {})
     print(f"\n--- Evidence Package ---")
     print(f"Retrieval decision: {evidence.get('retrieval_decision', '???')}")
@@ -227,26 +218,22 @@ def run(category: str | None = None, review_id: str | None = None):
     print(f"Known unknowns:     {evidence.get('known_unknowns', [])}")
     print(f"Summary:            {evidence.get('summary', 'none')}")
 
-    # -- Response --
     print(f"\n--- Drafted Response ---")
     print(result.get("drafted_response", "none"))
     print(f"\nProposed action:    {result.get('proposed_action', '???')}")
     print(f"Source IDs cited:   {result.get('source_ids_cited', [])}")
 
-    # -- Critique --
     print(f"\n--- Critique ---")
     print(f"Approved: {result.get('approved', False)}")
     print(f"Critique: {result.get('critique', 'none')}")
     if not result.get("approved", False):
         print(f"Revision reason: {result.get('revision_reason', 'none')}")
 
-    # -- Node log --
     node_log = result.get("node_log", [])
     print(f"\n--- Node Log ({len(node_log)} entries) ---")
     for entry in node_log:
         print(f"  {entry}")
 
-    # -- Token usage --
     token_usage = result.get("token_usage", {})
     print(f"\n--- Token Usage ---")
     total_in = 0

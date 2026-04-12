@@ -1,6 +1,6 @@
 # Milestone 5 — Evals (live plan, post-rewind)
 
-> Once approved, this file is copied to `evals/M5_PLAN.md` (in repo, tracked by git) as the live executable plan. It's a working plan, not polished docs — expect churn. The two reference docs in the project root (`m5_plan.md`, `m5_plan_claude_written.md`) move into `evals/` as historical references on Step 0.
+> Once approved, this file is copied to `evals/ITERATION_LOG.md` (in repo, tracked by git) as the live executable plan. It's a working plan, not polished docs — expect churn. The two reference docs in the project root (`m5_plan.md`, `m5_plan_claude_written.md`) move into `evals/` as historical references on Step 0.
 
 ## Context
 
@@ -21,7 +21,7 @@ The previous detailed plan `m5_plan_claude_written.md` (566 lines) is structural
 
 1. **Living plan** — this file is editable as work proceeds. Update it when steps complete or scope shifts.
 2. **Drive a future fix for `other`** — evals must EXPOSE the dumping-ground problem, not test current behavior. Mechanism: 4-5 adversarial `other` cases in the golden set, annotated against IDEAL handling. Current system fails them. First eval run reveals the failure pattern; the user picks the fix afterwards (confidence floor / new category / pre-filter / short-circuit). Do NOT pre-commit to one fix.
-3. **Plan location** — `evals/M5_PLAN.md` once Step 0 lands.
+3. **Plan location** — `evals/ITERATION_LOG.md` once Step 0 lands.
 
 ## Deviations from the original prompt (`m5_plan.md`)
 
@@ -190,7 +190,7 @@ Before V1.5:
 3. JSONL logs land in `evals/logs/investigator_<run_id>.jsonl`, one line per Self-RAG iteration.
 4. **Gating accuracy report shows non-zero failures on `other` cases.** This is the success signal — it means the `other` driver is working. If gating accuracy reports 100% on the `other` adversarial cases, the cases aren't adversarial enough; revise them.
 5. Re-running `--quick` produces deterministic numbers identical within token-cost noise.
-6. User reviews the failure pattern on `other` cases and decides on the fix direction (logged in `evals/M5_PLAN.md` under a new "Other-fix decision" section).
+6. User reviews the failure pattern on `other` cases and decides on the fix direction (logged in `evals/ITERATION_LOG.md` under a new "Other-fix decision" section).
 
 ## V1.5 build steps (LLM judge layer, gated on V1 signal)
 
@@ -415,7 +415,7 @@ Living record of eval-driven changes that shipped after the V1 verification gate
 - `evals/snapshots/.gitkeep`, `evals/logs/.gitkeep`
 - `skills/judge-grounding/SKILL.md` (V1.5 — narrower than reference `skills/eval-judge/SKILL.md`)
 - `evals/_negative_controls_locked.md` — pre-locked over-correction controls for Option B; pattern to reuse for any future eval-driven prompt edit
-- `evals/M5_PLAN.md` (this file, copied on Step 0)
+- `evals/ITERATION_LOG.md` (this file, copied on Step 0)
 
 ### Modified
 - `agent/nodes/investigator.py` — JSONL log emission inside `investigator_node` (Step 6)
@@ -460,4 +460,4 @@ python evals/run_evals.py --canary
 - Judge calibration against your own ratings — periodic spot-checks only
 
 ## Next action after approval
-Step 0 (re-classify, move docs, copy plan to `evals/M5_PLAN.md`) → Step 1 (scaffolding) → Step 2 (failure modes). Steps 1 and 2 are tiny and unblock the annotation work in Step 3, which is the slowest sequential step.
+Step 0 (re-classify, move docs, copy plan to `evals/ITERATION_LOG.md`) → Step 1 (scaffolding) → Step 2 (failure modes). Steps 1 and 2 are tiny and unblock the annotation work in Step 3, which is the slowest sequential step.

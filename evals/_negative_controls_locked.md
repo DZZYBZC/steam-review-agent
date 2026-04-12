@@ -375,7 +375,7 @@ No fix budget consumed. Iteration 2 lands clean structurally; semantic verificat
 - `skills/judge-action/SKILL.md` — `<action_ladder>` rewritten to match, so judge ruling boundaries are anchored to the same rubric.
 - `CLAUDE.md` — developer-doc rubric section replaced (not load-bearing for the runtime agent, but kept in sync).
 
-**Gold standard:** `evals/test_sets/golden.json` — audited case-by-case against the new rubric; **no edits required.** Pre-audit prediction was 1–2 cases (`civ7_gameplay_003`, `mhw_tech_002`) might shift, but the new rubric's recurring-signal clause keeps every current label defensible. Audit outcome documented in M5_PLAN Iteration 4 entry.
+**Gold standard:** `evals/test_sets/golden.json` — audited case-by-case against the new rubric; **no edits required.** Pre-audit prediction was 1–2 cases (`civ7_gameplay_003`, `mhw_tech_002`) might shift, but the new rubric's recurring-signal clause keeps every current label defensible. Audit outcome documented in ITERATION_LOG Iteration 4 entry.
 
 ## Why this iteration is different from iter1
 

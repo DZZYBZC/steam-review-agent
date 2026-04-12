@@ -27,7 +27,7 @@ steam-review-agent/
 │   └── nodes/             # One file per agent node
 ├── skills/                # Agent skills — SKILL.md files loaded by Python
 ├── .claude/skills/        # Claude Code skills — project conventions
-├── evals/                 # Eval harness (M5)
+├── evals/                 # Eval harness
 │   ├── run_evals.py           # Eval runner — loads golden.json, runs graph, writes run JSON
 │   ├── reporter.py            # Stratified terminal report
 │   ├── snapshot.py            # Versioned eval snapshots (schema v7) with cross-snapshot diffing

@@ -1,8 +1,7 @@
 """
 evals/scorers/pairwise.py — V1.5 LLM judge for revision-loop improvement.
 
-Answers the question Step 12 of M5_PLAN identifies as the highest insight
-value of any unbuilt step: **is the responder/critic revision loop earning
+Answers the question: **is the responder/critic revision loop earning
 its tokens?** For every case that completed at least one revision iteration
 and was approved by a human, this judge compares the iter-0 draft to the
 final approved draft and rules:

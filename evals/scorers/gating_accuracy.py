@@ -79,7 +79,7 @@ def gating_accuracy(case: dict, result: dict) -> dict:
 def gating_accuracy_batch(cases: list[dict], records: list[dict]) -> dict:
     """
     Batch-level gate accuracy. Computes the 2x2 confusion matrix and the
-    derived rates that the reporter (Step 7) prints.
+    derived rates that the reporter prints.
 
     Returns:
       {

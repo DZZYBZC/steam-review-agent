@@ -149,7 +149,7 @@ steam-review-agent/
 │   ├── reporter.py                # Terminal-friendly score report
 │   ├── snapshot.py                # Snapshot writer + schema versioning + diff annotation
 │   ├── failure_modes.py           # Deterministic failure-mode taxonomy
-│   ├── M5_PLAN.md                 # Iteration log — every edit, gate, verification result
+│   ├── ITERATION_LOG.md                 # Iteration log — every edit, gate, verification result
 │   ├── _negative_controls_locked.md  # Pre-edit gate locks for every prompt iteration
 │   ├── _lock_controls.py          # CLI helper to materialize lock blocks from a run JSON
 │   ├── refresh_classifier_fields.py
@@ -302,7 +302,7 @@ The agent matters; the eval system is what made it iterable. Each block below is
 
 **Snapshot diff with schema versioning.** Every snapshot carries `schema_version`; the diff annotates version transitions (e.g., `4 → 5: pairwise judge added`). No silent metric drift.
 
-**Iteration log.** `evals/M5_PLAN.md` records every edit pass — motivation, two-sided gate, verified result. Later iterations cite earlier ones by name.
+**Iteration log.** `evals/ITERATION_LOG.md` records every edit pass — motivation, two-sided gate, verified result. Later iterations cite earlier ones by name.
 
 </details>
 
@@ -335,7 +335,7 @@ Nineteen iterations. Three reverted, one partial success, fifteen shipped — ho
 
 *Why Iter16 used threads, not asyncio:* the agent graph, Anthropic SDK calls, LangGraph checkpointer, and SQLite are all sync; switching to asyncio would have meant rewriting every node, every tool call, every DB access, and every test, for an I/O-bound workload where the GIL releases during the wait and a thread pool gives effectively the same throughput. WAL + busy_timeout on the SQLite connections handles the only real shared-state contention — a two-line pragma change instead of a graph rewrite.
 
-Full detail in `evals/M5_PLAN.md`.
+Full detail in `evals/ITERATION_LOG.md`.
 
 </details>
 

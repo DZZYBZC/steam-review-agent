@@ -242,7 +242,7 @@ Five nodes: `coordinator` (plain Python), `investigator`, `responder`, `critic`,
 <details>
 <summary><strong>Retrieval pipeline (hybrid RAG)</strong></summary>
 
-Patch notes → section-aware chunker → dual index (ChromaDB `BAAI/bge-base-en-v1.5` + in-memory BM25). Query time: **RRF fusion** (top 12) → **cross-encoder rerank** (`ms-marco-MiniLM-L-6-v2`, top 5). The investigator sees the final 5 chunks.
+Patch notes → section-aware chunker → dual index (ChromaDB `BAAI/bge-base-en-v1.5` + in-memory BM25). Query time: **RRF fusion** (top 12) → **cross-encoder rerank** (`ms-marco-MiniLM-L-6-v2`, top 5). Each retrieval call returns a top-5 reranked pool, merged across up to 4 calls into a single accumulated evidence set.
 
 Reranker absolute scores are **not** passed to the investigator — they're uncalibrated and anchoring on them would amplify noise. The reranker orders; the investigator reasons about content.
 
@@ -354,7 +354,7 @@ The agent matters; the eval system is what made it iterable. Each block below is
 <details>
 <summary><strong>Eval iteration arc (chronological)</strong></summary>
 
-Nineteen iterations. Three reverted, one partial success, fifteen shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
+Twenty iterations. Three reverted, one partial success, sixteen shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
 
 | # | Name | Outcome | Key signal |
 |---|------|---------|------------|
@@ -377,6 +377,7 @@ Nineteen iterations. Three reverted, one partial success, fifteen shipped — ho
 | 17 | Phase A1 — concept_recall + 1:1 migration | shipped | New `concept_recall` scorer; mechanical backfill of slots → `required_concepts`. Identity check vs `retrieval_recall` byte-equal per case (the whole point of A1 in isolation) |
 | 18 | Phase A2 — manual concept cleanup + sufficiency | shipped | Manual concept merges, equivalent-chunk additions, `sufficient_sets` authoring (100% coverage across retrieval-eligible). Adds `evidence_sufficiency` + `relevant_concept_precision`. First snapshot where concept recall legitimately diverges from slot recall |
 | 19 | Phase B — split retrieval judges | shipped | `judge_pool_sufficiency` (retrieval-only) and `judge_draft_grounding` (joint), shared infra in `judge_retrieval.py`. Schema v7. Disentangles "is the evidence enough for an ideal answer?" from "does the evidence back the draft's actual claims?" |
+| 20 | Multi-categorical retrieval | shipped | Investigator queries across all categories the review touches (primary + secondary aspects), not just the primary. Schema v8 |
 
 *Why Iter16 used threads, not asyncio:* the agent graph, Anthropic SDK calls, LangGraph checkpointer, and SQLite are all sync; switching to asyncio would have meant rewriting every node, every tool call, every DB access, and every test, for an I/O-bound workload where the GIL releases during the wait and a thread pool gives effectively the same throughput. WAL + busy_timeout on the SQLite connections handles the only real shared-state contention — a two-line pragma change instead of a graph rewrite.
 

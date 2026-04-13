@@ -32,3 +32,5 @@ evals/runs/*
 !evals/runs/.gitkeep
 evals/judge_cache/
 evals/judge_retrieval_cache/
+
+reingest.py

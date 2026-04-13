@@ -34,6 +34,7 @@ def test_graph():
             "category": "technical_issues",
             "total_reviews": 25,
             "priority_score": 72.0,
+            "secondary_aspects": [],
         },
         "review_tone": "",
         "iteration_count": 0,

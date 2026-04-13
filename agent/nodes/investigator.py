@@ -34,6 +34,7 @@ from config import (
     INVESTIGATOR_TEMPERATURE,
     INVESTIGATOR_MAX_TOKENS,
     INVESTIGATOR_MAX_TOOL_CALLS,
+    PARENT_CONTEXT_INVESTIGATOR,
     RETRIEVAL_CATEGORIES,
     CLUSTER_NOTE_AUTO_MIN_SOURCES,
 )
@@ -157,7 +158,15 @@ def _format_evidence_for_llm(results: list[dict]) -> str:
             f"version={meta.get('patch_version', 'unknown')} "
             f"section={meta.get('section', 'unknown')}"
         )
-        lines.append(f'    "{r["text"]}"')
+
+        parent_context = r.get("parent_context", "")
+        child_text = r.get("child_text", "")
+        if PARENT_CONTEXT_INVESTIGATOR and parent_context and child_text:
+            lines.append(f'    [matched] "{child_text}"')
+            lines.append(f'    [context] "{parent_context}"')
+        else:
+            lines.append(f'    "{r["text"]}"')
+
     return "\n".join(lines)
 
 
@@ -374,8 +383,6 @@ def _run_investigator_tool_loop(
 
             results = retrieve(query, app_id)
             tool_calls_used += 1
-            for r in results:
-                accumulated_chunks.setdefault(r["chunk_id"], r)
 
             # Call-role provenance: derive call_role label with safeguards.
             has_secondary = bool(secondary_aspects)
@@ -403,6 +410,15 @@ def _run_investigator_tool_loop(
                 call_role = "primary_initial"
             else:
                 call_role = "primary_reformulation"
+
+            # Attach probe provenance to result dicts before accumulation
+            probe_kind = "secondary" if call_role == "secondary_probe" else "primary"
+            for r in results:
+                r["call_role"] = call_role
+                r["probe_kind"] = probe_kind
+                r["probe_index"] = tool_calls_used
+                r["aspect_label"] = aspect_phrase_used or ""
+                accumulated_chunks.setdefault(r["chunk_id"], r)
 
             # Observability: buffer per-call metadata for post-hoc flush
             # once `relevant_ids` is known (enables per-call attribution).

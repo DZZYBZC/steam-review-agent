@@ -74,10 +74,12 @@ EMBEDDING_BATCH_SIZE = 100
 
 CHROMA_PERSIST_DIR = "chroma_db"
 
-PARENT_CHUNK_MAX_LENGTH = 2000          # Budget for matched-centered parent context (display only, not embedded)
-PARENT_CONTEXT_INVESTIGATOR = True      # Investigator sees [matched] + [context] format
-PARENT_CONTEXT_RESPONDER = True         # Responder/Critic see parent context in evidence_sources
-PARENT_DEDUP_ENABLED = False            # Same-parent dedup in retrieve() (off initially — test context gain first)
+PARENT_CHUNK_MAX_LENGTH = 2000          # Budget for bullet-aware parent context (display only, not embedded)
+PARENT_CONTEXT_SIBLING_BULLETS = 3      # Max sibling bullets before/after matched child in context window
+PARENT_METADATA_WARN_CHARS = 10_000     # Log warning when parent metadata exceeds this per child
+PARENT_CONTEXT_INVESTIGATOR = False     # Flip first in staged rollout
+PARENT_CONTEXT_RESPONDER = False        # Flip second after investigator context is measured
+PARENT_DEDUP_ENABLED = False            # Same-parent dedup (off for longer — see plan rationale #4)
 PARENT_DEDUP_MAX_PER_PARENT = 2         # When dedup enabled: max children kept per parent (not hard-1)
 EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
 SIMILARITY_THRESHOLD = 0.3

@@ -1,6 +1,7 @@
 
 import json
 
+from config import PARENT_CONTEXT_RESPONDER
 from utils import escape_xml
 
 
@@ -32,6 +33,14 @@ def format_evidence_sources(evidence: dict) -> str:
             f"version={escape_xml(meta.get('patch_version', 'unknown'))} "
             f"section={escape_xml(meta.get('section', 'unknown'))}"
         )
-        source_lines.append(f'    "{escape_xml(s.get("text", ""))}"')
+
+        parent_context = s.get("parent_context", "")
+        child_text = s.get("child_text", "")
+        if PARENT_CONTEXT_RESPONDER and parent_context and child_text:
+            source_lines.append(f'    [matched] "{escape_xml(child_text)}"')
+            source_lines.append(f'    [context] "{escape_xml(parent_context)}"')
+        else:
+            source_lines.append(f'    "{escape_xml(s.get("text", ""))}"')
+
     joined = "\n".join(source_lines)
     return f"<evidence_sources>\n{joined}\n</evidence_sources>"

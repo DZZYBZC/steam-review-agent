@@ -113,7 +113,6 @@ def _cache_key(
     case_id: str,
     user_message: str,
 ) -> str:
-    """See judge_grounding._cache_key for the component list."""
     skill_sha = _skill_sha()
     user_msg_sha = _sha8(user_message.encode("utf-8"))
     model_safe = JUDGE_MODEL.replace("/", "_")

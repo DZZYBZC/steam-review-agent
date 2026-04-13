@@ -62,7 +62,7 @@ steam-review-agent/
 │   ├── classify.py                # Review category classification + secondary aspect extraction (Haiku)
 │   ├── cluster.py                 # Time-windowed category clustering + priority signals
 │   ├── stats.py                   # Aggregate statistics over reviews + clusters
-│   ├── chunk.py                   # Section-aware patch-note chunking
+│   ├── chunk.py                   # Parent-child section-aware patch-note chunking
 │   ├── retrieve.py                # Hybrid RAG: vector + BM25 → RRF → cross-encoder rerank
 │   ├── storage.py                 # SQLite schema, DAO functions, cluster-note lifecycle
 │   ├── keywords.py                # Keyword extraction helpers
@@ -118,14 +118,14 @@ steam-review-agent/
     └── skills/                  # Claude Code skills — project conventions (NOT loaded by Python)
 ```
 
-**Naming clash gotcha:** `skills/` holds runtime SKILL.md files loaded by `utils.load_skill()`; `.claude/skills/` holds project-convention skills read by Claude Code only. Different systems, same directory name.
+**Naming clash gotcha:** the top-level skills directory holds runtime skill files loaded by the agent; the .claude/skills directory holds project-convention skills read by Claude Code only. Different systems, same directory name.
 
 </details>
 
 <details>
 <summary><strong>Worked example — one real review through the full graph</strong></summary>
 
-An actual approved run pulled from `audit_log` (app `2246340`, review `222426809`, run `e6d61c72`). Classifier → `technical_issues`, confidence 0.7. Retrieval hit 5 chunks across 5 different patch versions; the critic approved on the first iteration.
+An actual approved run (app 2246340, review 222426809). Classifier → technical_issues, confidence 0.7. Retrieval hit 5 chunks across 5 different patch versions; the critic approved on the first iteration.
 
 **Review (input):**
 
@@ -151,7 +151,7 @@ An actual approved run pulled from `audit_log` (app `2246340`, review `222426809
 
 > Cites specific patches and driver versions directly from the evidence, appropriately hedges the unresolved issue, offers a practical workaround (driver rollback). All claims trace to the evidence package. Tone matches the review's constructive nature. `monitor` is appropriate given 0.7 confidence and an ongoing, tracked issue without a confirmed fix.
 
-Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — `source_ids_cited ⊆ relevant_ids` verified deterministically by the critic. The responder cannot cite a patch the investigator did not retrieve.
+Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — cited sources verified as a subset of relevant sources deterministically by the critic. The responder cannot cite a patch the investigator did not retrieve.
 
 </details>
 
@@ -163,13 +163,13 @@ Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — `s
 2. **Clean + dedupe** — strip markup and drop near-duplicates above the configured threshold
 3. **Classify** — assign one of 10 review categories with a confidence score (Haiku); for multi-part reviews, extract secondary aspect phrases for downstream investigation
 4. **Cluster + stats** — group by category in a rolling time window and compute priority signals
-5. **Coordinator entry** — mint a `run_id` and route into the agent graph
+5. **Coordinator entry** — mint a unique run identifier and route into the agent graph
 6. **Investigate**
    - Classify the review's emotional tone (Haiku)
-   - Check a deterministic category gate — some categories like `other` skip retrieval entirely
+   - Check a deterministic category gate — some categories skip retrieval entirely
    - Load active cluster notes for the category
-   - If the LLM judges from notes alone that no response is needed, exit early (`no_response_needed`)
-   - Otherwise, the investigator LLM (Sonnet 4.6) drives retrieval via Anthropic's tool-use API: formulate a search query, call `retrieve_patches` (hybrid vector + BM25 → RRF → cross-encoder rerank), inspect results, and optionally reformulate and call again (up to 4 total calls). For multi-part reviews, the classifier extracts secondary aspect phrases; the investigator may use its final call to probe the top secondary aspect if primary evidence is already sufficient
+   - If the LLM judges from notes alone that no response is needed, exit early
+   - Otherwise, the investigator LLM (Sonnet 4.6) drives retrieval via Anthropic's tool-use API: formulate a search query, call the retrieval tool (hybrid vector + BM25 → RRF → cross-encoder rerank), inspect results, and optionally reformulate and call again (up to 4 total calls). For multi-part reviews, the classifier extracts secondary aspect phrases; the investigator may use its final call to probe the top secondary aspect if primary evidence is already sufficient
 7. **Draft** — generate a player-facing reply citing only chunks the investigator retrieved (Sonnet 4.6)
 8. **Critique → Human approval**
    - Validate the evidence chain, tone, and action choice
@@ -225,7 +225,7 @@ Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — `s
     coordinator, which then takes "done" → END.
 ```
 
-Five nodes: `coordinator` (plain Python), `investigator`, `responder`, `critic`, `human_approval`. Graph compiles with `interrupt_before=["human_approval"]` — every run pauses for human decision before completing.
+Five nodes: coordinator (plain Python), investigator, responder, critic, and human approval. The graph compiles with an interrupt before the human approval node — every run pauses for human decision before completing.
 
 **Why the coordinator is plain Python, not an LLM:** the workflow is fixed and the branching is knowable in advance. Model-side tool-calling would trade a five-line Python router for a stochastic dispatcher that costs tokens every hop and can't be locked down in evals. Tool-calling earns its place when the path isn't knowable; this path is.
 
@@ -242,13 +242,13 @@ Five nodes: `coordinator` (plain Python), `investigator`, `responder`, `critic`,
 <details>
 <summary><strong>Retrieval pipeline (hybrid RAG)</strong></summary>
 
-Patch notes → section-aware chunker → dual index (ChromaDB `BAAI/bge-base-en-v1.5` + in-memory BM25). Query time: **RRF fusion** (top 12) → **cross-encoder rerank** (`ms-marco-MiniLM-L-6-v2`, top 5). Each retrieval call returns a top-5 reranked pool, merged across up to 4 calls into a single accumulated evidence set.
+Patch notes → **parent-child section-aware chunker** → dual index (ChromaDB bge-base-en-v1.5 + in-memory BM25). Query time: **RRF fusion** (top 12) → **cross-encoder rerank** (ms-marco-MiniLM-L-6-v2, top 5) → **parent context attachment**. Each retrieval call returns a top-5 reranked pool, merged across up to 4 calls into a single accumulated evidence set.
+
+**Parent-child chunking.** Each bullet point is a child chunk (embedded and searched); each section is a parent chunk (stored as metadata, never embedded). After reranking, each matched child gets a context window of its parent section — the matched bullet plus up to 3 sibling bullets before/after, using a stable positional index for deterministic centering. This gives the investigator surrounding context without inflating the embedding index. Child chunk IDs are unchanged, so citation chain-of-custody and eval scorers work unmodified. Three independent feature flags control whether the investigator sees parent context, whether the responder/critic sees it, and whether same-parent dedup is applied — each testable in isolation.
 
 Reranker absolute scores are **not** passed to the investigator — they're uncalibrated and anchoring on them would amplify noise. The reranker orders; the investigator reasons about content.
 
-The investigator LLM formulates each search query and calls the tool up to 4 times total, reformulating between calls based on what it has seen. For multi-part reviews, the classifier extracts secondary aspect phrases; if the investigator's primary evidence is sufficient and a call remains, it may probe the top secondary aspect. Each call is tagged with a `call_role` (`primary_initial`, `primary_reformulation`, or `secondary_probe`) for provenance tracking. Embedding and reranker models lazy-loaded and cached at module level.
-
-Implementation: `pipeline/retrieve.py`.
+The investigator LLM formulates each search query and calls the retrieval tool up to 4 times total, reformulating between calls based on what it has seen. For multi-part reviews, the classifier extracts secondary aspect phrases; if the investigator's primary evidence is sufficient and a call remains, it may probe the top secondary aspect. Each call is tagged with a role (initial, reformulation, or secondary probe) for provenance tracking; probe metadata (role, kind, index, aspect label) also travels on result dicts through the evidence package for eval attribution. Embedding and reranker models lazy-loaded and cached at module level.
 
 </details>
 
@@ -256,23 +256,23 @@ Implementation: `pipeline/retrieve.py`.
 <summary><a id="critic-revision-loop"></a><strong>Critic ↔ revision loop and run identity</strong></summary>
 
 **Three rejection kinds.**
-- `drafting` — routes the responder into a re-draft without re-investigating
-- `evidence` — routes back through the coordinator to the investigator, with the critic's `retrieval_hint` seeding the next query
-- `action` — only the action check failed, all other checks passed; intercepted by the coordinator before it reaches the responder
-- Each iteration writes to `audit_log_iterations` (draft, critique, reason type, hint) for offline analysis
+- **Drafting** — routes the responder into a re-draft without re-investigating
+- **Evidence** — routes back through the coordinator to the investigator, with the critic's retrieval hint seeding the next query
+- **Action** — only the action check failed, all other checks passed; intercepted by the coordinator before it reaches the responder
+- Each iteration is logged (draft, critique, reason type, hint) for offline analysis
 
 **Action-freeze override.**
-- When the critic rejects solely on action grounds (`reason_type="action"`), the coordinator freezes the responder's current `proposed_action` and routes directly to `human_approval`, skipping the revision loop
+- When the critic rejects solely on action grounds, the coordinator freezes the responder's current proposed action and routes directly to human approval, skipping the revision loop
 - Approval ends the run with the frozen action; rejection clears the freeze and re-enters the revision loop normally
 - Action-only thrash loops are broken at the first rejection
 
 **Human action override at the gate.**
-- Not a binary approve/reject — on approval, the caller can inject an optional `human_action_override` (one of `config.PROPOSED_ACTIONS`) to swap the action label in a single shot
-- Useful when the draft reads fine but the reviewer disagrees with the `proposed_action`, which otherwise would cost a full revision cycle
-- Precedence on approve: valid override > `frozen_action` > current action (invalid override falls through to frozen-action restore)
+- Not a binary approve/reject — on approval, the caller can inject an optional action override to swap the action label in a single shot
+- Useful when the draft reads fine but the reviewer disagrees with the proposed action, which otherwise would cost a full revision cycle
+- Precedence on approve: valid override > frozen action > current action (invalid override falls through to frozen-action restore)
 - Rejection ignores the override and clears it on the way back into the revision loop
 
-**Run identity.** Coordinator mints a UUID `run_id` on first entry; both `audit_log` and `audit_log_iterations` carry it, so a review's full revision history can be reassembled from the DB alone.
+**Run identity.** The coordinator mints a UUID on first entry; both the run-level and per-iteration audit tables carry it, so a review's full revision history can be reassembled from the DB alone.
 
 **Termination.** Human approval, max iterations reached, human approval after max iterations, or terminal LLM/parse error.
 
@@ -283,27 +283,26 @@ Implementation: `pipeline/retrieve.py`.
 
 Three memory layers, each with a different lifetime and scope.
 
-**Working memory — `AgentState` (single run)**
-- LangGraph `TypedDict` threaded through every node in the graph
-- Holds the current review, evidence package, drafted response, critique, iteration count, and all routing signals (`stop_reason`, `reason_type`, `frozen_action`, etc.)
+**Working memory (single run)**
+- LangGraph state threaded through every node in the graph
+- Holds the current review, evidence package, drafted response, critique, iteration count, and all routing signals
 - Scoped to a single run — created at coordinator entry, discarded at termination
 - Checkpointed to SQLite between nodes so the graph can resume at the human-approval interrupt
 
 **Episodic memory — audit log + cluster notes (cross-run)**
-- **Audit log** (`audit_log` table) — every completed run with full evidence, draft, critique, human decision, `run_id`. The responder loads recent approvals as few-shot examples, so the system adapts to the human approver's voice over time.
-- **Cluster notes** (`cluster_notes` table) — per-category institutional knowledge with a real lifecycle:
-  - `active`/`resolved` status (transitioned via `resolve_note.py`); notes older than 90 days filtered at read time, never deleted
-  - Four types: `known_issue` (auto from investigator, ≥2 sources), `response_history` (auto on approval), `human_feedback` (on rejection), `investigation`
-  - Dedup: `source_review_id` first, then 24h time window
-  - Investigator loads active, non-stale notes for the current category — can exit early (`no_response_needed`) if notes alone resolve the issue
-- Both live in `pipeline/storage.py`
+- **Audit log** — every completed run with full evidence, draft, critique, human decision, and run identifier. The responder loads recent approvals as few-shot examples, so the system adapts to the human approver's voice over time.
+- **Cluster notes** — per-category institutional knowledge with a real lifecycle:
+  - Active/resolved status; notes older than 90 days filtered at read time, never deleted
+  - Four types: known issue (auto from investigator, ≥2 sources), response history (auto on approval), human feedback (on rejection), investigation
+  - Dedup: source review match first, then 24h time window
+  - Investigator loads active, non-stale notes for the current category — can exit early if notes alone resolve the issue
 
 **Semantic memory — patch note vector store (persistent)**
-- ChromaDB collection indexed with `BAAI/bge-base-en-v1.5` embeddings, plus a parallel in-memory BM25 index
-- Built from section-aware chunked patch notes (`pipeline/chunk.py` → `pipeline/retrieve.py`)
-- Queried at run time via RRF fusion (top 12) → cross-encoder rerank (top 5)
+- ChromaDB collection indexed with bge-base-en-v1.5 embeddings, plus a parallel in-memory BM25 index
+- Built from parent-child section-aware chunked patch notes — each bullet is a child chunk (embedded), each section is a parent chunk (metadata only)
+- Queried at run time via RRF fusion (top 12) → cross-encoder rerank (top 5) → parent context attachment
 - The investigator drives retrieval through Anthropic's tool-use API — it formulates queries, inspects results, and can reformulate up to 4 total calls (the 4th reserved for secondary aspect probes on multi-part reviews)
-- Persisted to disk (`chroma_db/`); BM25 index is rebuilt each run
+- Vector store persisted to disk; BM25 index is rebuilt each run
 
 </details>
 
@@ -317,22 +316,21 @@ The agent matters; the eval system is what made it iterable. Each block below is
 <summary><strong>Layered scoring, cache key, and judge_error isolation</strong></summary>
 
 **Layered scoring.**
-- Deterministic scorers run first (`deterministic.py`, `gating_accuracy.py`) and catch hard violations cheaply
+- Deterministic scorers run first and catch hard violations cheaply
 - LLM judges gate on different criteria: grounding and action judges only see cases the deterministic scorers flag; pairwise and retrieval judges run on all eligible cases independently
-- Five sibling judges across four files:
-  - `judge_grounding.py` — low-confidence citations
-  - `judge_action.py` — action-severity disagreements
-  - `pairwise.py` — did the revision loop improve the draft
-  - `judge_retrieval.py` — houses **two** judges that share infrastructure but score independently: `pool_sufficiency` (would the post-filter pool support an ideal answer?) and `draft_grounding` (does the pool support what the draft actually claims?)
+- Five sibling judges:
+  - **Grounding** — low-confidence citations
+  - **Action severity** — action-severity disagreements
+  - **Pairwise** — did the revision loop improve the draft
+  - **Retrieval** — houses **two** judges that share infrastructure but score independently: pool sufficiency (would the pool support an ideal answer?) and draft grounding (does the pool support what the draft actually claims?)
 - The delta between the two retrieval judges surfaces responder over-claim vs under-use
 
 **Cache key.**
-- sha256 over `run_file_basename`, `case_id`, `JUDGE_MODEL`, `skill_sha8`, `JUDGE_INPUT_VERSION`, `user_message_sha8`
-- Retrieval judges add a 7th component (`judge_kind` ∈ {`gold`, `draft`}) so the two sibling judges share `judge_retrieval_cache/` without collision
+- sha256 over a stable set of inputs: run file, case ID, judge model, skill hash, input schema version, and user message hash
+- Retrieval judges add a 7th component (judge kind) so the two sibling judges share a cache directory without collision
 - Identical inputs → free re-run; any input change invalidates cleanly
-- `skill_sha8` prevents cross-judge collisions in the shared cache directory
 
-**Isolated `judge_error` bucket.** API / parse / schema failures are ruled `judge_error`, not absorbed into `tolerable_disagreement`. Surfaces separately in the snapshot, diff, and reporter — a misfiring judge can never pass as healthy.
+**Isolated judge-error bucket.** API / parse / schema failures get a dedicated ruling, not absorbed into tolerable disagreement. Surfaces separately in the snapshot, diff, and reporter — a misfiring judge can never pass as healthy.
 
 </details>
 
@@ -340,14 +338,14 @@ The agent matters; the eval system is what made it iterable. Each block below is
 <summary><strong>Lock-then-edit discipline and snapshot diff</strong></summary>
 
 **Lock the gate before any prompt edit.**
-- Acceptance gate written to `evals/_negative_controls_locked.md` before every eval-driven edit
+- Acceptance gate written before every eval-driven edit
 - Gate includes: positive cases that must improve, negative cases that must not regress, semantic spot checks, aggregate metric
 - Stop rule: one coordinated edit + one rerun
-- Cache proof = offline re-score against the saved JSON, not a second live run (a second live run mints a fresh `run_file_basename` and forces 100% cache miss)
+- Cache proof = offline re-score against the saved JSON, not a second live run (a second live run creates a fresh cache key and forces 100% miss)
 
-**Snapshot diff with schema versioning.** Every snapshot carries `schema_version`; the diff annotates version transitions (e.g., `4 → 5: pairwise judge added`). No silent metric drift.
+**Snapshot diff with schema versioning.** Every snapshot carries a schema version; the diff annotates version transitions. No silent metric drift.
 
-**Iteration log.** `evals/ITERATION_LOG.md` records every edit pass — motivation, two-sided gate, verified result. Later iterations cite earlier ones by name.
+**Iteration log.** Records every edit pass — motivation, two-sided gate, verified result. Later iterations cite earlier ones by name.
 
 </details>
 
@@ -359,29 +357,29 @@ Twenty iterations. Three reverted, one partial success, sixteen shipped — hone
 | # | Name | Outcome | Key signal |
 |---|------|---------|------------|
 | 1 | Baseline | shipped | Deterministic scorers only. Established gating accuracy, action correctness, citation chain-of-custody |
-| 2 | Grounding judge | shipped | `judge_grounding.py` classifies `low_conf_with_cite` cases. Schema v3 |
-| 3 | Action judge | shipped | `judge_action.py` splits `wrong_action_severity` into 4 buckets. Schema v4 |
-| 4 | `multi_part_complaint` edit | shipped | First eval-driven prompt edit. Locked gate, clean win, established lock-before-edit discipline |
-| 5 | `action_severity_precedence` | **reverted** | Narrow metric improved but aggregate action correctness regressed 65→49% and 12 runs hit max_iterations |
+| 2 | Grounding judge | shipped | LLM judge classifies low-confidence citation cases. Schema v3 |
+| 3 | Action judge | shipped | LLM judge splits action-severity disagreements into 4 buckets. Schema v4 |
+| 4 | Multi-part complaint edit | shipped | First eval-driven prompt edit. Locked gate, clean win, established lock-before-edit discipline |
+| 5 | Action severity precedence | **reverted** | Narrow metric improved but aggregate action correctness regressed 65→49% and 12 runs hit max_iterations |
 | 6 | Pairwise scorer | shipped | "Is the revision loop earning its tokens?" Surfaced that revisions were mostly cosmetic. Schema v5 |
-| 7 | Retrieval scorer + gold recall | shipped | Source vs post-filter recall split, concept hit-rate, `any_of` equivalence groups. Schema v6 |
+| 7 | Retrieval scorer + gold recall | shipped | Source vs post-filter recall split, concept hit-rate, equivalence groups. Schema v6 |
 | 8 | Single-axis rubric | partial | Refactored 4 actions into one axis. Action correctness recovered but critic-workload regressed |
 | 9 | Rubric remedial (4R) | shipped | Tightened Iter8's rubric. Action correctness held; critic regression persisted |
 | 10 | Header-block rearrangement | **reverted** | Critic still cited rung definitions verbatim. Hypothesis falsified at smoke test |
 | 11 | Full rung-definition removal | **reverted** | Critic reconstructed rung semantics from action names alone. Closed prompt-text edits as a lever |
 | 12 | Tool-use investigator | shipped | Anthropic tool-use API with self-RAG retries. Source recall 0.381 → 0.580 |
 | 13 | Action-freeze | shipped | Graph-level interception of action-only critic rejections. Action correctness 0.651 → 0.780, max-iter 7 → 0 |
-| 14 | Few-shot examples | shipped | Responder few-shot examples + `parse_llm_json` robustness fix. Infra errors 5 → 0 |
+| 14 | Few-shot examples | shipped | Responder few-shot examples + JSON parsing robustness fix. Infra errors 5 → 0 |
 | 15 | Boundary sharpening | shipped | 7 disambiguation rules across all skills + 3 golden corrections. Action correctness 71.1% → 76.9%, category_drift 4 → 1 |
-| 16 | `[infra]` Parallel eval execution | shipped | SQLite WAL + busy_timeout on storage + checkpointer; ThreadPoolExecutor + `--workers` flag in `run_evals`; warmup-on-main-thread for retrieval models. Wall-clock 25–35 min sequential → ~3 min at workers=10. Iteration speed only — no quality movement |
-| 17 | Phase A1 — concept_recall + 1:1 migration | shipped | New `concept_recall` scorer; mechanical backfill of slots → `required_concepts`. Identity check vs `retrieval_recall` byte-equal per case (the whole point of A1 in isolation) |
-| 18 | Phase A2 — manual concept cleanup + sufficiency | shipped | Manual concept merges, equivalent-chunk additions, `sufficient_sets` authoring (100% coverage across retrieval-eligible). Adds `evidence_sufficiency` + `relevant_concept_precision`. First snapshot where concept recall legitimately diverges from slot recall |
-| 19 | Phase B — split retrieval judges | shipped | `judge_pool_sufficiency` (retrieval-only) and `judge_draft_grounding` (joint), shared infra in `judge_retrieval.py`. Schema v7. Disentangles "is the evidence enough for an ideal answer?" from "does the evidence back the draft's actual claims?" |
-| 20 | Multi-categorical retrieval | shipped | Investigator queries across all categories the review touches (primary + secondary aspects), not just the primary. Schema v8 |
+| 16 | [infra] Parallel eval execution | shipped | SQLite WAL + busy timeout on storage + checkpointer; thread pool + workers flag. Wall-clock 25–35 min sequential → ~3 min at 10 workers. Iteration speed only — no quality movement |
+| 17 | Phase A1 — concept recall + 1:1 migration | shipped | New concept recall scorer; mechanical backfill of slots → required concepts. Identity check vs retrieval recall byte-equal per case (the whole point of A1 in isolation) |
+| 18 | Phase A2 — manual concept cleanup + sufficiency | shipped | Manual concept merges, equivalent-chunk additions, sufficient-set authoring (100% coverage across retrieval-eligible). Adds evidence sufficiency + relevant-concept precision. First snapshot where concept recall legitimately diverges from slot recall |
+| 19 | Phase B — split retrieval judges | shipped | Pool sufficiency (retrieval-only) and draft grounding (joint), sharing scorer infrastructure. Schema v7. Disentangles "is the evidence enough for an ideal answer?" from "does the evidence back the draft's actual claims?" |
+| 20 | Multi-category retrieval | shipped | Investigator queries across all categories the review touches (primary + secondary aspects), not just the primary. Schema v8 |
 
 *Why Iter16 used threads, not asyncio:* the agent graph, Anthropic SDK calls, LangGraph checkpointer, and SQLite are all sync; switching to asyncio would have meant rewriting every node, every tool call, every DB access, and every test, for an I/O-bound workload where the GIL releases during the wait and a thread pool gives effectively the same throughput. WAL + busy_timeout on the SQLite connections handles the only real shared-state contention — a two-line pragma change instead of a graph rewrite.
 
-Full detail in `evals/ITERATION_LOG.md`.
+Full detail in the iteration log under the evals directory.
 
 </details>
 
@@ -446,7 +444,7 @@ The metrics below cite four distinct populations:
   - Next steps: (a) audit under-use cases for prompt-side fixes that get the responder to consume load-bearing chunks, (b) tighten section-aware chunking on the remaining multi-version patches
 
 - **Critic node-level over-rejection.**
-  - System-level churn is solved (action-freeze), but the critic *node itself* still over-rejects on action grounds at the `monitor` ↔ `investigate` boundary
+  - System-level churn is solved (action-freeze), but the critic *node itself* still over-rejects on action grounds at the monitor ↔ investigate boundary
   - Disambiguation rules were added to the critic prompt — over-rejection pattern persists; action-freeze still does the heavy lifting
   - Broad rubric rewrites look closed as a lever; targeted boundary-sharpening rules improved action correctness but did not materially lift raw iter-0 approval
   - Further improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node)
@@ -503,8 +501,8 @@ export HF_TOKEN=...
 ### Expected runtime and cost (rough)
 
 - **Data pipeline** (500 reviews, fresh fetch): ~5–10 min wall clock; cost dominated by classification (~500 Haiku calls × ~300 input tokens ≈ ~$0.10).
-- **Single-review agent run** (`test_agent.py`): ~30–60 sec including retrieval; ~5–15K total tokens depending on revision iterations; <$0.05 per review (Sonnet on the responder, Haiku elsewhere).
-- **Full eval suite** (`run_evals.py`, 56 cases): **~3 min wall clock at `--workers 10`** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + 5s busy_timeout to avoid lock contention). Sequential (`--workers 1`) is closer to ~25 min; pre-parallelization sequential was 25–35 min. ~1.5M total tokens; on the order of $2–3 per full run with all judges enabled.
+- **Single-review agent run**: ~30–60 sec including retrieval; ~5–15K total tokens depending on revision iterations; <$0.05 per review (Sonnet on the responder, Haiku elsewhere).
+- **Full eval suite** (56 cases): **~3 min wall clock at 10 workers** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + busy timeout to avoid lock contention). Sequential is closer to ~25 min; pre-parallelization sequential was 25–35 min. ~1.5M total tokens; on the order of $2–3 per full run with all judges enabled.
 - **Cached judge re-score** (offline against a saved run JSON): ~30 sec; $0 (cache hit on every flagged case).
 
 Numbers are approximations from the latest eval run. Actual cost depends on Anthropic pricing at run time.

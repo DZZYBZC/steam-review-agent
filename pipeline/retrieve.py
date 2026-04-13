@@ -5,6 +5,7 @@ Uses sentence-transformers for embeddings and ChromaDB with persistent
 storage. The embedding model is loaded lazily and cached at module level.
 """
 
+import json
 import re
 import logging
 import chromadb
@@ -13,8 +14,14 @@ from sentence_transformers import SentenceTransformer
 from sentence_transformers import CrossEncoder
 from config import (
     CHROMA_PERSIST_DIR,
+    CHUNK_MAX_LENGTH,
     EMBEDDING_BATCH_SIZE,
     EMBEDDING_MODEL,
+    PARENT_CHUNK_MAX_LENGTH,
+    PARENT_CONTEXT_SIBLING_BULLETS,
+    PARENT_DEDUP_ENABLED,
+    PARENT_DEDUP_MAX_PER_PARENT,
+    PARENT_METADATA_WARN_CHARS,
     RERANKER_MODEL,
     RERANKER_TOP_N,
     SIMILARITY_THRESHOLD,
@@ -22,7 +29,7 @@ from config import (
     BM25_TOP_K,
     RRF_K,
 )
-from pipeline.chunk import PatchChunk
+from pipeline.chunk import ChunkResult, PatchChunk
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +76,18 @@ def _get_or_create_collection(
 
 
 def embed_chunks(
-    chunks: list[PatchChunk], app_id: str
+    chunk_result: ChunkResult, app_id: str
 ) -> chromadb.Collection:
     """
-    Embed a list of PatchChunk objects into ChromaDB.
+    Embed child chunks into ChromaDB with parent context metadata.
 
     Uses upsert for idempotency — re-running with the same chunk_ids
     will update existing entries rather than creating duplicates.
     Batches upserts in groups of 100.
+
+    Parent chunks are not embedded — their text and bullet lists are
+    stored as metadata on each child for context augmentation at
+    retrieval time.
 
     Returns:
         A ChromaDB collection for downstream queries.
@@ -84,6 +95,14 @@ def embed_chunks(
     model = _get_model()
     client = _get_client()
     collection = _get_or_create_collection(client, app_id)
+
+    chunks = chunk_result.children
+
+    parent_text_lookup: dict[str, str] = {}
+    parent_bullets_lookup: dict[str, list[str]] = {}
+    for p in chunk_result.parents:
+        parent_text_lookup[p.parent_id] = p.text
+        parent_bullets_lookup[p.parent_id] = p.bullet_texts
 
     batch_size = EMBEDDING_BATCH_SIZE
     total = len(chunks)
@@ -94,8 +113,39 @@ def embed_chunks(
         ids = [c.chunk_id for c in batch]
         documents = [c.text for c in batch]
         embeddings = model.encode(documents).tolist()
-        metadatas: list[dict[str, str | int | float | bool]] = [
-            {
+
+        metadatas: list[dict[str, str | int | float | bool]] = []
+        for c in batch:
+            parent_text = parent_text_lookup.get(c.parent_id, "")
+            all_bullets = parent_bullets_lookup.get(c.parent_id, [])
+
+            # Pre-window: store only ±PARENT_CONTEXT_SIBLING_BULLETS around
+            # this child's bullet_index. Avoids 50KB+ metadata on children in
+            # huge headerless sections while preserving everything
+            # _attach_parent_context() needs at retrieval time.
+            # Individual bullets are also capped to CHUNK_MAX_LENGTH — some
+            # patch notes have multi-paragraph bodies under one bullet that
+            # _split_long_text() fans into multiple children, but the parent
+            # context only needs enough to show what each sibling is about.
+            if c.bullet_index >= 0 and len(all_bullets) > 2 * PARENT_CONTEXT_SIBLING_BULLETS + 1:
+                lo = max(0, c.bullet_index - PARENT_CONTEXT_SIBLING_BULLETS)
+                hi = min(len(all_bullets), c.bullet_index + PARENT_CONTEXT_SIBLING_BULLETS + 1)
+                windowed_bullets = [b[:CHUNK_MAX_LENGTH] for b in all_bullets[lo:hi]]
+                windowed_bullet_index = c.bullet_index - lo
+            else:
+                windowed_bullets = [b[:CHUNK_MAX_LENGTH] for b in all_bullets]
+                windowed_bullet_index = c.bullet_index
+
+            parent_bullets_json = json.dumps(windowed_bullets)
+
+            if len(parent_text) + len(parent_bullets_json) > PARENT_METADATA_WARN_CHARS:
+                logger.warning(
+                    f"Large parent metadata for chunk {c.chunk_id}: "
+                    f"{len(parent_text) + len(parent_bullets_json)} chars "
+                    f"(parent_id={c.parent_id}, section={c.section})"
+                )
+
+            metadatas.append({
                 "patch_version": c.patch_version,
                 "patch_date": c.patch_date,
                 "section": c.section,
@@ -103,9 +153,11 @@ def embed_chunks(
                 "source_gid": c.source_gid,
                 "source_url": c.source_url,
                 "app_id": c.app_id,
-            }
-            for c in batch
-        ]
+                "parent_id": c.parent_id,
+                "parent_text": parent_text,
+                "parent_bullets": parent_bullets_json,
+                "bullet_index": windowed_bullet_index,
+            })
 
         collection.upsert(
             ids=ids,
@@ -424,6 +476,109 @@ def _query_bm25_from_cache(
     return output
 
 
+def _attach_parent_context(reranked_results: list[dict]) -> list[dict]:
+    """
+    Attach parent context to each reranked result using bullet-aware truncation.
+
+    Always runs as plumbing — downstream formatting decides whether to display
+    parent context based on feature flags.
+
+    For each result with parent metadata, locates the matched child via
+    bullet_index (deterministic, no text matching), then takes up to
+    PARENT_CONTEXT_SIBLING_BULLETS siblings before/after. Trims outer
+    bullets first if the total exceeds PARENT_CHUNK_MAX_LENGTH.
+
+    Adds two fields to each result dict:
+        child_text: the original child text (always set)
+        parent_context: the truncated parent section text (set when parent metadata exists)
+    """
+    output = []
+    for r in reranked_results:
+        r = dict(r)  # shallow copy to avoid mutating upstream
+        r["child_text"] = r["text"]
+
+        meta = r.get("metadata", {})
+        parent_bullets_raw = meta.get("parent_bullets", "")
+        bullet_index = meta.get("bullet_index", -1)
+
+        if not parent_bullets_raw or bullet_index == -1:
+            output.append(r)
+            continue
+
+        try:
+            bullets = json.loads(parent_bullets_raw)
+        except (json.JSONDecodeError, TypeError):
+            output.append(r)
+            continue
+
+        if not isinstance(bullets, list) or bullet_index < 0 or bullet_index >= len(bullets):
+            logger.warning(
+                f"bullet_index {bullet_index} out of range for {len(bullets)} bullets "
+                f"(chunk_id={r.get('chunk_id', '?')}). Falling back to section start."
+            )
+            # Fallback: use full parent_text with head truncation
+            parent_text = meta.get("parent_text", "")
+            if parent_text:
+                r["parent_context"] = parent_text[:PARENT_CHUNK_MAX_LENGTH]
+            output.append(r)
+            continue
+
+        # Build context window centered on matched bullet
+        lo = max(0, bullet_index - PARENT_CONTEXT_SIBLING_BULLETS)
+        hi = min(len(bullets), bullet_index + PARENT_CONTEXT_SIBLING_BULLETS + 1)
+        window = bullets[lo:hi]
+
+        version = meta.get("patch_version", "")
+        section = meta.get("section", "")
+        prefix = f"{version} | {section}:\n" if version and section else ""
+        context = prefix + "\n".join(window)
+
+        # Trim outer bullets if over budget
+        while len(context) > PARENT_CHUNK_MAX_LENGTH and (lo < bullet_index or hi > bullet_index + 1):
+            # Remove the bullet farthest from the match
+            dist_lo = bullet_index - lo
+            dist_hi = hi - 1 - bullet_index
+            if dist_lo >= dist_hi and lo < bullet_index:
+                lo += 1
+            elif hi > bullet_index + 1:
+                hi -= 1
+            else:
+                lo += 1
+            window = bullets[lo:hi]
+            context = prefix + "\n".join(window)
+
+        r["parent_context"] = context
+        output.append(r)
+
+    return output
+
+
+def _dedup_by_parent(
+    results: list[dict], max_per_parent: int = PARENT_DEDUP_MAX_PER_PARENT
+) -> list[dict]:
+    """
+    Limit results to max_per_parent children per parent section.
+
+    Keeps the top children by relevance_score for each parent_id group.
+    Results without a parent_id pass through unchanged.
+    """
+    parent_counts: dict[str, int] = {}
+    output = []
+
+    for r in results:
+        parent_id = r.get("metadata", {}).get("parent_id", "")
+        if not parent_id:
+            output.append(r)
+            continue
+
+        count = parent_counts.get(parent_id, 0)
+        if count < max_per_parent:
+            parent_counts[parent_id] = count + 1
+            output.append(r)
+
+    return output
+
+
 def retrieve(
     query_text: str,
     app_id: str,
@@ -452,4 +607,13 @@ def retrieve(
 
     # Fuse and rerank
     rrf_results = reciprocal_rank_fusion(vector_results, bm25_results)
-    return rerank(query_text, rrf_results)
+    reranked = rerank(query_text, rrf_results)
+
+    # Parent context augmentation (always: plumbing)
+    reranked = _attach_parent_context(reranked)
+
+    # Optional same-parent dedup (off by default)
+    if PARENT_DEDUP_ENABLED:
+        reranked = _dedup_by_parent(reranked, PARENT_DEDUP_MAX_PER_PARENT)
+
+    return reranked

@@ -105,6 +105,19 @@ def build_clusters(df: pd.DataFrame) -> list[ClusterSummary]:
         )
         samples = [s[:300] for s in samples]
 
+        # Collect unique secondary aspects across reviews in this cluster
+        all_aspects: list[dict] = []
+        if "secondary_aspects" in group.columns:
+            seen_phrases: set[str] = set()
+            for aspects in group["secondary_aspects"]:
+                if not isinstance(aspects, list):
+                    continue
+                for asp in aspects:
+                    phrase = asp.get("phrase", "").strip().lower()
+                    if phrase and phrase not in seen_phrases:
+                        seen_phrases.add(phrase)
+                        all_aspects.append(asp)
+
         cluster = ClusterSummary(
             category=str(category),
             total_reviews=total,
@@ -115,6 +128,7 @@ def build_clusters(df: pd.DataFrame) -> list[ClusterSummary]:
             avg_playtime_hours=avg_playtime,
             top_keywords=top_keywords,
             sample_reviews=samples,
+            secondary_aspects=all_aspects,
         )
 
         clusters.append(cluster)

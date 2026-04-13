@@ -303,7 +303,7 @@ def save_classification(
             app_id,
             result.primary_category,
             json.dumps(result.secondary_categories),
-            json.dumps(getattr(result, "secondary_aspects", [])),
+            json.dumps(result.secondary_aspects),
             result.confidence,
             result.reasoning,
             result.confidence < CONFIDENCE_THRESHOLD,
@@ -342,7 +342,7 @@ def load_classifications(
 ) -> pd.DataFrame:
     """
     Load all classifications, optionally filtered by app_id.
-    Parses the secondary_categories JSON string back into a list.
+    Parses the secondary_categories and secondary_aspects JSON strings back into lists.
     """
     query = "SELECT * FROM classifications WHERE 1=1"
     params = []
@@ -352,10 +352,15 @@ def load_classifications(
 
     df = pd.read_sql_query(query, conn, params=params)
 
-    if len(df) > 0 and "secondary_categories" in df.columns:
-        df["secondary_categories"] = df["secondary_categories"].apply(
-            lambda x: json.loads(x) if x else []
-        )
+    if len(df) > 0:
+        if "secondary_categories" in df.columns:
+            df["secondary_categories"] = df["secondary_categories"].apply(
+                lambda x: json.loads(x) if x else []
+            )
+        if "secondary_aspects" in df.columns:
+            df["secondary_aspects"] = df["secondary_aspects"].apply(
+                lambda x: json.loads(x) if x else []
+            )
 
     logger.info(f"Loaded {len(df)} classifications.")
     return df
@@ -376,7 +381,8 @@ def load_classified_reviews(
     query = """
         SELECT r.review_id, r.app_id, r.review_text, r.voted_up, r.timestamp,
                r.playtime_hours, r.votes_up, r.weighted_vote_score,
-               c.primary_category, c.secondary_categories, c.confidence
+               c.primary_category, c.secondary_categories,
+               c.secondary_aspects, c.confidence
         FROM reviews r
         JOIN classifications c ON r.review_id = c.review_id
         WHERE r.app_id = ?
@@ -385,12 +391,17 @@ def load_classified_reviews(
     if not include_other:
         query += " AND c.primary_category != 'other'"
     df = pd.read_sql_query(query, conn, params=[app_id])
-    
-    if len(df) > 0 and "secondary_categories" in df.columns:
-        df["secondary_categories"] = df["secondary_categories"].apply(
-            lambda x: json.loads(x) if x else []
-        )
-    
+
+    if len(df) > 0:
+        if "secondary_categories" in df.columns:
+            df["secondary_categories"] = df["secondary_categories"].apply(
+                lambda x: json.loads(x) if x else []
+            )
+        if "secondary_aspects" in df.columns:
+            df["secondary_aspects"] = df["secondary_aspects"].apply(
+                lambda x: json.loads(x) if x else []
+            )
+
     logger.info(f"Loaded {len(df)} classified reviews for app {app_id}.")
     return df
 

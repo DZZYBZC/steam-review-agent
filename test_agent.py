@@ -66,11 +66,16 @@ def load_review(category: str | None = None, review_id: str | None = None) -> di
     else:
         row = negatives.sample(1).iloc[0]
 
+    secondary_aspects = row.get("secondary_aspects", [])
+    if not isinstance(secondary_aspects, list):
+        secondary_aspects = []
+
     return {
         "review_id": row["review_id"],
         "review_text": row["review_text"],
         "primary_category": row["primary_category"],
         "voted_up": row["voted_up"],
+        "secondary_aspects": secondary_aspects,
     }
 
 
@@ -117,6 +122,7 @@ def run(category: str | None = None, review_id: str | None = None):
             "category": review["primary_category"],
             "total_reviews": 1,
             "priority_score": 0.0,
+            "secondary_aspects": review.get("secondary_aspects", []),
         },
         "review_tone": "",
         "iteration_count": 0,

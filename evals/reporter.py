@@ -281,6 +281,118 @@ def _mean(vals: list[float | None]) -> float | None:
     return sum(clean) / len(clean) if clean else None
 
 
+def _multipart_stratum_section(
+    cases: list[dict],
+    scored: dict,
+    judge_evd_draft: dict | None = None,
+) -> list[str]:
+    """
+    Multipart review stratum. Shows key metrics restricted to cases
+    tagged multipart=true vs non-multipart, plus secondary probe rate.
+    """
+    case_by_id = {c["case_id"]: c for c in cases}
+    per_case = scored["per_case"]
+
+    mp_ids = [
+        cid for cid in per_case
+        if case_by_id.get(cid, {}).get("multipart")
+    ]
+    non_mp_ids = [
+        cid for cid in per_case
+        if not case_by_id.get(cid, {}).get("multipart")
+    ]
+
+    if not mp_ids:
+        return ["", _hr(), "MULTIPART STRATUM", _hr(), "  (no multipart cases in golden set)"]
+
+    lines = ["", _hr(), f"MULTIPART STRATUM   [multipart={len(mp_ids)}, non-multipart={len(non_mp_ids)}]", _hr()]
+
+    def _stratum_metrics(ids: list[str], label: str) -> list[str]:
+        out = [f"  {label} (n={len(ids)}):"]
+
+        # Concept recall
+        cr = [
+            per_case[cid]["concept_recall"] for cid in ids
+            if not per_case[cid]["concept_recall"].get("not_applicable")
+            and not per_case[cid]["concept_recall"].get("gate_false_skip")
+        ]
+        cr_post = _mean([s["recall_postfilter"] for s in cr])
+        out.append(f"    concept_recall_postfilter : {_fmt_float(cr_post)}  [n={len(cr)}]")
+
+        # Sufficiency
+        sf = [
+            per_case[cid]["evidence_sufficiency"] for cid in ids
+            if not per_case[cid]["evidence_sufficiency"].get("not_applicable")
+        ]
+        sf_rate = None
+        if sf:
+            sf_ok = sum(1 for s in sf if s["sufficient_postfilter"])
+            sf_rate = round(sf_ok / len(sf), 3)
+        out.append(f"    sufficiency_postfilter   : {_fmt_float(sf_rate)}  [n={len(sf)}]")
+
+        # Action correctness
+        ac = [
+            per_case[cid]["action_correctness"] for cid in ids
+            if per_case[cid]["action_correctness"].get("applicable", True)
+        ]
+        ac_ok = sum(1 for s in ac if s["correct"])
+        out.append(f"    action_correct           : {_pct(ac_ok, len(ac))}")
+
+        # Precision
+        rp = [
+            per_case[cid]["relevant_concept_precision"] for cid in ids
+            if not per_case[cid]["relevant_concept_precision"].get("not_applicable")
+        ]
+        rp_mean = _mean([s["precision"] for s in rp])
+        out.append(f"    relevant_concept_prec.   : {_fmt_float(rp_mean)}  [n={len(rp)}]")
+
+        cp = [
+            per_case[cid]["citation_concept_precision"] for cid in ids
+            if not per_case[cid]["citation_concept_precision"].get("not_applicable")
+        ]
+        cp_mean = _mean([s["precision"] for s in cp])
+        out.append(f"    citation_concept_prec.   : {_fmt_float(cp_mean)}  [n={len(cp)}]")
+
+        return out
+
+    lines.extend(_stratum_metrics(mp_ids, "multipart"))
+    lines.append("")
+    lines.extend(_stratum_metrics(non_mp_ids, "non-multipart"))
+
+    # Secondary probe rate (multipart only)
+    mp_probe = [
+        per_case[cid]["secondary_probe_check"] for cid in mp_ids
+        if per_case[cid].get("secondary_probe_check", {}).get("applicable")
+    ]
+    mp_probed = sum(1 for s in mp_probe if s["probed"])
+    probe_rate = _pct(mp_probed, len(mp_probe)) if mp_probe else "n/a"
+    lines.append("")
+    lines.append(f"  secondary_probe_rate (multipart): {probe_rate}")
+
+    # Role coerced count (whole set)
+    n_coerced = sum(
+        1 for s in per_case.values()
+        if s.get("secondary_probe_check", {}).get("role_coerced")
+    )
+    lines.append(f"  role_coerced_count (whole set)  : {n_coerced}")
+
+    # Draft grounding (multipart stratum) — from judge if available
+    if judge_evd_draft and judge_evd_draft.get("per_case"):
+        d_per_case = judge_evd_draft["per_case"]
+        mp_judged = {cid: d_per_case[cid] for cid in mp_ids if cid in d_per_case}
+        if mp_judged:
+            rulings: dict[str, int] = defaultdict(int)
+            for r in mp_judged.values():
+                ruling = r.get("ruling", "judge_error")
+                rulings[ruling] += 1
+            lines.append("")
+            lines.append(f"  draft_grounding (multipart, n={len(mp_judged)}):")
+            for ruling in ("supports", "partially_supports", "does_not_support", "judge_error"):
+                lines.append(f"    {ruling:<24} {rulings.get(ruling, 0):>3}")
+
+    return lines
+
+
 def _confusion_matrix_section(scored: dict) -> list[str]:
     lines = ["", _hr(), "ACTION CONFUSION MATRIX (rows=ideal, cols=predicted)", _hr()]
     actions = list(PROPOSED_ACTIONS)
@@ -747,6 +859,7 @@ def build_report(
         _overall_section(records, scored),
         _per_category_section(cases, scored),
         _layered_retrieval_section(scored),
+        _multipart_stratum_section(cases, scored, judge_evd_draft),
         _confusion_matrix_section(scored),
         _failure_mode_section(scored),
         _diagnostic_flags_section(scored),

@@ -88,6 +88,7 @@ def create_tables(conn: sqlite3.Connection) -> None:
             app_id TEXT,
             primary_category TEXT NOT NULL,
             secondary_categories TEXT,
+            secondary_aspects TEXT,
             confidence REAL NOT NULL,
             reasoning TEXT,
             needs_review BOOLEAN DEFAULT 0,
@@ -294,13 +295,15 @@ def save_classification(
         cursor = conn.execute("""
             INSERT OR IGNORE INTO classifications
             (review_id, app_id, primary_category, secondary_categories,
-             confidence, reasoning, needs_review, model_used, classified_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+             secondary_aspects, confidence, reasoning, needs_review,
+             model_used, classified_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         """, (
             review_id,
             app_id,
             result.primary_category,
             json.dumps(result.secondary_categories),
+            json.dumps(getattr(result, "secondary_aspects", [])),
             result.confidence,
             result.reasoning,
             result.confidence < CONFIDENCE_THRESHOLD,

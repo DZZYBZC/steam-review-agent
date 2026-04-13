@@ -29,7 +29,7 @@ SNAPSHOTS_DIR = Path(__file__).resolve().parent / "snapshots"
 # (field renamed, removed, or semantics changed). Visible in the snapshot
 # payload and in the diff print path so transitions are interpretable.
 # See git log for the per-version history.
-SNAPSHOT_SCHEMA_VERSION = 7
+SNAPSHOT_SCHEMA_VERSION = 8
 
 # Metrics surfaced in the snapshot summary AND used for the one-line diff.
 # Order is preserved in the diff output. Each entry is a dotted path into
@@ -118,6 +118,15 @@ DIFF_METRICS: list[tuple[str, str, str]] = [
     ("gating_false_skip_rate",       "gating.false_skip_rate",             ".3f"),
     ("gating_false_retrieve_rate",   "gating.false_retrieve_rate",         ".3f"),
     ("total_tokens",                 "cost.total_tokens",                  ",d"),
+    # Schema v8: multipart-review stratum metrics for bounded multi-aspect
+    # investigation experiment.
+    ("mp_concept_recall_post_mean",  "multipart.concept_recall_postfilter_mean",      ".3f"),
+    ("mp_sufficiency_post_rate",     "multipart.sufficiency_postfilter_rate",          ".3f"),
+    ("mp_relevant_prec_mean",        "multipart.relevant_concept_precision_mean",      ".3f"),
+    ("mp_citation_prec_mean",        "multipart.citation_concept_precision_mean",      ".3f"),
+    ("mp_secondary_probe_rate",      "multipart.secondary_probe_rate",                ".3f"),
+    ("mp_n_cases",                   "multipart.n_cases",                              "d"),
+    ("role_coerced_count",           "multipart.role_coerced_count",                   "d"),
 ]
 
 
@@ -492,6 +501,58 @@ def _build_aggregates(
     )
     effective_iter0_rate = round(_n_eff_numer / _n_eff_denom, 3) if _n_eff_denom else None
 
+    # Multipart stratum: metrics restricted to cases tagged multipart=true.
+    # _build_aggregates doesn't receive the cases list directly, so we use
+    # the secondary_probe_check scorer which carries is_multipart from the
+    # golden case at scoring time.
+    mp_case_ids = set(
+        cid for cid, s in per_case.items()
+        if s.get("secondary_probe_check", {}).get("is_multipart")
+    )
+    mp_n = len(mp_case_ids)
+
+    # Concept recall (multipart stratum)
+    mp_concept = [
+        per_case[cid]["concept_recall"] for cid in mp_case_ids
+        if not per_case[cid]["concept_recall"].get("not_applicable")
+        and not per_case[cid]["concept_recall"].get("gate_false_skip")
+    ]
+    mp_concept_recall_postfilter_mean = _mean([s["recall_postfilter"] for s in mp_concept])
+
+    # Sufficiency (multipart stratum)
+    mp_suff = [
+        per_case[cid]["evidence_sufficiency"] for cid in mp_case_ids
+        if not per_case[cid]["evidence_sufficiency"].get("not_applicable")
+    ]
+    mp_sufficiency_postfilter_rate = _rate([s["sufficient_postfilter"] for s in mp_suff])
+
+    # Precision (multipart stratum)
+    mp_prec = [
+        per_case[cid]["relevant_concept_precision"] for cid in mp_case_ids
+        if not per_case[cid]["relevant_concept_precision"].get("not_applicable")
+    ]
+    mp_relevant_concept_precision_mean = _mean([s["precision"] for s in mp_prec])
+
+    mp_cite_prec = [
+        per_case[cid]["citation_concept_precision"] for cid in mp_case_ids
+        if not per_case[cid]["citation_concept_precision"].get("not_applicable")
+    ]
+    mp_citation_concept_precision_mean = _mean([s["precision"] for s in mp_cite_prec])
+
+    # Secondary probe rate (multipart stratum)
+    mp_probe = [
+        per_case[cid]["secondary_probe_check"] for cid in mp_case_ids
+        if per_case[cid]["secondary_probe_check"].get("applicable")
+    ]
+    mp_probed = sum(1 for s in mp_probe if s["probed"])
+    mp_secondary_probe_rate = round(mp_probed / len(mp_probe), 3) if mp_probe else None
+
+    # Role coerced count (whole set)
+    role_coerced_count = sum(
+        1 for s in per_case.values()
+        if s.get("secondary_probe_check", {}).get("role_coerced")
+    )
+
     return {
         "n_records": len(records),
         "n_scored": n_scored,
@@ -565,6 +626,15 @@ def _build_aggregates(
             "total_tokens": total_tokens,
         },
         "failure_modes": dict(failure_modes),
+        "multipart": {
+            "n_cases": mp_n,
+            "concept_recall_postfilter_mean": mp_concept_recall_postfilter_mean,
+            "sufficiency_postfilter_rate": mp_sufficiency_postfilter_rate,
+            "relevant_concept_precision_mean": mp_relevant_concept_precision_mean,
+            "citation_concept_precision_mean": mp_citation_concept_precision_mean,
+            "secondary_probe_rate": mp_secondary_probe_rate,
+            "role_coerced_count": role_coerced_count,
+        },
     }
 
 
@@ -675,6 +745,9 @@ def diff_snapshots(prev: dict, curr: dict) -> list[str]:
             (5, 7): "retrieval recalibration (v5→v6) AND split retrieval judges (v6→v7)",
             (4, 7): "pairwise (v4→v5), retrieval recalibration (v5→v6), AND split retrieval judges (v6→v7)",
             (1, 7): "full schema evolution (v1→v7)",
+            (7, 8): "multipart stratum added: concept recall, sufficiency, precision, secondary probe rate, role coerced count",
+            (6, 8): "split retrieval judges (v6→v7) AND multipart stratum (v7→v8)",
+            (1, 8): "full schema evolution (v1→v8)",
         }
         note = annotations.get((prev_v, curr_v), "schema shape changed")
         lines.append(

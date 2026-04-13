@@ -112,11 +112,22 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
 {
   "primary_category": "one of the category names listed above",
   "secondary_categories": ["list", "of", "other", "relevant", "categories"],
+  "secondary_aspects": [{"phrase": "near-verbatim span describing the secondary complaint", "category": "optional_category"}],
   "confidence": Confidence level of your classification in form of a float between 0.0 and 1.0 (inclusive),
   "reasoning": "Brief explanation of why this category was chosen, referencing specific words or phrases from the review."
 }
 
 If no secondary categories apply, use an empty list: "secondary_categories": []
+
+**`secondary_aspects`** — extract concrete secondary complaint spans when the review contains genuinely distinct secondary issues beyond the primary complaint. Each entry has:
+- `phrase` (required): a near-verbatim span or tight paraphrase from the review (5-50 words) describing the secondary complaint. Must be concrete enough that a search query can be derived from it.
+- `category` (optional): the category this aspect belongs to, if obvious. Omit when uncertain.
+
+Rules:
+- Empty list `[]` for single-issue reviews or when no distinct secondary complaint exists.
+- Do NOT extract secondary aspects for vague negative language, emotional intensifiers, or restatements of the primary complaint.
+- The phrase should capture a specific, distinct complaint — not a label or category name.
+- At most 2-3 secondary aspects. Focus on the most concrete and actionable ones.
 </output_format>
 
 <examples>
@@ -126,6 +137,7 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 {
   "primary_category": "technical_issues",
   "secondary_categories": ["ui_controls"],
+  "secondary_aspects": [{"phrase": "menu text is tiny on 4K monitors", "category": "ui_controls"}],
   "confidence": 0.92,
   "reasoning": "The reviewer's main complaint is repeated crashes that they cannot resolve despite troubleshooting — a clear technical issue. They also briefly mention small menu text on 4K displays, which is a UI/readability concern."
 }
@@ -138,6 +150,7 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 {
   "primary_category": "content_progression",
   "secondary_categories": ["monetization_value"],
+  "secondary_aspects": [{"phrase": "$70 is way too much for this amount of content", "category": "monetization_value"}],
   "confidence": 0.88,
   "reasoning": "The reviewer spends most words on the lack of endgame content and feeling there's nothing to do after 40 hours — a content/progression complaint. The pricing concern is secondary, mentioned briefly at the end."
 }
@@ -150,6 +163,7 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 {
   "primary_category": "other",
   "secondary_categories": [],
+  "secondary_aspects": [],
   "confidence": 0.95,
   "reasoning": "This is pure positive praise with no specific gameplay topic or complaint to classify. High confidence because the review is clearly non-specific."
 }
@@ -162,6 +176,7 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 {
   "primary_category": "performance_optimization",
   "secondary_categories": ["gameplay_mechanics"],
+  "secondary_aspects": [{"phrase": "hitboxes feel completely off — clearly hitting enemies but no damage registers", "category": "gameplay_mechanics"}],
   "confidence": 0.6,
   "reasoning": "The reviewer describes both FPS drops during combat (performance) and unresponsive hitboxes (gameplay mechanics). The stuttering complaint gets slightly more emphasis, but the hitbox issue could also be interpreted as a technical bug rather than a mechanics complaint. Low confidence because the two issues are tightly intertwined — the hitbox problem might be caused by the performance drops rather than being a separate gameplay issue."
 }
@@ -174,6 +189,7 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 {
   "primary_category": "story_presentation",
   "secondary_categories": [],
+  "secondary_aspects": [],
   "confidence": 0.93,
   "reasoning": "The reviewer's entire complaint focuses on narrative quality — weak villain motivation, rushed ending, and story structure falling apart in act 3. The positive mention of voice acting reinforces this is a story/presentation review rather than any other category. No secondary categories because the voice acting comment is within the same category, not a separate concern."
 }

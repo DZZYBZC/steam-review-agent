@@ -39,6 +39,7 @@ class ClusterSummary(BaseModel):
     avg_playtime_hours: float
     top_keywords: list[str] = Field(default_factory=list)
     sample_reviews: list[str] = Field(default_factory=list)
+    secondary_aspects: list[dict] = Field(default_factory=list)
     priority_score: float = 0.0
     summary: str = ""  # Filled later by LLM
 

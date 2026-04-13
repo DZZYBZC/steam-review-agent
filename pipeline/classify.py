@@ -30,6 +30,7 @@ class ClassificationResult(BaseModel):
 
     primary_category: str
     secondary_categories: list[str] = Field(default_factory=list)
+    secondary_aspects: list[dict] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str = Field(min_length=10)
 
@@ -49,6 +50,28 @@ class ClassificationResult(BaseModel):
             if category == "other":
                 raise ValueError("'other' cannot be a secondary category")
         return secondary
+
+    @field_validator("secondary_aspects")
+    @classmethod
+    def validate_secondary_aspects(cls, aspects):
+        """Validate secondary aspect entries. Keep entries with a valid phrase;
+        silently drop malformed ones so a bad aspect never blocks classification."""
+        validated = []
+        for asp in aspects:
+            if not isinstance(asp, dict):
+                continue
+            phrase = asp.get("phrase", "")
+            if not isinstance(phrase, str) or not phrase.strip():
+                continue
+            words = phrase.strip().split()
+            if len(words) < 3 or len(words) > 60:
+                continue
+            entry: dict = {"phrase": phrase.strip()}
+            cat = asp.get("category", "")
+            if isinstance(cat, str) and cat.strip():
+                entry["category"] = cat.strip()
+            validated.append(entry)
+        return validated
 
     @model_validator(mode="after")
     def check_no_primary_in_secondary(self):

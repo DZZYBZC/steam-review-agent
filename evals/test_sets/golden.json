@@ -14,7 +14,9 @@
       "must_include_chunk_ids": "List of requirement slots for the retrieval_recall scorer. Each slot is either a chunk_id string (one exact required chunk) or an object of shape {\"any_of\": [chunk_id, ...]} (one required concept expressed across equivalent chunks \u2014 the slot is hit if any element of any_of is retrieved). Each slot counts as one unit in the recall denominator. Empty for subjective/no-evidence cases.",
       "required_concepts": "List of named concepts the retriever needs to surface, scored by the concept_recall scorer. Each entry is {\"concept_id\": str, \"name\": str, \"any_of\": [chunk_id, ...]}. concept_id is the STABLE machine-key used to reference the concept from sufficient_sets \u2014 once assigned (e.g. c_001), it never changes. name is human-readable display text only and may be renamed freely. any_of is the non-empty list of chunk_id equivalents; the concept is hit iff any element lands in the retrieval pool. concept_id must be unique within a case. Empty/absent \u2192 concept_recall is not_applicable for the case (same semantics as empty must_include_chunk_ids). Mechanically backfilled 1:1 from must_include_chunk_ids by evals/migrate_slots_to_concepts.py; semantic merging and equivalent-chunk additions are deferred to the manual annotator pass. Concept granularity rule: One concept = one independently meaningful claim the responder may need to make. Not an entire solution package, not a trivial phrase fragment. Test: if you can answer the review correctly without this claim, it's not a concept; if it bundles multiple independent claims that could each be missing on their own, split it.",
       "notes": "free-text rationale: what the IDEAL handling looks like and why",
-      "quick": "true if part of the 5-case quick subset (D2)"
+      "quick": "true if part of the 5-case quick subset (D2)",
+      "multipart": "true if the review contains genuinely distinct complaint aspects (not redundant evidence for one issue). Absent = false.",
+      "secondary_aspects": "List of secondary complaint aspects for multipart reviews. Each entry is {\"phrase\": str, \"category\": str (optional)}. phrase is a near-verbatim span from the review (5-50 words). category is the complaint category if obvious. Absent/empty for single-issue reviews. Used by build_initial_state() to populate cluster_summary.secondary_aspects for the investigator."
     }
   },
   "cases": [
@@ -152,6 +154,8 @@
       ],
       "notes": "Multi-issue review: online-only requirement + heist variety + Nebula login. P2P update (1827626365763153-0) directly addresses online-only complaint by enabling P2P hosting. 'Future of PAYDAY' blogs (1823191198599924-*) discuss content roadmap. Ideal: monitor \u2014 partially addressed. Failure: ignored_main_complaint if response only addresses one of the three issues.",
       "quick": false,
+      "multipart": true,
+      "secondary_aspects": [{"phrase": "crippled by the unnecessary Online-Only aspect of the game and forced Starbreeze Nebula sign in", "category": "multiplayer_network"}],
       "required_concepts": [
         {
           "concept_id": "c_001",
@@ -406,6 +410,8 @@
       ],
       "notes": "Yield breakdown UX complaint. Update 1.2.5 (1811772772410550-11) explicitly reformatted constructible tooltips and (1811772772410550-10) lists UI/UX changes. Update 1.2.1 patch (1800991756447780-1) fixed building yield breakdown display. Ideal: monitor, cite the cleanup honestly. Failure: overclaimed_fix if 'UI is now cleaner' assertion without nuance.",
       "quick": false,
+      "multipart": true,
+      "secondary_aspects": [{"phrase": "yield breakdown requires opening several tabs to drill down with confusing natural yield and income tabs", "category": "ui_controls"}],
       "required_concepts": [
         {
           "concept_id": "c_001",
@@ -606,6 +612,8 @@
       ],
       "notes": "Multi-issue: flight controls + ship combat + base building + ship building. 1.16.236 update (1828894815567746-17) added Outpost QoL improvements; Free Lanes added Pre-Built Outpost (1828894815567715-51); ship optimization terminal (1828894815567746-8) addresses ship side. Flight controls have NO direct fix. Ideal: monitor. Failure: ignored_main_complaint if response only addresses ship-building; overclaimed_fix on flight controls.",
       "quick": false,
+      "multipart": true,
+      "secondary_aspects": [{"phrase": "base building is mediocre and ship building is meh", "category": "gameplay_mechanics"}],
       "required_concepts": [
         {
           "concept_id": "c_001",
@@ -687,6 +695,8 @@
       ],
       "notes": "Three-axis complaint: content sparsity + loading screens + crashes. Free Lanes update (1826992588604218-32 'Many more planetary POIs') addresses POI density; 1.16.236 (1828894815567746-31) general crash fixes; ship optimization (1828894815567715-20) for loading. All three axes have at least partial patch coverage. Ideal: monitor, address all three. Failure: ignored_main_complaint if only one axis is touched.",
       "quick": false,
+      "multipart": true,
+      "secondary_aspects": [{"phrase": "constant crashes", "category": "technical_issues"}],
       "required_concepts": [
         {
           "concept_id": "c_001",

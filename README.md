@@ -59,7 +59,7 @@ steam-review-agent/
 │   ├── ingest_reviews.py          # Fetch Steam reviews via Web API
 │   ├── ingest_patch_notes.py      # Fetch + classify Steam patch notes
 │   ├── clean.py                   # Markup stripping, near-duplicate filtering
-│   ├── classify.py                # Review category classification (Haiku)
+│   ├── classify.py                # Review category classification + secondary aspect extraction (Haiku)
 │   ├── cluster.py                 # Time-windowed category clustering + priority signals
 │   ├── stats.py                   # Aggregate statistics over reviews + clusters
 │   ├── chunk.py                   # Section-aware patch-note chunking
@@ -75,7 +75,7 @@ steam-review-agent/
 │   ├── utils.py                   # Shared agent helpers (token accumulation, evidence formatting)
 │   └── nodes/
 │       ├── coordinator.py         # Plain-Python routing (mints run_id, action-freeze interception)
-│       ├── investigator.py        # Tool-use retrieval + self-RAG retries + cluster-note loading
+│       ├── investigator.py        # Tool-use retrieval + self-RAG retries + cluster-note loading + secondary aspect probing
 │       ├── responder.py           # Drafts player-facing reply (Sonnet 4.6)
 │       ├── critic.py              # Validates evidence chain, tone, action — writes per-iter audit
 │       └── human_approval.py      # Human-in-the-loop interrupt gate
@@ -161,7 +161,7 @@ Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — `s
 
 1. **Ingest** — fetch reviews from the Steam Web API and persist them
 2. **Clean + dedupe** — strip markup and drop near-duplicates above the configured threshold
-3. **Classify** — assign one of 10 review categories with a confidence score (Haiku)
+3. **Classify** — assign one of 10 review categories with a confidence score (Haiku); for multi-part reviews, extract secondary aspect phrases for downstream investigation
 4. **Cluster + stats** — group by category in a rolling time window and compute priority signals
 5. **Coordinator entry** — mint a `run_id` and route into the agent graph
 6. **Investigate**
@@ -169,7 +169,7 @@ Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — `s
    - Check a deterministic category gate — some categories like `other` skip retrieval entirely
    - Load active cluster notes for the category
    - If the LLM judges from notes alone that no response is needed, exit early (`no_response_needed`)
-   - Otherwise, the investigator LLM (Sonnet 4.6) drives retrieval via Anthropic's tool-use API: formulate a search query, call `retrieve_patches` (hybrid vector + BM25 → RRF → cross-encoder rerank), inspect results, and optionally reformulate and call again (up to 3 total calls)
+   - Otherwise, the investigator LLM (Sonnet 4.6) drives retrieval via Anthropic's tool-use API: formulate a search query, call `retrieve_patches` (hybrid vector + BM25 → RRF → cross-encoder rerank), inspect results, and optionally reformulate and call again (up to 4 total calls). For multi-part reviews, the classifier extracts secondary aspect phrases; the investigator may use its final call to probe the top secondary aspect if primary evidence is already sufficient
 7. **Draft** — generate a player-facing reply citing only chunks the investigator retrieved (Sonnet 4.6)
 8. **Critique → Human approval**
    - Validate the evidence chain, tone, and action choice
@@ -242,11 +242,11 @@ Five nodes: `coordinator` (plain Python), `investigator`, `responder`, `critic`,
 <details>
 <summary><strong>Retrieval pipeline (hybrid RAG)</strong></summary>
 
-Patch notes → section-aware chunker → dual index (ChromaDB `all-MiniLM-L6-v2` + in-memory BM25). Query time: **RRF fusion** (top 12) → **cross-encoder rerank** (`ms-marco-MiniLM-L-6-v2`, top 5). The investigator sees the final 5 chunks.
+Patch notes → section-aware chunker → dual index (ChromaDB `BAAI/bge-base-en-v1.5` + in-memory BM25). Query time: **RRF fusion** (top 12) → **cross-encoder rerank** (`ms-marco-MiniLM-L-6-v2`, top 5). The investigator sees the final 5 chunks.
 
 Reranker absolute scores are **not** passed to the investigator — they're uncalibrated and anchoring on them would amplify noise. The reranker orders; the investigator reasons about content.
 
-The investigator LLM formulates each search query and calls the tool up to 3 times total, reformulating between calls based on what it has seen. Embedding and reranker models lazy-loaded and cached at module level.
+The investigator LLM formulates each search query and calls the tool up to 4 times total, reformulating between calls based on what it has seen. For multi-part reviews, the classifier extracts secondary aspect phrases; if the investigator's primary evidence is sufficient and a call remains, it may probe the top secondary aspect. Each call is tagged with a `call_role` (`primary_initial`, `primary_reformulation`, or `secondary_probe`) for provenance tracking. Embedding and reranker models lazy-loaded and cached at module level.
 
 Implementation: `pipeline/retrieve.py`.
 
@@ -299,10 +299,10 @@ Three memory layers, each with a different lifetime and scope.
 - Both live in `pipeline/storage.py`
 
 **Semantic memory — patch note vector store (persistent)**
-- ChromaDB collection indexed with `all-MiniLM-L6-v2` embeddings, plus a parallel in-memory BM25 index
+- ChromaDB collection indexed with `BAAI/bge-base-en-v1.5` embeddings, plus a parallel in-memory BM25 index
 - Built from section-aware chunked patch notes (`pipeline/chunk.py` → `pipeline/retrieve.py`)
 - Queried at run time via RRF fusion (top 12) → cross-encoder rerank (top 5)
-- The investigator drives retrieval through Anthropic's tool-use API — it formulates queries, inspects results, and can reformulate up to 3 total calls
+- The investigator drives retrieval through Anthropic's tool-use API — it formulates queries, inspects results, and can reformulate up to 4 total calls (the 4th reserved for secondary aspect probes on multi-part reviews)
 - Persisted to disk (`chroma_db/`); BM25 index is rebuilt each run
 
 </details>
@@ -388,7 +388,7 @@ Full detail in `evals/ITERATION_LOG.md`.
 
 ## Results
 
-Latest full-eval run (56 cases, schema v7).
+Latest full-eval run (56 cases, schema v8).
 
 The metrics below cite four distinct populations:
 - **Total cases** (56) — the full golden set
@@ -460,7 +460,7 @@ The metrics below cite four distinct populations:
 - **Validation:** Pydantic (only at LLM trust boundaries)
 - **Storage:** SQLite (reviews, audit log, audit log iterations, cluster notes, classifications, schema version)
 - **Vector store:** ChromaDB
-- **Embeddings:** sentence-transformers (`all-MiniLM-L6-v2`)
+- **Embeddings:** sentence-transformers (`BAAI/bge-base-en-v1.5`)
 - **Reranker:** cross-encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
 - **Lexical search:** rank-bm25 (in-memory, rebuilt per run)
 - **Other:** pandas, python-frontmatter (for skill files), python-dotenv

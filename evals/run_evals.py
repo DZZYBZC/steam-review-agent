@@ -136,6 +136,10 @@ def build_initial_state(case: dict) -> AgentState:
             "category": case.get("classifier_category", "other"),
             "total_reviews": 1,
             "priority_score": 0.0,
+            # For multipart reviews, pass pre-annotated secondary aspects from
+            # golden.json. These are the eval source of truth, independent of
+            # live classifier output.
+            "secondary_aspects": case.get("secondary_aspects", []),
         },
         "review_tone": "",
         "iteration_count": 0,

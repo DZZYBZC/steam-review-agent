@@ -62,7 +62,16 @@ RETRIEVE_PATCHES_TOOL = {
                     "Keyword-style search query, 3-10 tokens. Include version "
                     "numbers, feature names, or error terms when relevant."
                 ),
-            }
+            },
+            "call_role": {
+                "type": "string",
+                "enum": ["primary", "secondary"],
+                "description": (
+                    "Tag this call as 'primary' (investigating the main complaint) "
+                    "or 'secondary' (probing a secondary aspect from a multi-part review). "
+                    "Defaults to 'primary' if omitted."
+                ),
+            },
         },
         "required": ["query"],
     },
@@ -83,6 +92,9 @@ def _emit_self_rag_log(
     is_sufficient: bool,
     reformulated_query: str | None,
     notes_sufficient_skip: bool = False,
+    call_role: str = "primary_initial",
+    aspect_phrase_used: str | None = None,
+    role_coerced: bool = False,
 ) -> None:
     """
     Append one JSONL line per Investigator tool call (or one line total on a
@@ -94,6 +106,10 @@ def _emit_self_rag_log(
 
     On a notes-sufficient skip, emit a single line with iteration_attempt=0,
     empty retrieved_ids/accepted_ids, and notes_sufficient_skip=True.
+
+    call_role: "primary_initial" | "primary_reformulation" | "secondary_probe"
+    aspect_phrase_used: the secondary aspect phrase (only when call_role is secondary_probe)
+    role_coerced: True if the LLM-reported call_role was overridden by a safeguard
     """
     if not run_id:
         return
@@ -112,6 +128,9 @@ def _emit_self_rag_log(
             "is_sufficient": is_sufficient,
             "reformulated_query": reformulated_query or None,
             "notes_sufficient_skip": notes_sufficient_skip,
+            "call_role": call_role,
+            "aspect_phrase_used": aspect_phrase_used,
+            "role_coerced": role_coerced,
         }
         path = _INVESTIGATOR_LOG_DIR / f"investigator_{run_id}.jsonl"
         with path.open("a") as f:
@@ -147,6 +166,7 @@ def _build_user_message(
     category: str,
     cluster_notes_text: str,
     retrieval_hint: str,
+    secondary_aspects: list[dict] | None = None,
 ) -> str:
     """
     Build the initial user message for the Investigator LLM.
@@ -154,6 +174,9 @@ def _build_user_message(
     Cluster notes are injected verbatim (same as pre-tool-use behavior).
     The critic retrieval hint, if present, is included as a dedicated block
     telling the LLM to seed its first retrieve_patches call from it.
+    Secondary aspects, when non-empty, are injected as a dedicated block
+    for bounded multi-aspect investigation. Single-issue reviews never see
+    this block.
     """
     parts = [
         f"<category>{category}</category>",
@@ -173,6 +196,30 @@ def _build_user_message(
             "</critic_retrieval_hint>",
         ]
 
+    if secondary_aspects:
+        aspect_lines = []
+        for asp in secondary_aspects:
+            phrase = asp.get("phrase", "")
+            cat = asp.get("category", "")
+            if phrase:
+                entry = f'- "{phrase}"'
+                if cat:
+                    entry += f" ({cat})"
+                aspect_lines.append(entry)
+        if aspect_lines:
+            parts += [
+                "",
+                "<secondary_aspects>",
+                "If your primary investigation has reached a natural stopping point "
+                "and you have tool calls remaining, consider probing one of these "
+                "secondary issues from the same review:",
+                *aspect_lines,
+                "Use keyword-style queries just like primary queries. Tag this call "
+                'with call_role: "secondary". Include any relevant results in your '
+                "assessment.",
+                "</secondary_aspects>",
+            ]
+
     return "\n".join(parts)
 
 
@@ -190,6 +237,7 @@ def _run_investigator_tool_loop(
     retrieval_hint_used: bool,
     fell_back_to_default: bool,
     app_id: str,
+    secondary_aspects: list[dict] | None = None,
 ) -> tuple[dict, dict, dict[str, int], int]:
     """
     Drive the Investigator LLM with the retrieve_patches tool.
@@ -275,6 +323,9 @@ def _run_investigator_tool_loop(
                     is_sufficient=final_is_sufficient,
                     reformulated_query=None,
                     notes_sufficient_skip=False,
+                    call_role=entry.get("call_role", "primary_initial"),
+                    aspect_phrase_used=entry.get("aspect_phrase_used"),
+                    role_coerced=entry.get("role_coerced", False),
                 )
             return assessment, accumulated_chunks, token_totals, tool_calls_used
 
@@ -310,7 +361,8 @@ def _run_investigator_tool_loop(
                 })
                 continue
 
-            query = (block.input or {}).get("query", "").strip()  # type: ignore[union-attr]
+            tool_input = block.input or {}  # type: ignore[union-attr]
+            query = tool_input.get("query", "").strip()
             if not query:
                 tool_result_blocks.append({
                     "type": "tool_result",
@@ -325,6 +377,33 @@ def _run_investigator_tool_loop(
             for r in results:
                 accumulated_chunks.setdefault(r["chunk_id"], r)
 
+            # Call-role provenance: derive call_role label with safeguards.
+            has_secondary = bool(secondary_aspects)
+            raw_role = tool_input.get("call_role", "primary")
+            role_coerced = False
+            aspect_phrase_used: str | None = None
+
+            if raw_role == "secondary":
+                if not has_secondary:
+                    # Single-issue review — coerce secondary→primary
+                    logger.warning(
+                        f"Investigator: call_role='secondary' on a review with no "
+                        f"secondary_aspects — coercing to 'primary' (run_id={run_id})"
+                    )
+                    raw_role = "primary"
+                    role_coerced = True
+                else:
+                    # Log which aspect phrase was probed (best-effort: first aspect)
+                    aspect_phrase_used = secondary_aspects[0].get("phrase", "") if secondary_aspects else None
+
+            # Derive granular call_role label
+            if raw_role == "secondary":
+                call_role = "secondary_probe"
+            elif tool_calls_used == 1:
+                call_role = "primary_initial"
+            else:
+                call_role = "primary_reformulation"
+
             # Observability: buffer per-call metadata for post-hoc flush
             # once `relevant_ids` is known (enables per-call attribution).
             tool_call_log_buffer.append({
@@ -333,6 +412,9 @@ def _run_investigator_tool_loop(
                 "retrieval_hint_used": (tool_calls_used == 1 and retrieval_hint_used),
                 "fell_back_to_default": (tool_calls_used == 1 and fell_back_to_default),
                 "retrieved_ids": [r["chunk_id"] for r in results],
+                "call_role": call_role,
+                "aspect_phrase_used": aspect_phrase_used,
+                "role_coerced": role_coerced,
             })
 
             tool_result_blocks.append({
@@ -441,11 +523,14 @@ def investigator_node(state: AgentState) -> dict:
     fell_back_to_default = is_evidence_revision and not retrieval_hint
     run_id = state.get("run_id", "")
 
+    secondary_aspects = cluster.get("secondary_aspects", []) or []
+
     user_message = _build_user_message(
         review_text=review_text,
         category=category,
         cluster_notes_text=cluster_notes_text,
         retrieval_hint=retrieval_hint,
+        secondary_aspects=secondary_aspects,
     )
 
     # Stage 2: Tool-use loop
@@ -456,6 +541,7 @@ def investigator_node(state: AgentState) -> dict:
             retrieval_hint_used=retrieval_hint_used,
             fell_back_to_default=fell_back_to_default,
             app_id=app_id,
+            secondary_aspects=secondary_aspects,
         )
         total_tokens["input"] += loop_tokens["input"]
         total_tokens["output"] += loop_tokens["output"]

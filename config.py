@@ -73,7 +73,13 @@ CHUNK_MIN_TEXT_LENGTH = 10
 EMBEDDING_BATCH_SIZE = 100
 
 CHROMA_PERSIST_DIR = "chroma_db"
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+
+PARENT_CHUNK_MAX_LENGTH = 2000          # Budget for matched-centered parent context (display only, not embedded)
+PARENT_CONTEXT_INVESTIGATOR = True      # Investigator sees [matched] + [context] format
+PARENT_CONTEXT_RESPONDER = True         # Responder/Critic see parent context in evidence_sources
+PARENT_DEDUP_ENABLED = False            # Same-parent dedup in retrieve() (off initially — test context gain first)
+PARENT_DEDUP_MAX_PER_PARENT = 2         # When dedup enabled: max children kept per parent (not hard-1)
+EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
 SIMILARITY_THRESHOLD = 0.3
 VECTOR_TOP_K = 8
 BM25_TOP_K = 8
@@ -120,7 +126,7 @@ RETRIEVAL_CATEGORIES = [
     "monetization_value",
 ]
 
-INVESTIGATOR_MAX_TOOL_CALLS = 3  # Hard cap on retrieve_patches tool calls per investigator invocation
+INVESTIGATOR_MAX_TOOL_CALLS = 4  # Hard cap on retrieve_patches tool calls per investigator invocation
 
 CLASSIFICATION_LIMIT = 200  # Default number of reviews to classify per run
 

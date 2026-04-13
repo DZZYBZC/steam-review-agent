@@ -16,9 +16,13 @@ Expected shapes:
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from pipeline.storage import get_connection
+
+
+_INVESTIGATOR_LOG_DIR = Path(__file__).resolve().parents[2] / "evals" / "logs"
 
 
 # Stop reasons that mean the agent never produced a real action — the run
@@ -590,6 +594,69 @@ def grounding_band_compliance(case: dict, result: dict) -> dict:
     }
 
 
+def secondary_probe_check(case: dict, result: dict) -> dict:
+    """
+    Check whether the investigator made a secondary_probe call.
+
+    Reads the investigator JSONL log for the case's run_id and uses the
+    call_role tag to directly detect secondary probes. For multipart cases,
+    the probe should fire; for single-issue cases, it should not.
+
+    Output: {"probed": bool, "tool_calls_used": int,
+             "call_roles": list[str], "role_coerced": bool, "applicable": bool}
+    """
+    is_multipart = bool(case.get("multipart"))
+    run_id = result.get("run_id", "")
+    stop_reason = result.get("stop_reason", "") or ""
+
+    # Not applicable for infra errors or skip-path runs
+    if stop_reason in INFRASTRUCTURE_ERROR_STOP_REASONS or stop_reason in NO_RESPONSE_STOP_REASONS:
+        return {
+            "probed": False,
+            "tool_calls_used": 0,
+            "call_roles": [],
+            "role_coerced": False,
+            "is_multipart": is_multipart,
+            "applicable": False,
+        }
+
+    if not run_id:
+        return {
+            "probed": False,
+            "tool_calls_used": 0,
+            "call_roles": [],
+            "role_coerced": False,
+            "is_multipart": is_multipart,
+            "applicable": False,
+        }
+
+    # Read investigator JSONL log
+    log_path = _INVESTIGATOR_LOG_DIR / f"investigator_{run_id}.jsonl"
+    call_roles: list[str] = []
+    role_coerced = False
+    if log_path.exists():
+        try:
+            with log_path.open() as f:
+                for line in f:
+                    entry = json.loads(line)
+                    role = entry.get("call_role", "primary_initial")
+                    call_roles.append(role)
+                    if entry.get("role_coerced", False):
+                        role_coerced = True
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    probed = "secondary_probe" in call_roles
+    return {
+        "probed": probed,
+        "tool_calls_used": len(call_roles),
+        "call_roles": call_roles,
+        "role_coerced": role_coerced,
+        "is_multipart": is_multipart,
+        "applicable": True,
+    }
+
+
 # ---------- Batch-level scorers -------------------------------------------
 
 def critic_health(records: list[dict]) -> dict:
@@ -704,6 +771,7 @@ PER_CASE_SCORERS = {
     "evidence_utilization": evidence_utilization,
     "token_cost": token_cost,
     "grounding_band_compliance": grounding_band_compliance,
+    "secondary_probe_check": secondary_probe_check,
 }
 
 

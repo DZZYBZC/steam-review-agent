@@ -157,18 +157,6 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 </example>
 
 <example index="4">
-<review>The PvP balance is completely broken. Mages one-shot everything while melee builds are useless. Devs clearly don't play their own game. The servers are also laggy half the time.</review>
-<classification>
-{
-  "primary_category": "balance_difficulty",
-  "secondary_categories": ["multiplayer_network"],
-  "confidence": 0.90,
-  "reasoning": "The reviewer's primary frustration is class balance in PvP — mages being overpowered and melee being underpowered. This is clearly a balance complaint. Server lag is mentioned as a secondary issue."
-}
-</classification>
-</example>
-
-<example index="5">
 <review>The game stutters like crazy during big fights, dropping to single digit fps. I think it's because the engine can't handle all the particle effects. Also the hitboxes feel completely off — I'm clearly hitting enemies but no damage registers.</review>
 <classification>
 {
@@ -180,7 +168,7 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 </classification>
 </example>
 
-<example index="6">
+<example index="5">
 <review>The story completely falls apart in act 3. The villain's motivation makes no sense after all that buildup, and the ending feels rushed like they ran out of budget. Voice acting was great throughout though.</review>
 <classification>
 {
@@ -192,7 +180,7 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 </classification>
 </example>
 
-<example index="7">
+<example index="6">
 <review>absolute garbage refund pls</review>
 <classification>
 {
@@ -204,7 +192,7 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 </classification>
 </example>
 
-<example index="8">
+<example index="7">
 <review>The base building sucks, completely pointless</review>
 <classification>
 {
@@ -216,19 +204,7 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 </classification>
 </example>
 
-<example index="9">
-<review>Miss the old game. This one is a joke. Devs ruined it.</review>
-<classification>
-{
-  "primary_category": "other",
-  "secondary_categories": [],
-  "confidence": 0.85,
-  "reasoning": "Pure nostalgia venting — no concrete anchor and no actionable detail. The dominant content is sentiment ('joke', 'ruined it'), not a reportable issue. Both parts of the specificity test fail."
-}
-</classification>
-</example>
-
-<example index="10">
+<example index="8">
 <review>Crashes whenever I open the inventory in dungeon 3</review>
 <classification>
 {
@@ -240,19 +216,7 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 </classification>
 </example>
 
-<example index="11">
-<review>Cooldown on dash skill is way too long, can't escape mob packs</review>
-<classification>
-{
-  "primary_category": "balance_difficulty",
-  "secondary_categories": [],
-  "confidence": 0.88,
-  "reasoning": "Anchor is 'dash skill cooldown' and the actionable detail is observed-vs-expected (cooldown is longer than the player needs to escape mob packs). Both parts of the specificity test pass — this is a real tuning complaint, not 'other', despite being one sentence."
-}
-</classification>
-</example>
-
-<example index="12">
+<example index="9">
 <review>Miss the old PD2. Can't even find a game anymore. Devs don't care.</review>
 <classification>
 {
@@ -264,7 +228,7 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 </classification>
 </example>
 
-<example index="13">
+<example index="10">
 <review>Fun but extremely grindy, zero quality of life, basically a second job</review>
 <classification>
 {
@@ -276,17 +240,6 @@ If no secondary categories apply, use an empty list: "secondary_categories": []
 </classification>
 </example>
 
-<example index="14">
-<review>Enjoyable but takes way too long, no quality of life improvements, feels like a chore</review>
-<classification>
-{
-  "primary_category": "other",
-  "secondary_categories": [],
-  "confidence": 0.55,
-  "reasoning": "Same vocabulary-domain trap as the previous example. The 'fun/enjoyable but...' concession opener and 'quality of life' phrasing make this look like a content_progression complaint, but the specificity test rejects it. Part 1 weakly passes ('quality of life' is a named system). Part 2 fails: 'takes way too long' is a bare time-vague claim with no measurement (how long? compared to what?), 'no QoL improvements' names no specific missing feature (no auto-pickup? no fast travel? no map markers? no inventory sort?), 'feels like a chore' is figurative venting. A reviewer who actually had a content_progression complaint would name the specific friction — e.g. 'Act 2 takes 12 hours of fetch quests' or 'no auto-pickup means I click each currency drop'. Without that, route to 'other'. This rule applies regardless of how 'fun but...' the opener is."
-}
-</classification>
-</example>
 </examples>
 
 <guardrails>

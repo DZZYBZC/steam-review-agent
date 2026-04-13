@@ -230,7 +230,7 @@ def _call_judge_llm(user_message: str) -> tuple[dict, dict[str, int]]:
             model=JUDGE_MODEL,
             max_tokens=JUDGE_MAX_TOKENS,
             temperature=JUDGE_TEMPERATURE,
-            system=SYSTEM_PROMPT,
+            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user_message}],
         )
     except anthropic.APIError as e:

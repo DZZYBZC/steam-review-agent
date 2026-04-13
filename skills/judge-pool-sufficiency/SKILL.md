@@ -83,20 +83,7 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
 {"ruling": "supports", "rationale": "Notes specify 'no patch in corpus addresses this' — an empty pool IS the load-bearing finding; an ideal responder would correctly disown a fix and set investigate."}
 </example>
 
-<example index="3" type="supports — junk in pool, load-bearing material present">
-<review>Wonder costs feel way too high after the last patch.</review>
-<ideal_action>monitor</ideal_action>
-<case_notes>Design complaint about wonder costs. Patch 1.2.5 adjusted wonder costs; agent should acknowledge the change, frame as ongoing tuning, set monitor.</case_notes>
-<retrieved_chunks>
-  [1811772772410550-99] Update 1.2.5 - Balance: adjusted wonder construction costs downward by 15% across all eras.
-  [1811772772410550-100] Update 1.2.5 - Audio: fixed ambient sound looping in desert biomes.
-  [1811772772410550-101] Update 1.2.4 - Combat: fixed several Commander pathing failures including unit movement around chokepoints.
-  [1811772772410550-102] Update 1.2.3 - Misc: minor UI fixes for the diplomacy screen.
-</retrieved_chunks>
-{"ruling": "supports", "rationale": "Chunk 1811772772410550-99 carries the wonder-cost adjustment the gold answer needs. Three irrelevant chunks are noise, not a sufficiency problem — the load-bearing material is present."}
-</example>
-
-<example index="4" type="partially_supports — multi-part, one sub-issue grounded">
+<example index="3" type="partially_supports — multi-part, one sub-issue grounded">
 <review>AI pathing is broken, the screen scroll keeps getting stuck, and the age transition policy grind is killing me.</review>
 <ideal_action>investigate</ideal_action>
 <case_notes>Three sub-issues. Gold answer: acknowledge that 1.2.4 fixed several pathing failures (cite it), explicitly disown a fix for the screen scroll (no patch), and acknowledge policy-card grind as a known design concern.</case_notes>
@@ -107,7 +94,7 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
 {"ruling": "partially_supports", "rationale": "Chunk 1811772772410550-78 grounds the pathing sub-issue, but no chunk addresses screen scroll or policy-card grind — two of three load-bearing sub-issues unsupported."}
 </example>
 
-<example index="5" type="partially_supports — generic patch present, specific fix missing">
+<example index="4" type="partially_supports — generic patch present, specific fix missing">
 <review>Multiplayer desyncs constantly in 4-player games since 1.3.0.</review>
 <ideal_action>investigate</ideal_action>
 <case_notes>Specific multiplayer desync bug post-1.3.0. Patch 1.3.1 includes a targeted desync fix for 4+ player lobbies. Agent should cite 1.3.1 specifically, acknowledge the issue is being actively addressed, set investigate.</case_notes>
@@ -118,7 +105,7 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
 {"ruling": "partially_supports", "rationale": "Chunk 1811772772410550-110 is from the right patch (1.3.1) but only mentions generic 'networking fixes' — not the specific 4-player desync fix the notes require. An ideal responder could hedge toward it but couldn't confidently cite the targeted fix."}
 </example>
 
-<example index="6" type="does_not_support — wrong patch in pool">
+<example index="5" type="does_not_support — wrong patch in pool">
 <review>Crashes constantly on the launch screen since the latest update — I can't even get into the menu.</review>
 <ideal_action>escalate</ideal_action>
 <case_notes>Hard-blocker crash-on-launch post-1.3.0. No patch in corpus fixes this. Agent must escalate and explicitly NOT claim resolution. Tangential 'stability improvements' patches must be disowned, not cited as fixes.</case_notes>

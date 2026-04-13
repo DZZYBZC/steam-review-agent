@@ -130,7 +130,6 @@ If the evidence you retrieved is completely irrelevant, return low confidence, a
 <cluster_notes>
 [known_issue] (2025-08-12): Startup crash reports spiked after the Ver.1.040 patch.
 </cluster_notes>
-<process>Call retrieve_patches(query="crash startup launch stability recent patch"). Tool returns 3 chunks. Synthesize.</process>
 <final_assessment>
 {
   "relevant_ids": ["steam_client_fix_chunk_0", "patch_021_chunk_7", "patch_030_02_01_chunk_3"],
@@ -145,7 +144,6 @@ If the evidence you retrieved is completely irrelevant, return low confidence, a
 
 <example index="2" type="normal_retrieval_then_retry">
 <complaint>My character keeps falling through the floor in the Scarlet Forest area</complaint>
-<process>Call retrieve_patches(query="character fall through floor collision"). Tool returns 2 chunks, neither mentions Scarlet Forest. Call retrieve_patches(query="Scarlet Forest terrain clipping collision bug") to target the gap.</process>
 <final_assessment>
 {
   "relevant_ids": ["patch_030_chunk_5"],
@@ -163,7 +161,6 @@ If the evidence you retrieved is completely irrelevant, return low confidence, a
 <cluster_notes>
 [human_feedback] (2025-09-03): We do not draft replies to pure pricing / value / DLC cost complaints. These are business-model feedback, not product defects — escalated to the commercial team via a separate channel, not via player-facing replies.
 </cluster_notes>
-<process>The complaint is pure pricing grievance. A human_feedback note directly states the response policy for this category. Skip without calling retrieve_patches.</process>
 <final_assessment>
 {
   "relevant_ids": [],
@@ -182,7 +179,6 @@ If the evidence you retrieved is completely irrelevant, return low confidence, a
 [known_issue] (2025-08-12): Hunt-start crash is a widely reported known issue. Several fixes have shipped in the 1.040 patch series.
 [response_history] (2025-08-14): Prior response cycle acknowledged the 1.040.03.01 stability pass.
 </cluster_notes>
-<process>The notes describe the issue as known and fixed — but "known" does NOT mean "do not reply." The player deserves an acknowledgement that references the relevant patch. Do NOT set skip_response=true. Call retrieve_patches to gather patch evidence the Responder can cite.</process>
 <final_assessment>
 {
   "relevant_ids": ["patch_040_03_01_chunk_4", "patch_040_02_chunk_2"],
@@ -195,27 +191,11 @@ If the evidence you retrieved is completely irrelevant, return low confidence, a
 </final_assessment>
 </example>
 
-<example index="5" type="normal_retrieval">
-<complaint>Textures look blurry and pop in constantly</complaint>
-<process>Call retrieve_patches(query="texture streaming quality pop-in high resolution pack"). Tool returns 3 chunks.</process>
-<final_assessment>
-{
-  "relevant_ids": ["patch_040_03_01_chunk_1", "patch_040_03_01_chunk_2", "commitment_chunk_4"],
-  "summary": "Ver.1.040.03.01 adjusted texture streaming for better visual quality and optimized the High Resolution Texture Pack's VRAM usage. An earlier developer commitment post acknowledged texture streaming as a known issue targeted for improvement.",
-  "confidence": 0.65,
-  "known_unknowns": ["Whether the player has the High Resolution Texture Pack installed", "Whether the texture streaming improvements fully resolved pop-in"],
-  "is_sufficient": true,
-  "skip_response": false
-}
-</final_assessment>
-</example>
-
-<example index="6" type="anti_skip_subtle" description="Cluster note sounds authoritative ('team is aware, fix in progress') but describes bug status, not response policy. Still retrieve.">
+<example index="5" type="anti_skip_subtle" description="Cluster note sounds authoritative ('team is aware, fix in progress') but describes bug status, not response policy. Still retrieve.">
 <complaint>Still crashing every time I try to join a multiplayer lobby after the last update</complaint>
 <cluster_notes>
 [known_issue] (2025-09-10): Repeated crash-to-desktop when loading multiplayer lobbies. Confirmed regression from Ver.1.040. Team is aware and working on a fix.
 </cluster_notes>
-<process>The note sounds confident and specific — but it describes bug status ("confirmed regression," "working on a fix"), not response policy. There is no statement about whether or not to reply. The player deserves an acknowledgement citing the relevant patch evidence. Call retrieve_patches(query="multiplayer lobby crash regression Ver.1.040").</process>
 <final_assessment>
 {
   "relevant_ids": ["patch_040_chunk_11", "patch_040_03_01_chunk_6"],
@@ -228,12 +208,11 @@ If the evidence you retrieved is completely irrelevant, return low confidence, a
 </final_assessment>
 </example>
 
-<example index="7" type="retrieval_gap_multi_issue" description="Review contains two distinct sub-issues. First retrieval covers one; second targets the gap.">
+<example index="6" type="retrieval_gap_multi_issue" description="Review contains two distinct sub-issues. First retrieval covers one; second targets the gap.">
 <complaint>Two issues: textures are still blurry on PS5 after the last patch, and the game hard-freezes during expedition loading screens</complaint>
 <cluster_notes>
 [known_issue] (2025-08-20): Texture streaming quality complaints persisting post-patch across PS5 players.
 </cluster_notes>
-<process>Call retrieve_patches(query="blurry textures PS5 texture streaming quality"). Returns chunks on texture streaming optimizations — covers sub-issue 1 but nothing about hard freezes. The review has two distinct problems; the loading screen freeze is unaddressed. Call retrieve_patches(query="hard freeze expedition loading screen crash stability") to target the gap.</process>
 <final_assessment>
 {
   "relevant_ids": ["patch_040_03_01_chunk_1", "patch_040_03_01_chunk_2", "patch_030_chunk_8"],

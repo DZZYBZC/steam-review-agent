@@ -71,7 +71,7 @@ def call_classifier(review_text: str) -> ClassificationResult:
             model=CLASSIFIER_MODEL,
             max_tokens=CLASSIFIER_MAX_TOKENS,
             temperature=CLASSIFIER_TEMPERATURE,
-            system=SYSTEM_PROMPT,
+            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[
                 {"role": "user", "content": review_text}
             ],
@@ -222,7 +222,7 @@ def classify_tone(review_text: str) -> str:
             model=TONE_CLASSIFIER_MODEL,
             max_tokens=TONE_CLASSIFIER_MAX_TOKENS,
             temperature=TONE_CLASSIFIER_TEMPERATURE,
-            system=TONE_SYSTEM_PROMPT,
+            system=[{"type": "text", "text": TONE_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": review_text}],
         )
     except anthropic.APIError as e:

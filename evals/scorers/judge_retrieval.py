@@ -230,7 +230,7 @@ def _call_judge_llm(
             model=JUDGE_MODEL,
             max_tokens=RETRIEVAL_JUDGE_MAX_TOKENS,
             temperature=JUDGE_TEMPERATURE,
-            system=system_prompt,
+            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user_message}],
         )
     except anthropic.APIError as e:

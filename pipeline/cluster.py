@@ -208,7 +208,7 @@ priority_score: {cluster.priority_score}
             model=CLUSTER_SUMMARY_MODEL,
             max_tokens=CLUSTER_SUMMARY_MAX_TOKENS,
             temperature=CLUSTER_SUMMARY_TEMPERATURE,
-            system=CLUSTER_SYSTEM_PROMPT,
+            system=[{"type": "text", "text": CLUSTER_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[
                 {"role": "user", "content": user_message}
             ],

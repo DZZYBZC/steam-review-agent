@@ -215,7 +215,7 @@ def _run_investigator_tool_loop(
             model=INVESTIGATOR_MODEL,
             max_tokens=INVESTIGATOR_MAX_TOKENS,
             temperature=INVESTIGATOR_TEMPERATURE,
-            system=SYSTEM_PROMPT,
+            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             tools=[RETRIEVE_PATCHES_TOOL],
             messages=messages,  # type: ignore[arg-type]
         )
@@ -373,8 +373,14 @@ def investigator_node(state: AgentState) -> dict:
 
     logger.info(f"Investigator: processing review ({len(review_text)} chars), category={category}")
 
-    # Tone classification (before retrieval — independent of evidence)
-    if category == "other":
+    # Tone classification (before retrieval — independent of evidence).
+    # Reuse the tone from a prior pass if already set (avoids a redundant
+    # Haiku API call on evidence-type re-investigation cycles).
+    existing_tone = state.get("review_tone", "")
+    if existing_tone and existing_tone not in ("", "unknown"):
+        review_tone = existing_tone
+        logger.info(f"Investigator: reusing prior tone '{review_tone}'")
+    elif category == "other":
         review_tone = "skipped"
         logger.info("Investigator: skipped tone classification for category 'other'")
     else:

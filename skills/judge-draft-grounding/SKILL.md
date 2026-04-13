@@ -85,18 +85,7 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
 {"ruling": "supports", "rationale": "Draft explicitly disowns having a fix ('we don't have evidence... that addresses this'), which is the correct use of an empty pool — no over-claim."}
 </example>
 
-<example index="3" type="supports — junk in pool, load-bearing claim grounded">
-<review>Wonder costs feel way too high after the last patch.</review>
-<draft_response>Update 1.2.5 reduced wonder construction costs by about 15% across all eras, which should help with the pacing you're describing. We're continuing to monitor feedback on build costs.</draft_response>
-<retrieved_chunks>
-  [1811772772410550-99] Update 1.2.5 - Balance: adjusted wonder construction costs downward by 15% across all eras.
-  [1811772772410550-100] Update 1.2.5 - Audio: fixed ambient sound looping in desert biomes.
-  [1811772772410550-101] Update 1.2.4 - Combat: fixed several Commander pathing failures including unit movement around chokepoints.
-</retrieved_chunks>
-{"ruling": "supports", "rationale": "Draft's wonder-cost claim is grounded in chunk 1811772772410550-99. Two irrelevant chunks are noise, not a grounding problem — every substantive claim is backed."}
-</example>
-
-<example index="4" type="supports — safe generic draft, evidence unused but not load-bearing">
+<example index="3" type="supports — safe generic draft, evidence unused but not load-bearing">
 <review>AI pathing still seems a bit off in chokepoints.</review>
 <draft_response>Thanks for the report on AI pathing. We've seen similar feedback and the team is aware of chokepoint pathing issues. We're continuing to investigate and improve pathing behavior.</draft_response>
 <retrieved_chunks>
@@ -105,7 +94,7 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
 {"ruling": "supports", "rationale": "Draft makes no fabricated claims — it gives a safe, generic acknowledgement. Chunk 1811772772410550-78 could have strengthened the response by citing the 1.2.4 fix, but the draft's omission does not change its substantive posture (still investigate-shaped). Safe-but-thin, not over-claim."}
 </example>
 
-<example index="5" type="partially_supports — one sub-issue grounded, one fabricated">
+<example index="4" type="partially_supports — one sub-issue grounded, one fabricated">
 <review>AI pathing is broken and the screen scroll keeps getting stuck.</review>
 <draft_response>Update 1.2.4 fixed several Commander pathing failures around chokepoints, so the AI pathing issue should be resolved. The screen scroll bug is fixed in update 1.2.6 — please verify on the latest build.</draft_response>
 <retrieved_chunks>
@@ -114,7 +103,7 @@ Respond with ONLY a valid JSON object. Your entire response must be parseable by
 {"ruling": "partially_supports", "rationale": "Pathing claim grounded in chunk 1811772772410550-78, but the 'screen scroll bug is fixed in update 1.2.6' claim has no chunk in the pool — the second assertion is fabricated."}
 </example>
 
-<example index="6" type="does_not_support — over-claim against tangential chunk">
+<example index="5" type="does_not_support — over-claim against tangential chunk">
 <review>The game crashes constantly on the launch screen since the latest update.</review>
 <draft_response>Update 1.2.9 included general stability improvements and crash fixes that should resolve the launch-screen crashes you're experiencing. Please try restarting Steam to apply the patch.</draft_response>
 <retrieved_chunks>

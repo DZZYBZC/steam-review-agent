@@ -504,12 +504,3 @@ export HF_TOKEN=...
 | `python test_graph.py` | End-to-end graph smoke test on a hardcoded "game crashes in dungeon" review. Auto-approves at the human gate. ~3-5 real LLM calls, ~30s wall clock, costs a few cents. |
 | `python evals/run_evals.py` | Run the full eval suite (56 golden cases). `--quick` for a subset, `--case-id <id>` for a single case, `--app-id <id>` and `--category <cat>` for filters, `--workers N` to control parallelism (default 10). Writes a snapshot to `evals/snapshots/` and a raw run JSON to `evals/runs/`. |
 | `python resolve_note.py {list <app_id> <category> \| resolve <note_id> \| reactivate <note_id>}` | Manage the cluster notes lifecycle. |
-
-### Expected runtime and cost (rough)
-
-- **Data pipeline** (500 reviews, fresh fetch): ~5–10 min wall clock; cost dominated by classification (~500 Haiku calls × ~300 input tokens ≈ ~$0.10).
-- **Single-review agent run**: ~30–60 sec including retrieval; ~5–15K total tokens depending on revision iterations; <$0.05 per review (Sonnet on the responder, Haiku elsewhere).
-- **Full eval suite** (56 cases): **~5 min wall clock at 10 workers** (parallel execution lands all cases concurrently against the agent graph; SQLite uses write-ahead logging to avoid lock contention). Sequential is closer to ~25 min; pre-parallelization sequential was 25–35 min. ~760K total tokens (down from ~880K before action-freeze eliminated revision thrash); on the order of $3–4 per full run with all judges enabled.
-- **Cached judge re-score** (offline against a saved run JSON): ~30 sec; $0 (cache hit on every flagged case).
-
-Numbers are approximations from the latest eval run. Actual cost depends on Anthropic pricing at run time.

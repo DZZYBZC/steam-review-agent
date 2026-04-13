@@ -381,7 +381,7 @@ def _run_investigator_tool_loop(
                 })
                 continue
 
-            results = retrieve(query, app_id)
+            results = retrieve(query, app_id, run_id=run_id)
             tool_calls_used += 1
 
             # Call-role provenance: derive call_role label with safeguards.

@@ -8,11 +8,11 @@
       "review_id": "FK to reviews table",
       "review_text": "denormalized full text for annotator readability",
       "classifier_category": "what the classifier assigned (may be 'other' for adversarial cases)",
-      "annotated_category": "human-corrected category \u2014 what the case should be treated as",
+      "annotated_category": "human-corrected category — what the case should be treated as",
       "ideal_action": "no_action | monitor | investigate | escalate",
       "gate_should_skip": "true if Investigator's _should_retrieve gate should skip retrieval (used by gating_accuracy scorer)",
-      "must_include_chunk_ids": "List of requirement slots for the retrieval_recall scorer. Each slot is either a chunk_id string (one exact required chunk) or an object of shape {\"any_of\": [chunk_id, ...]} (one required concept expressed across equivalent chunks \u2014 the slot is hit if any element of any_of is retrieved). Each slot counts as one unit in the recall denominator. Empty for subjective/no-evidence cases.",
-      "required_concepts": "List of named concepts the retriever needs to surface, scored by the concept_recall scorer. Each entry is {\"concept_id\": str, \"name\": str, \"any_of\": [chunk_id, ...]}. concept_id is the STABLE machine-key used to reference the concept from sufficient_sets \u2014 once assigned (e.g. c_001), it never changes. name is human-readable display text only and may be renamed freely. any_of is the non-empty list of chunk_id equivalents; the concept is hit iff any element lands in the retrieval pool. concept_id must be unique within a case. Empty/absent \u2192 concept_recall is not_applicable for the case (same semantics as empty must_include_chunk_ids). Mechanically backfilled 1:1 from must_include_chunk_ids by evals/migrate_slots_to_concepts.py; semantic merging and equivalent-chunk additions are deferred to the manual annotator pass. Concept granularity rule: One concept = one independently meaningful claim the responder may need to make. Not an entire solution package, not a trivial phrase fragment. Test: if you can answer the review correctly without this claim, it's not a concept; if it bundles multiple independent claims that could each be missing on their own, split it.",
+      "must_include_chunk_ids": "List of requirement slots for the retrieval_recall scorer. Each slot is either a chunk_id string (one exact required chunk) or an object of shape {\"any_of\": [chunk_id, ...]} (one required concept expressed across equivalent chunks — the slot is hit if any element of any_of is retrieved). Each slot counts as one unit in the recall denominator. Empty for subjective/no-evidence cases.",
+      "required_concepts": "List of named concepts the retriever needs to surface, scored by the concept_recall scorer. Each entry is {\"concept_id\": str, \"name\": str, \"any_of\": [chunk_id, ...]}. concept_id is the STABLE machine-key used to reference the concept from sufficient_sets — once assigned (e.g. c_001), it never changes. name is human-readable display text only and may be renamed freely. any_of is the non-empty list of chunk_id equivalents; the concept is hit iff any element lands in the retrieval pool. concept_id must be unique within a case. Empty/absent → concept_recall is not_applicable for the case (same semantics as empty must_include_chunk_ids). Mechanically backfilled 1:1 from must_include_chunk_ids by evals/migrate_slots_to_concepts.py; semantic merging and equivalent-chunk additions are deferred to the manual annotator pass. Concept granularity rule: One concept = one independently meaningful claim the responder may need to make. Not an entire solution package, not a trivial phrase fragment. Test: if you can answer the review correctly without this claim, it's not a concept; if it bundles multiple independent claims that could each be missing on their own, split it.",
       "notes": "free-text rationale: what the IDEAL handling looks like and why",
       "quick": "true if part of the 5-case quick subset (D2)",
       "multipart": "true if the review contains genuinely distinct complaint aspects (not redundant evidence for one issue). Absent = false.",
@@ -30,7 +30,7 @@
       "ideal_action": "investigate",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Specific technical bug \u2014 solo stealth heist progress lost on transient disconnect. No patch in corpus addresses this directly. Agent should acknowledge as known-issue-shaped, set action=investigate, and NOT fabricate a fix or cite an unrelated patch as a fix. Tests unsourced_claim guard.",
+      "notes": "Specific technical bug — solo stealth heist progress lost on transient disconnect. No patch in corpus addresses this directly. Agent should acknowledge as known-issue-shaped, set action=investigate, and NOT fabricate a fix or cite an unrelated patch as a fix. Tests unsourced_claim guard.",
       "quick": false
     },
     {
@@ -42,16 +42,38 @@
       "annotated_category": "technical_issues",
       "ideal_action": "investigate",
       "gate_should_skip": false,
-      "must_include_chunk_ids": [],
-      "notes": "Offline mode reportedly still requires net handshake. No patch in corpus advertises a fix. P2P updates are tangential \u2014 they change networking topology but don't fix offline-mode bug. Agent should investigate; cited_irrelevant_patch if it cites P2P chunks here.",
-      "quick": false
+      "must_include_chunk_ids": [
+        {
+          "any_of": [
+            "1811772772510824-3",
+            "1811772772510824-4"
+          ]
+        }
+      ],
+      "notes": "Offline mode reportedly still requires net handshake. Vision Stream Recap (1811772772510824-3) explicitly states 'The work we put into offline mode ultimately proved that it's not a feasible route for us' — the team's direct explanation for why offline doesn't work. This is the must-cite evidence: the response should acknowledge the team's decision honestly. P2P update chunks (1827626365763153-*) are tangential — they change networking topology but don't explain the offline-mode status. Agent should investigate; cited_irrelevant_patch if it cites the P2P live-update chunks as an offline fix.",
+      "quick": false,
+      "required_concepts": [
+        {
+          "concept_id": "c_001",
+          "name": "offline_mode_abandoned_vision_stream",
+          "any_of": [
+            "1811772772510824-3",
+            "1811772772510824-4"
+          ]
+        }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
+      ]
     },
     {
       "case_id": "payday3_multi_001",
       "app_id": "1272080",
       "review_id": "220105442",
       "review_text": "I grew up on Payday 2 and still love it to this day. So very disappointed in this unplayable mess that I still cant find a game in, pathetic.",
-      "classifier_category": "other",
+      "classifier_category": "multiplayer_network",
       "annotated_category": "other",
       "ideal_action": "no_action",
       "gate_should_skip": true,
@@ -108,7 +130,7 @@
       "app_id": "1272080",
       "review_id": "221646270",
       "review_text": "Game was great before the skill rework, Now it's garbage.",
-      "classifier_category": "other",
+      "classifier_category": "gameplay_mechanics",
       "annotated_category": "gameplay_mechanics",
       "ideal_action": "monitor",
       "gate_should_skip": false,
@@ -120,7 +142,7 @@
           ]
         }
       ],
-      "notes": "Subjective dissatisfaction with Skills 2.0 rework. Patches that introduced and previewed the rework (1817483467048073, 1811138915522063) MUST be cited so response acknowledges the change exists. Ideal: monitor (subjective dissatisfaction with shipped feature \u2014 not a bug, but legitimate signal). Failure: defensive_tone if response argues why rework was good.",
+      "notes": "Subjective dissatisfaction with Skills 2.0 rework. Patches that introduced and previewed the rework (1817483467048073, 1811138915522063) MUST be cited so response acknowledges the change exists. Ideal: monitor (subjective dissatisfaction with shipped feature — not a bug, but legitimate signal). Failure: defensive_tone if response argues why rework was good.",
       "quick": false,
       "required_concepts": [
         {
@@ -143,7 +165,7 @@
       "app_id": "1272080",
       "review_id": "220651074",
       "review_text": "Piss-poor launch day, crippled by the unnecessary Online-Only aspect of the game and forced Starbreeze Nebula sign in. Heist variation is shallow and doesn't feel rewarding. Was fun for first 50 hours, not so much after.",
-      "classifier_category": "technical_issues",
+      "classifier_category": "content_progression",
       "annotated_category": "content_progression",
       "ideal_action": "monitor",
       "gate_should_skip": false,
@@ -152,10 +174,15 @@
         "1823191198599924-0",
         "1823191198599924-5"
       ],
-      "notes": "Multi-issue review: online-only requirement + heist variety + Nebula login. P2P update (1827626365763153-0) directly addresses online-only complaint by enabling P2P hosting. 'Future of PAYDAY' blogs (1823191198599924-*) discuss content roadmap. Ideal: monitor \u2014 partially addressed. Failure: ignored_main_complaint if response only addresses one of the three issues.",
+      "notes": "Multi-issue review: online-only requirement + heist variety + Nebula login. P2P update (1827626365763153-0) directly addresses online-only complaint by enabling P2P hosting. 'Future of PAYDAY' blogs (1823191198599924-*) discuss content roadmap. Ideal: monitor — partially addressed. Failure: ignored_main_complaint if response only addresses one of the three issues.",
       "quick": false,
       "multipart": true,
-      "secondary_aspects": [{"phrase": "crippled by the unnecessary Online-Only aspect of the game and forced Starbreeze Nebula sign in", "category": "multiplayer_network"}],
+      "secondary_aspects": [
+        {
+          "phrase": "crippled by the unnecessary Online-Only aspect of the game and forced Starbreeze Nebula sign in",
+          "category": "multiplayer_network"
+        }
+      ],
       "required_concepts": [
         {
           "concept_id": "c_001",
@@ -202,7 +229,7 @@
       "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Mix of design + monetization (paywall). Subjective. No patch will resolve the DLC pricing model. Ideal: monitor with calm acknowledgment, no commitment. must_include empty \u2014 no chunk should be cited as a 'fix'. Failure: cited_irrelevant_patch if any chunk is cited; defensive_tone if response justifies DLC strategy.",
+      "notes": "Mix of design + monetization (paywall). Subjective. No patch will resolve the DLC pricing model. Ideal: monitor with calm acknowledgment, no commitment. must_include empty — no chunk should be cited as a 'fix'. Failure: cited_irrelevant_patch if any chunk is cited; defensive_tone if response justifies DLC strategy.",
       "quick": false
     },
     {
@@ -259,20 +286,20 @@
       "ideal_action": "no_action",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Pure pricing/business-model complaint. Not actionable \u2014 DLC strategy is not bug-fixable. Ideal action: no_action (subjective design feedback per PROPOSED ACTIONS doc in CLAUDE.md). Failure: wrong_action_severity if escalate/investigate; defensive_tone if response argues DLC value.",
+      "notes": "Pure pricing/business-model complaint. Not actionable — DLC strategy is not bug-fixable. Ideal action: no_action (subjective design feedback per PROPOSED ACTIONS doc in CLAUDE.md). Failure: wrong_action_severity if escalate/investigate; defensive_tone if response argues DLC value.",
       "quick": false
     },
     {
       "case_id": "payday3_vague_001",
       "app_id": "1272080",
       "review_id": "221802934",
-      "review_text": "\u2665\u2665\u2665\u2665 U GUYS BRUH \u2665\u2665\u2665\u2665 MAD EXPENSIVE",
-      "classifier_category": "other",
+      "review_text": "♥♥♥♥ U GUYS BRUH ♥♥♥♥ MAD EXPENSIVE",
+      "classifier_category": "monetization_value",
       "annotated_category": "monetization_value",
       "ideal_action": "no_action",
       "gate_should_skip": true,
       "must_include_chunk_ids": [],
-      "notes": "VAGUE-SUBSTANTIVE \u2014 classifier put this in monetization_value (touches pricing) but it's just emotional venting with no actionable signal. Current gate uses category alone, so it WILL retrieve and investigate. Ideal: gate should skip on text-vagueness signals (length, censored profanity, no specifics), terminate with no_action. Tests gate_misjudged false-negative \u2014 the load-bearing case shape for non-'other' categories.",
+      "notes": "VAGUE-SUBSTANTIVE — classifier put this in monetization_value (touches pricing) but it's just emotional venting with no actionable signal. Current gate uses category alone, so it WILL retrieve and investigate. Ideal: gate should skip on text-vagueness signals (length, censored profanity, no specifics), terminate with no_action. Tests gate_misjudged false-negative — the load-bearing case shape for non-'other' categories.",
       "quick": false
     },
     {
@@ -285,7 +312,7 @@
       "ideal_action": "no_action",
       "gate_should_skip": true,
       "must_include_chunk_ids": [],
-      "notes": "ADVERSARIAL shape #1 (vague emotional rant) \u2014 no actionable signal. Ideal: gate skips retrieval, agent terminates with no_action and a terse, non-grovelling acknowledgment. Load-bearing for the 'other'-driver mechanism.",
+      "notes": "ADVERSARIAL shape #1 (vague emotional rant) — no actionable signal. Ideal: gate skips retrieval, agent terminates with no_action and a terse, non-grovelling acknowledgment. Load-bearing for the 'other'-driver mechanism.",
       "quick": true
     },
     {
@@ -298,7 +325,7 @@
       "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [
-        "1805431065499578-25",
+        "1805431065499578-31",
         {
           "any_of": [
             "1814309641574128-1",
@@ -306,14 +333,14 @@
           ]
         }
       ],
-      "notes": "Age transition pacing complaint \u2014 explicit core mechanic feedback. Update 1.2.3 (1805431065499578-25) added an Advanced setting for transitions; June and Oct check-ins (1801617199561563-37, 1814309641574128-1) discuss this exact theme. Ideal: monitor, cite the Advanced setting honestly, do NOT claim 'ageless option' is shipped.",
+      "notes": "Age transition pacing complaint — explicit core mechanic feedback. Update 1.2.3 (1805431065499578-31) added an Advanced setting for transitions; June and Oct check-ins (1801617199561563-37, 1814309641574128-1) discuss this exact theme. Ideal: monitor, cite the Advanced setting honestly, do NOT claim 'ageless option' is shipped.",
       "quick": false,
       "required_concepts": [
         {
           "concept_id": "c_001",
           "name": "advanced_setting_for_age_transitions",
           "any_of": [
-            "1805431065499578-25"
+            "1805431065499578-31"
           ]
         },
         {
@@ -336,7 +363,7 @@
       "app_id": "1295660",
       "review_id": "222495075",
       "review_text": "AI pathing sucks, the screen scroll often bugs out and gets stuck scrolling. It's lost the charm of a grand 4x strategy game, and at each age transition they weaken you and you have to grind policy cards. Gonna stick with Civ 5 and 6.",
-      "classifier_category": "technical_issues",
+      "classifier_category": "gameplay_mechanics",
       "annotated_category": "gameplay_mechanics",
       "ideal_action": "monitor",
       "gate_should_skip": false,
@@ -344,12 +371,12 @@
         "1800357164569792-77",
         {
           "any_of": [
-            "1808061939503633-9",
+            "1808061939503633-10",
             "1800357164569792-76"
           ]
         }
       ],
-      "notes": "Multi-issue: AI pathing + screen scroll + age transitions. AI pathing patches exist (1800357164569792-77 'improved AI Commander pathing', 1808061939503633-9 trade fix). Screen scroll bug has no patch. Ideal: monitor, address AI pathing with citation, acknowledge scroll bug as known-shape. Failure: ignored_main_complaint if response only handles one of three issues.",
+      "notes": "Multi-issue: AI pathing + screen scroll + age transitions. AI pathing patches exist (1800357164569792-77 'improved AI Commander pathing', 1808061939503633-10 trade fix). Screen scroll bug has no patch. Ideal: monitor, address AI pathing with citation, acknowledge scroll bug as known-shape. Failure: ignored_main_complaint if response only handles one of three issues.",
       "quick": true,
       "required_concepts": [
         {
@@ -363,7 +390,8 @@
           "concept_id": "c_002",
           "name": "ai_pathing_alternate_evidence",
           "any_of": [
-            "1808061939503633-9",
+            "1808061939503633-10",
+            "1808061939503633-11",
             "1800357164569792-76"
           ]
         }
@@ -387,7 +415,7 @@
       "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Design-philosophy complaint \u2014 fundamental disagreement with the new structure. Not a bug, no patch will fix it. Ideal: monitor with calm acknowledgment, no patch citation. Failure: defensive_tone if response justifies the design; investigate_for_subjective if action is escalate/investigate.",
+      "notes": "Design-philosophy complaint — fundamental disagreement with the new structure. Not a bug, no patch will fix it. Ideal: monitor with calm acknowledgment, no patch citation. Failure: defensive_tone if response justifies the design; investigate_for_subjective if action is escalate/investigate.",
       "quick": false
     },
     {
@@ -411,7 +439,12 @@
       "notes": "Yield breakdown UX complaint. Update 1.2.5 (1811772772410550-11) explicitly reformatted constructible tooltips and (1811772772410550-10) lists UI/UX changes. Update 1.2.1 patch (1800991756447780-1) fixed building yield breakdown display. Ideal: monitor, cite the cleanup honestly. Failure: overclaimed_fix if 'UI is now cleaner' assertion without nuance.",
       "quick": false,
       "multipart": true,
-      "secondary_aspects": [{"phrase": "yield breakdown requires opening several tabs to drill down with confusing natural yield and income tabs", "category": "ui_controls"}],
+      "secondary_aspects": [
+        {
+          "phrase": "yield breakdown requires opening several tabs to drill down with confusing natural yield and income tabs",
+          "category": "ui_controls"
+        }
+      ],
       "required_concepts": [
         {
           "concept_id": "c_001",
@@ -419,7 +452,8 @@
           "any_of": [
             "1811772772410550-11",
             "1811772772410550-10",
-            "1811772772410550-100"
+            "1811772772410550-119",
+            "1811772772410550-120"
           ]
         },
         {
@@ -447,7 +481,7 @@
       "ideal_action": "investigate",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Accessibility regression \u2014 strategic view removed. Update 1.2.5 (1811772772410550-20) mentions accessibility goals broadly but does NOT restore strategic view. Ideal: investigate (real accessibility regression, dev should know), cite the accessibility note honestly without fabricating a fix. Failure: unsourced_claim if response promises strategic view is coming back.",
+      "notes": "Accessibility regression — strategic view removed. Update 1.2.5 (1811772772410550-20) mentions accessibility goals broadly but does NOT restore strategic view. Ideal: investigate (real accessibility regression, dev should know), cite the accessibility note honestly without fabricating a fix. Failure: unsourced_claim if response promises strategic view is coming back.",
       "quick": false
     },
     {
@@ -514,21 +548,45 @@
       "annotated_category": "content_progression",
       "ideal_action": "monitor",
       "gate_should_skip": false,
-      "must_include_chunk_ids": [],
-      "notes": "Hotseat missing \u2014 promised feature still absent after 1 year. This is a feature gap with team acknowledgment (scoped in Check-In), not a broken shipped feature. Ideal: monitor (promised feature gap with acknowledgment defaults to monitor per boundary rules). Do NOT fabricate a 'hotseat coming in next update' claim. must_include empty \u2014 any chunk cited here would be cited_irrelevant_patch. Failure: unsourced_claim is the headline risk.",
-      "quick": false
+      "must_include_chunk_ids": [
+        {
+          "any_of": [
+            "1792751526018042-34",
+            "1790848102632831-13",
+            "1790214123091737-49"
+          ]
+        }
+      ],
+      "notes": "Hotseat missing — promised feature still absent after 1 year. This is a feature gap with team acknowledgment (scoped in Check-In, Message from Firaxis, Dev Diary #8), not a broken shipped feature. Ideal: monitor (promised feature gap with acknowledgment defaults to monitor per boundary rules). The response SHOULD cite the team's hotseat acknowledgment (1792751526018042-34, 1790848102632831-13, or 1790214123091737-49) — these are not irrelevant patches, they're direct evidence the team committed to the feature. Do NOT fabricate a 'hotseat coming in next update' claim beyond what the sources say. Failure: unsourced_claim is the headline risk.",
+      "quick": false,
+      "required_concepts": [
+        {
+          "concept_id": "c_001",
+          "name": "hotseat_team_acknowledgment",
+          "any_of": [
+            "1792751526018042-34",
+            "1790848102632831-13",
+            "1790214123091737-49"
+          ]
+        }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
+      ]
     },
     {
       "case_id": "civ7_vague_001",
       "app_id": "1295660",
       "review_id": "221900490",
       "review_text": "Tedious, bad maps. convoluted",
-      "classifier_category": "other",
+      "classifier_category": "gameplay_mechanics",
       "annotated_category": "gameplay_mechanics",
       "ideal_action": "no_action",
       "gate_should_skip": true,
       "must_include_chunk_ids": [],
-      "notes": "VAGUE-SUBSTANTIVE \u2014 classifier put this in gameplay_mechanics (touches mechanics with 'convoluted') but it's three adjectives, no actionable signal. Current category-only gate WILL retrieve. Ideal: gate skips on text-vagueness signals (length, no specifics). Tests gate_misjudged false-negative on a non-'other' category.",
+      "notes": "VAGUE-SUBSTANTIVE — classifier put this in gameplay_mechanics (touches mechanics with 'convoluted') but it's three adjectives, no actionable signal. Current category-only gate WILL retrieve. Ideal: gate skips on text-vagueness signals (length, no specifics). Tests gate_misjudged false-negative on a non-'other' category.",
       "quick": false
     },
     {
@@ -548,7 +606,7 @@
           ]
         }
       ],
-      "notes": "ADVERSARIAL shape #2 (misclassified substantive) \u2014 substantive UI/visual/menu complaint dumped into 'other' by classifier. Current gate sees category=other and skips retrieval, leaving Responder with NO evidence for a real, actionable complaint. Ideal: gate should NOT skip (text has specific UI complaints). Ideal annotated_category=ui_controls. Tests gate_misjudged false-positive (false-skip on substantive content).",
+      "notes": "ADVERSARIAL shape #2 (misclassified substantive) — substantive UI/visual/menu complaint dumped into 'other' by classifier. Current gate sees category=other and skips retrieval, leaving Responder with NO evidence for a real, actionable complaint. Ideal: gate should NOT skip (text has specific UI complaints). Ideal annotated_category=ui_controls. Tests gate_misjudged false-positive (false-skip on substantive content).",
       "quick": false,
       "required_concepts": [
         {
@@ -573,10 +631,10 @@
       "review_text": "I love and hate this game. More so hate because the loading screens kill the immersion for me. Take off from a planet? Loading screen. Travel to a new planet? Loading screen. Dock with another ship? Loading screen. LOADING SCREENS!",
       "classifier_category": "performance_optimization",
       "annotated_category": "performance_optimization",
-      "ideal_action": "no_action",
+      "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Loading-screen pacing complaint \u2014 fundamental engine architecture issue, not a regression or post-update change. This is a design-architecture annoyance (structural product choice the player dislikes) with no measurable symptom, no concrete regression, and no recurring post-update signal. Ideal: no_action per boundary rules. Ship Optimization Terminal patches exist but do not address the core complaint (loading-screen frequency as architecture). Failure: overclaimed_fix if the response implies loading screens are being fixed; wrong_action_severity if monitor or higher (the complaint has no actionable product signal).",
+      "notes": "Loading-screen pacing complaint — recurring, widely-shared pain point with a concrete symptom (every planet/dock transition triggers a loading screen). Cruise Mode in Free Lanes Update partially addressed this for space travel, making this a partially-resolved known issue. Ideal: monitor per recurring subjective-but-meaningful pain signal overlapping with measurable symptoms. Failure: overclaimed_fix if the response implies loading screens are fully fixed; wrong_action_severity if investigate or higher.",
       "quick": true
     },
     {
@@ -589,7 +647,7 @@
       "ideal_action": "escalate",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Save data loss on NG+10 \u2014 per CLAUDE.md, escalate = severe/widespread (crashes, data loss). REV-8 update (6909171012614938351-32) resolved an issue causing unexpected save behavior \u2014 relevant context but does NOT confirm this player's case is fixed. Ideal: escalate with empathetic acknowledgment, cite the related fix without claiming it covers their loss. Failure: wrong_action_severity if monitor; unsourced_claim if 'your save can be recovered' fabrication.",
+      "notes": "Save data loss on NG+10 — per CLAUDE.md, escalate = severe/widespread (crashes, data loss). The closest corpus evidence is Update 1.9.51 (5510784213098362871-11) which fixed rare save game corruptions on PC, but this is from January 2024 and does not confirm this player's NG+10 case is fixed. No patch directly addresses NG+ save data loss. Ideal: escalate with empathetic acknowledgment, do NOT claim any specific fix covers their loss. Failure: wrong_action_severity if monitor; unsourced_claim if 'your save can be recovered' fabrication.",
       "quick": false
     },
     {
@@ -613,7 +671,12 @@
       "notes": "Multi-issue: flight controls + ship combat + base building + ship building. 1.16.236 update (1828894815567746-17) added Outpost QoL improvements; Free Lanes added Pre-Built Outpost (1828894815567715-51); ship optimization terminal (1828894815567746-8) addresses ship side. Flight controls have NO direct fix. Ideal: monitor. Failure: ignored_main_complaint if response only addresses ship-building; overclaimed_fix on flight controls.",
       "quick": false,
       "multipart": true,
-      "secondary_aspects": [{"phrase": "base building is mediocre and ship building is meh", "category": "gameplay_mechanics"}],
+      "secondary_aspects": [
+        {
+          "phrase": "base building is mediocre and ship building is meh",
+          "category": "gameplay_mechanics"
+        }
+      ],
       "required_concepts": [
         {
           "concept_id": "c_001",
@@ -648,7 +711,7 @@
       "ideal_action": "no_action",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Subjective design feedback \u2014 enemy variety / random encounter design. No patch will retrofit this. no_action per boundary rule: design-architecture annoyance with no measurable symptom, regression, or recurring post-update signal. Pure taste criticism about enemy variety. Failure: wrong_action_severity if monitor (over-acting on non-diagnostic design taste).",
+      "notes": "Subjective design feedback — enemy variety / random encounter design. No patch will retrofit this. no_action per boundary rule: design-architecture annoyance with no measurable symptom, regression, or recurring post-update signal. Pure taste criticism about enemy variety. Failure: wrong_action_severity if monitor (over-acting on non-diagnostic design taste).",
       "quick": false
     },
     {
@@ -663,7 +726,7 @@
       "must_include_chunk_ids": [
         "6909171012614938755-2"
       ],
-      "notes": "Narrative-design complaint. Shattered Space DLC announcement (6909171012614938755-2) is the first story expansion \u2014 relevant context. Ideal: monitor, mention DLC as 'additional story content' without overclaiming it 'addresses' the show-don't-tell critique. Failure: overclaimed_fix if 'Shattered Space fixes the storytelling' assertion.",
+      "notes": "Narrative-design complaint. Shattered Space DLC announcement (6909171012614938755-2) is the first story expansion — relevant context. Ideal: monitor, mention DLC as 'additional story content' without overclaiming it 'addresses' the show-don't-tell critique. Failure: overclaimed_fix if 'Shattered Space fixes the storytelling' assertion.",
       "quick": false,
       "required_concepts": [
         {
@@ -696,7 +759,12 @@
       "notes": "Three-axis complaint: content sparsity + loading screens + crashes. Free Lanes update (1826992588604218-32 'Many more planetary POIs') addresses POI density; 1.16.236 (1828894815567746-31) general crash fixes; ship optimization (1828894815567715-20) for loading. All three axes have at least partial patch coverage. Ideal: monitor, address all three. Failure: ignored_main_complaint if only one axis is touched.",
       "quick": false,
       "multipart": true,
-      "secondary_aspects": [{"phrase": "constant crashes", "category": "technical_issues"}],
+      "secondary_aspects": [
+        {
+          "phrase": "constant crashes",
+          "category": "technical_issues"
+        }
+      ],
       "required_concepts": [
         {
           "concept_id": "c_001",
@@ -738,19 +806,19 @@
       "app_id": "1716740",
       "review_id": "222286831",
       "review_text": "Bought this game when it came out, played a lot. Don't recommend. The story is so boring and cliche its like a toddlers book. My first run through had a game breaking bug happen on my ship where I could not get people to leave it or new ones to enter. So i could no longer upgrade or get a new ship.",
-      "classifier_category": "technical_issues",
+      "classifier_category": "content_progression",
       "annotated_category": "technical_issues",
       "ideal_action": "investigate",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "MISCLASSIFIED \u2014 review is mostly about a game-breaking ship NPC bug (technical_issues) but classifier put it in content_progression because of the 'story is boring' opener. No patch in corpus directly addresses this NPC-stuck-on-ship bug. Ideal: investigate, treat the bug as the main complaint. Failure: ignored_main_complaint if response only addresses the story comment; unsourced_claim if response invents a fix. Also tests classifier-vs-annotated category divergence.",
+      "notes": "MISCLASSIFIED — review is mostly about a game-breaking ship NPC bug (technical_issues) but classifier put it in content_progression because of the 'story is boring' opener. No patch in corpus directly addresses this NPC-stuck-on-ship bug. Ideal: investigate, treat the bug as the main complaint. Failure: ignored_main_complaint if response only addresses the story comment; unsourced_claim if response invents a fix. Also tests classifier-vs-annotated category divergence.",
       "quick": false
     },
     {
       "case_id": "starfield_monetize_001",
       "app_id": "1716740",
       "review_id": "222241337",
-      "review_text": "I don't hate the game, it's just kind of boring. My biggest gripe is the Monetization and Creation Club. In 2 words: It's SCUMMY. You get to pay the equivalent of 1\u20ac for some weapon skins or 3\u20ac for some more ship customization options.",
+      "review_text": "I don't hate the game, it's just kind of boring. My biggest gripe is the Monetization and Creation Club. In 2 words: It's SCUMMY. You get to pay the equivalent of 1€ for some weapon skins or 3€ for some more ship customization options.",
       "classifier_category": "monetization_value",
       "annotated_category": "monetization_value",
       "ideal_action": "no_action",
@@ -764,12 +832,12 @@
       "app_id": "1716740",
       "review_id": "222237208",
       "review_text": "The base building is bad",
-      "classifier_category": "other",
+      "classifier_category": "gameplay_mechanics",
       "annotated_category": "gameplay_mechanics",
       "ideal_action": "no_action",
       "gate_should_skip": true,
       "must_include_chunk_ids": [],
-      "notes": "VAGUE-SUBSTANTIVE \u2014 five-word complaint, technically gameplay_mechanics but no actionable signal. Current gate WILL retrieve. Ideal: gate skips on length+specificity. Tests gate_misjudged false-negative on a non-'other' category.",
+      "notes": "VAGUE-SUBSTANTIVE — five-word complaint, technically gameplay_mechanics but no actionable signal. Current gate WILL retrieve. Ideal: gate skips on length+specificity. Tests gate_misjudged false-negative on a non-'other' category.",
       "quick": false
     },
     {
@@ -782,7 +850,7 @@
       "ideal_action": "no_action",
       "gate_should_skip": true,
       "must_include_chunk_ids": [],
-      "notes": "ADVERSARIAL shape #4 (off-topic snark) \u2014 comparison to work, no game content. Ideal: gate skips, terse no_action. Failure: responded_to_junk if Responder produces apologetic boilerplate; tone_too_apologetic if it tries to win the player back.",
+      "notes": "ADVERSARIAL shape #4 (off-topic snark) — comparison to work, no game content. Ideal: gate skips, terse no_action. Failure: responded_to_junk if Responder produces apologetic boilerplate; tone_too_apologetic if it tries to win the player back.",
       "quick": false
     },
     {
@@ -795,29 +863,29 @@
       "ideal_action": "escalate",
       "gate_should_skip": false,
       "must_include_chunk_ids": [
-        "1818752592127214-15",
+        "1818752592127214-19",
         {
           "any_of": [
-            "1818752592127214-11",
+            "1818752592127214-15",
             "1823191198598921-6"
           ]
         }
       ],
-      "notes": "Specific complaint: a Feb performance patch regressed perf for a 900h player. The 'Commitment to Improving Stability' post (1818752592127214-15) discusses 1.041 update (Feb 2026) explicitly. Ver.1.040.03.01 (1823191198598921-6) addresses stability across platforms. Escalate per path (b): concrete hard-blocker ('stuttery, unplayable mess'), explicit persistence ('over a month' with no fix), post-patch regression framing. Cite the commitment post, do NOT claim 'this is fully fixed'. Failure: overclaimed_fix is the headline risk.",
+      "notes": "Specific complaint: a Feb performance patch regressed perf for a 900h player. The 'Commitment to Improving Stability' post (1818752592127214-19) discusses 1.041 update (Feb 2026) explicitly. Ver.1.040.03.01 (1823191198598921-6) addresses stability across platforms. Escalate per path (b): concrete hard-blocker ('stuttery, unplayable mess'), explicit persistence ('over a month' with no fix), post-patch regression framing. Cite the commitment post, do NOT claim 'this is fully fixed'. Failure: overclaimed_fix is the headline risk.",
       "quick": false,
       "required_concepts": [
         {
           "concept_id": "c_001",
           "name": "feb_2026_stability_commitment_post",
           "any_of": [
-            "1818752592127214-15"
+            "1818752592127214-19"
           ]
         },
         {
           "concept_id": "c_002",
           "name": "ver_1_040_earlier_stability_fix",
           "any_of": [
-            "1818752592127214-11",
+            "1818752592127214-15",
             "1823191198598921-6"
           ]
         }
@@ -841,12 +909,12 @@
         {
           "any_of": [
             "1818752592134338-37",
-            "1818752592127214-9"
+            "1818752592127214-13"
           ]
         },
-        "1818752592127214-15"
+        "1818752592127214-19"
       ],
-      "notes": "Frustrated long-term player. Multiple perf patches (Ver.1.040 CPU/GPU optimization, Stability commitment post, 1.041) DO exist but the player explicitly says they didn't help. Ideal: monitor \u2014 acknowledge ongoing work without invalidating the player's experience. Failure: defensive_tone if response argues 'we have shipped 3 patches' as if listing them rebuts the complaint.",
+      "notes": "Frustrated long-term player. Multiple perf patches (Ver.1.040 CPU/GPU optimization, Stability commitment post, 1.041) DO exist but the player explicitly says they didn't help. Ideal: monitor — acknowledge ongoing work without invalidating the player's experience. Failure: defensive_tone if response argues 'we have shipped 3 patches' as if listing them rebuts the complaint.",
       "quick": false,
       "required_concepts": [
         {
@@ -854,8 +922,8 @@
           "name": "ongoing_perf_optimization_patches",
           "any_of": [
             "1818752592134338-37",
-            "1818752592127214-9",
-            "1818752592127214-15"
+            "1818752592127214-13",
+            "1818752592127214-19"
           ]
         }
       ],
@@ -877,8 +945,8 @@
       "must_include_chunk_ids": [
         {
           "any_of": [
-            "1818752592127214-9",
-            "1818752592127214-15"
+            "1818752592127214-13",
+            "1818752592127214-19"
           ]
         },
         {
@@ -897,15 +965,14 @@
           "concept_id": "c_001",
           "name": "ongoing_perf_optimization_patches",
           "any_of": [
-            "1818752592127214-9",
-            "1818752592127214-15",
+            "1818752592127214-13",
+            "1818752592127214-19",
             "1818752592134338-37",
             "1825093633183688-24",
             "1825093633183688-20",
             "1823191198598921-7",
             "1815034432855905-8",
-            "1816215235335741-0",
-            "1818752592127214-11",
+            "1818752592127214-15",
             "1823191198598921-0"
           ]
         }
@@ -926,7 +993,7 @@
       "ideal_action": "escalate",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Specific mid-hunt crash with explicit persistence ('almost 2 years and the same error persist'). The crash has a concrete scenario (mid-hunt), and the '2 years same error' language conveys persistence/reproducibility. Escalate per path (b): concrete hard-blocker symptom (crash mid-hunt) paired with explicit persistence/reproducibility ('almost 2 years and the same error persist') and blocker framing ('needs to be fixed ASAP'). Ver.1.011 (1800991756290109-161) fixed a VRAM crash and the graphics drivers post (1811772772359267-0) notes confirmed crashes \u2014 relevant context but does NOT confirm this case is fixed. Failure: overclaimed_fix is the headline risk.",
+      "notes": "Specific mid-hunt crash with explicit persistence ('almost 2 years and the same error persist'). The crash has a concrete scenario (mid-hunt), and the '2 years same error' language conveys persistence/reproducibility. Escalate per path (b): concrete hard-blocker symptom (crash mid-hunt) paired with explicit persistence/reproducibility ('almost 2 years and the same error persist') and blocker framing ('needs to be fixed ASAP'). Ver.1.011 (1800991756290109-161) fixed a VRAM crash and the graphics drivers post (1811772772359267-0) notes confirmed crashes — relevant context but does NOT confirm this case is fixed. Failure: overclaimed_fix is the headline risk.",
       "quick": false
     },
     {
@@ -947,7 +1014,7 @@
         },
         "1816849002009391-3"
       ],
-      "notes": "AMD GPU compatibility \u2014 direct match in patch corpus. Graphics drivers post (1811772772359267-0, -19) explicitly addresses AMD-side crashes with Adrenalin instructions. Ver.1.030.02.02 (1816849002009391-3) bug fixes. Escalate per path (b): concrete hard-blocker ('can't play') for an entire hardware class (AMD GPUs). Cite the AMD-specific guidance honestly without claiming 100% fix. STRONG RECALL TEST \u2014 the corpus has very direct evidence here.",
+      "notes": "AMD GPU compatibility — direct match in patch corpus. Graphics drivers post (1811772772359267-0, -19) explicitly addresses AMD-side crashes with Adrenalin instructions. Ver.1.030.02.02 (1816849002009391-3) bug fixes. Escalate per path (b): concrete hard-blocker ('can't play') for an entire hardware class (AMD GPUs). Cite the AMD-specific guidance honestly without claiming 100% fix. STRONG RECALL TEST — the corpus has very direct evidence here.",
       "quick": true,
       "required_concepts": [
         {
@@ -1031,7 +1098,7 @@
       "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Endgame armor / elemental defense complaint. Weapon balance patches exist but ARMOR balance is not directly addressed in corpus. Ideal: monitor with honest acknowledgment, do NOT cite weapon balance patches as armor fixes. Failure: cited_irrelevant_patch if weapon-balance chunks are cited as armor fix; unsourced_claim if 'armor will be rebalanced' fabrication.",
+      "notes": "Endgame armor / elemental defense complaint. The Director's Letter (1807332909734059-11) raised the armor upgrade limit for rarity 5+, which addresses general defense but not elemental resistance specifically. The player's core complaint is elemental weakness, not overall defense cap. Ideal: monitor with honest acknowledgment. Do NOT cite weapon balance patches as armor elemental fixes, and do not overclaim the armor upgrade limit addresses the elemental issue. Failure: cited_irrelevant_patch if weapon-balance chunks are cited as armor fix; overclaimed_fix if armor upgrade limit is presented as resolving elemental weakness; unsourced_claim if 'armor will be rebalanced' fabrication.",
       "quick": true
     },
     {
@@ -1039,7 +1106,7 @@
       "app_id": "2246340",
       "review_id": "221612782",
       "review_text": "The story is absurd, the characters are insufferable, and the mechanics have been dumbed down to where an IGN game journalist could make progress. Be prepared for railroaded training wheels for the first 6-8 hours before the game allows you to hunt monsters how and when you want to.",
-      "classifier_category": "story_presentation",
+      "classifier_category": "gameplay_mechanics",
       "annotated_category": "gameplay_mechanics",
       "ideal_action": "no_action",
       "gate_should_skip": false,
@@ -1052,25 +1119,25 @@
       "app_id": "2246340",
       "review_id": "222143076",
       "review_text": "DONT MAKE TIMED EVENTS, I PAID FOR THIS GAME I SHOULD BE ABLE TO EARN THOSE *TIMED* REWARDS WHEN I WANT TO. I WANT ALL THE CONTENT.",
-      "classifier_category": "monetization_value",
+      "classifier_category": "content_progression",
       "annotated_category": "content_progression",
-      "ideal_action": "no_action",
+      "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Anti-FOMO design feedback. Subjective preference about content delivery model. Ideal: no_action (per CLAUDE.md no_action covers subjective design feedback). Failure: wrong_action_severity if monitor; defensive_tone justifying timed events.",
+      "notes": "Anti-FOMO design feedback about timed events. Timed event rewards were made permanent in Ver.1.041.00.00, making this a partially-resolved known issue. Ideal: monitor per partially-resolved known issue bucket. Failure: wrong_action_severity if investigate or higher; defensive_tone justifying timed events.",
       "quick": false
     },
     {
       "case_id": "mhw_vague_001",
       "app_id": "2246340",
       "review_id": "222020103",
-      "review_text": "\u2665\u2665\u2665\u2665\u2665\u2665\u2665\u2665 ass game getting oneshot by every boss bro gtfoh",
-      "classifier_category": "other",
+      "review_text": "♥♥♥♥♥♥♥♥ ass game getting oneshot by every boss bro gtfoh",
+      "classifier_category": "balance_difficulty",
       "annotated_category": "balance_difficulty",
       "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "Has a real kernel of substance ('oneshot by every boss') wrapped in profanity. Difficulty/balance is subjective design feedback \u2014 gate should NOT skip (there is an actionable signal), but the response should be calm acknowledgment + monitor, not investigate. Failure: tone_too_apologetic if Responder grovels at the profanity; defensive_tone if it pushes back on the player; investigate_for_subjective if action escalates to investigate on a subjective difficulty complaint.",
+      "notes": "Has a real kernel of substance ('oneshot by every boss') wrapped in profanity. Difficulty/balance is subjective design feedback — gate should NOT skip (there is an actionable signal), but the response should be calm acknowledgment + monitor, not investigate. Failure: tone_too_apologetic if Responder grovels at the profanity; defensive_tone if it pushes back on the player; investigate_for_subjective if action escalates to investigate on a subjective difficulty complaint.",
       "quick": false
     },
     {
@@ -1083,7 +1150,7 @@
       "ideal_action": "no_action",
       "gate_should_skip": true,
       "must_include_chunk_ids": [],
-      "notes": "ADVERSARIAL shape #5-adjacent (LLM-instruction-style joke) \u2014 sarcastic prompt-injection-flavored snark. Closest thing to shape #5 (prompt injection) in real data. Ideal: gate skips, terse no_action. Failure: responded_to_junk if Responder treats this as a serious complaint about AI-generated content.",
+      "notes": "ADVERSARIAL shape #5-adjacent (LLM-instruction-style joke) — sarcastic prompt-injection-flavored snark. Closest thing to shape #5 (prompt injection) in real data. Ideal: gate skips, terse no_action. Failure: responded_to_junk if Responder treats this as a serious complaint about AI-generated content.",
       "quick": false
     },
     {
@@ -1321,12 +1388,12 @@
       "app_id": "2694490",
       "review_id": "221370785",
       "review_text": "Fun, but extremely time consuming, zero quality of life features. It's like having a second job.",
-      "classifier_category": "other",
+      "classifier_category": "content_progression",
       "annotated_category": "content_progression",
-      "ideal_action": "no_action",
-      "gate_should_skip": true,
+      "ideal_action": "monitor",
+      "gate_should_skip": false,
       "must_include_chunk_ids": [],
-      "notes": "VAGUE-SUBSTANTIVE \u2014 content_progression by classifier but it's a one-line venting with vague QoL gripe. Current category-only gate WILL retrieve. Ideal: gate skips on length+specificity. Tests gate_misjudged false-negative.",
+      "notes": "QoL complaint — vague individually but QoL is a recurring signal in PoE2 with concrete patches shipped (checkpoint teleportation, respec costs, stash tabs). Recurring subjective pain overlapping with measurable product symptoms. Ideal: monitor. Failure: wrong_action_severity if investigate or higher.",
       "quick": false
     },
     {
@@ -1339,7 +1406,7 @@
       "ideal_action": "no_action",
       "gate_should_skip": true,
       "must_include_chunk_ids": [],
-      "notes": "ADVERSARIAL shape #3 (subjective design feedback) \u2014 comparison to PoE1, no specifics. Genuinely 'other': general venting with no single complaint to act on. Classified as 'other' so current gate skips correctly. Ideal: terse no_action. Failure: tone_too_apologetic if Responder writes a long apology; responded_to_junk if it produces a substantive response. gate_should_skip=true is the CORRECT current behavior; failure mode is on the OUTPUT side.",
+      "notes": "ADVERSARIAL shape #3 (subjective design feedback) — comparison to PoE1, no specifics. Genuinely 'other': general venting with no single complaint to act on. Classified as 'other' so current gate skips correctly. Ideal: terse no_action. Failure: tone_too_apologetic if Responder writes a long apology; responded_to_junk if it produces a substantive response. gate_should_skip=true is the CORRECT current behavior; failure mode is on the OUTPUT side.",
       "quick": false
     },
     {

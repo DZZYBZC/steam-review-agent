@@ -47,6 +47,7 @@ the other two judges.
 
 from __future__ import annotations
 
+import concurrent.futures
 import datetime as dt
 import hashlib
 import json
@@ -64,6 +65,7 @@ from config import (
     JUDGE_MAX_TOKENS,
     JUDGE_MODEL,
     JUDGE_TEMPERATURE,
+    JUDGE_WORKERS,
 )
 from pipeline.storage import get_iteration_drafts_batch
 from utils import load_skill, parse_llm_json
@@ -426,6 +428,7 @@ def pairwise_batch(
     n_from_cache = 0
     n_deterministic = 0
 
+    work_items = []
     for record in records:
         if not record.get("ok"):
             continue
@@ -434,15 +437,24 @@ def pairwise_batch(
             continue
         run_id = (record.get("result") or {}).get("run_id") or ""
         iter_0_row = iter_0_map.get(run_id)
-        result = judge_pairwise(case, record, iter_0_row, run_file_basename)
-        if result is None:
-            continue
-        per_case[record["case_id"]] = result
-        rulings[result["ruling"]] = rulings.get(result["ruling"], 0) + 1
-        if result.get("from_cache"):
-            n_from_cache += 1
-        if result.get("deterministic"):
-            n_deterministic += 1
+        work_items.append((case, record, iter_0_row))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=JUDGE_WORKERS) as pool:
+        futures = {
+            pool.submit(judge_pairwise, case, record, iter_0_row, run_file_basename): record
+            for case, record, iter_0_row in work_items
+        }
+        for future in concurrent.futures.as_completed(futures):
+            record = futures[future]
+            result = future.result()
+            if result is None:
+                continue
+            per_case[record["case_id"]] = result
+            rulings[result["ruling"]] = rulings.get(result["ruling"], 0) + 1
+            if result.get("from_cache"):
+                n_from_cache += 1
+            if result.get("deterministic"):
+                n_deterministic += 1
 
     return {
         "n_judged": len(per_case),

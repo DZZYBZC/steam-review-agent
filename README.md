@@ -63,7 +63,7 @@ steam-review-agent/
 │   ├── cluster.py                 # Time-windowed category clustering + priority signals
 │   ├── stats.py                   # Aggregate statistics over reviews + clusters
 │   ├── chunk.py                   # Parent-child section-aware patch-note chunking
-│   ├── retrieve.py                # Hybrid RAG: vector + BM25 → RRF → Gemma rerank
+│   ├── retrieve.py                # Hybrid RAG: vector + BM25 + optional HyDE → RRF → Gemma rerank
 │   ├── storage.py                 # SQLite schema, DAO functions, cluster-note lifecycle
 │   ├── keywords.py                # Keyword extraction helpers
 │   └── retry.py                   # Retry decorator for flaky API calls
@@ -242,7 +242,7 @@ Five nodes: coordinator (plain Python), investigator, responder, critic, and hum
 <details>
 <summary><strong>Retrieval pipeline (hybrid RAG)</strong></summary>
 
-Patch notes → **parent-child section-aware chunker** → dual index (ChromaDB bge-base-en-v1.5 + in-memory BM25). Query time: **RRF fusion** (top 12) → **Gemma rerank** (bge-reranker-v2-gemma, top 5) → **parent context attachment**. Each retrieval call returns a top-5 reranked pool, merged across up to 4 calls into a single accumulated evidence set.
+Patch notes → **parent-child section-aware chunker** → dual index (ChromaDB bge-base-en-v1.5 + in-memory BM25). Query time: optional **HyDE** (hypothetical patch note via Haiku, embedded and searched as a third retriever source) + **RRF fusion** (top 12) → **Gemma rerank** (bge-reranker-v2-gemma, top 5) → **parent context attachment**. Each retrieval call returns a top-5 reranked pool, merged across up to 4 calls into a single accumulated evidence set. HyDE is behind the `HYDE_ENABLED` feature flag (default off); a BM25-based gate skips it when BM25 is already rich enough.
 
 **Parent-child chunking.** Each bullet point is a child chunk (embedded and searched); each section is a parent chunk (stored as metadata, never embedded). After reranking, each matched child gets a context window of its parent section — the matched bullet plus up to 3 sibling bullets before/after, using a stable positional index for deterministic centering. This gives the investigator surrounding context without inflating the embedding index. Child chunk IDs are unchanged, so citation chain-of-custody and eval scorers work unmodified. Three independent feature flags control whether the investigator sees parent context, whether the responder/critic sees it, and whether same-parent dedup is applied — each testable in isolation.
 

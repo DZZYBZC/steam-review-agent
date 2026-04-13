@@ -32,6 +32,7 @@ chunk filter, output schema), bump JUDGE_INPUT_VERSION below.
 
 from __future__ import annotations
 
+import concurrent.futures
 import datetime as dt
 import hashlib
 import json
@@ -47,6 +48,7 @@ from config import (
     JUDGE_MAX_TOKENS,
     JUDGE_MODEL,
     JUDGE_TEMPERATURE,
+    JUDGE_WORKERS,
 )
 from utils import load_skill, parse_llm_json
 
@@ -456,7 +458,9 @@ def _run_batch(
     judge_fn = (
         judge_pool_sufficiency if judge_kind == "gold" else judge_draft_grounding
     )
+    predicate_fn = _gold_predicate if judge_kind == "gold" else _draft_predicate
 
+    work_items = []
     for record in records:
         if not record.get("ok"):
             continue
@@ -464,18 +468,24 @@ def _run_batch(
         if case is None:
             continue
         result = record.get("result") or {}
-        # Predicate-eligibility is tracked even when judge returns None so
-        # the reporter can show "predicate=P/M" alongside "n_judged=K".
-        predicate_fn = _gold_predicate if judge_kind == "gold" else _draft_predicate
         if predicate_fn(case, result):
             n_predicate_eligible += 1
-        ruling = judge_fn(case, record, run_file_basename)
-        if ruling is None:
-            continue
-        per_case[case["case_id"]] = ruling
-        rulings[ruling["ruling"]] = rulings.get(ruling["ruling"], 0) + 1
-        if ruling["from_cache"]:
-            n_from_cache += 1
+        work_items.append((case, record))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=JUDGE_WORKERS) as pool:
+        futures = {
+            pool.submit(judge_fn, case, record, run_file_basename): (case, record)
+            for case, record in work_items
+        }
+        for future in concurrent.futures.as_completed(futures):
+            case, record = futures[future]
+            ruling = future.result()
+            if ruling is None:
+                continue
+            per_case[case["case_id"]] = ruling
+            rulings[ruling["ruling"]] = rulings.get(ruling["ruling"], 0) + 1
+            if ruling["from_cache"]:
+                n_from_cache += 1
 
     return {
         "judge_kind": judge_kind,

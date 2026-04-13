@@ -77,10 +77,28 @@ CHROMA_PERSIST_DIR = "chroma_db"
 PARENT_CHUNK_MAX_LENGTH = 2000          # Budget for bullet-aware parent context (display only, not embedded)
 PARENT_CONTEXT_SIBLING_BULLETS = 3      # Max sibling bullets before/after matched child in context window
 PARENT_METADATA_WARN_CHARS = 10_000     # Log warning when parent metadata exceeds this per child
-PARENT_CONTEXT_INVESTIGATOR = False     # Flip first in staged rollout
-PARENT_CONTEXT_RESPONDER = False        # Flip second after investigator context is measured
-PARENT_DEDUP_ENABLED = False            # Same-parent dedup (off for longer — see plan rationale #4)
+PARENT_CONTEXT_INVESTIGATOR = True      # Flip first in staged rollout
+PARENT_CONTEXT_RESPONDER = True         # Flip second after investigator context is measured
+PARENT_DEDUP_ENABLED = False            # Same-parent dedup — flip after gate-disabled eval establishes baseline
 PARENT_DEDUP_MAX_PER_PARENT = 2         # When dedup enabled: max children kept per parent (not hard-1)
+RERANKER_USE_FP16 = True                      # Use fp16 for Gemma reranker; set False on hardware without fp16 support
+
+# HyDE (Hypothetical Document Embedding) retrieval
+HYDE_ENABLED = True                           # Feature flag — staged rollout
+HYDE_MODEL = "claude-haiku-4-5-20251001"      # Narrow generation task; Haiku is sufficient
+HYDE_TEMPERATURE = 0.3                        # Low creativity — paraphrastic bridging, not invention
+HYDE_MAX_TOKENS = 200                         # A single patch note bullet is ~50-100 tokens
+HYDE_TOP_K = 5                                # Focused contribution — avoids flooding RRF pool
+HYDE_MAX_PER_PARENT = 2                       # Pre-RRF diversity cap on HyDE results
+
+# BM25-based HyDE gate — skip HyDE when BM25 is clearly rich enough
+# Corpus-tuned gate heuristics — revisit immediately after first eval replay.
+# AND logic makes the gate conservative; these numbers are calibration starters,
+# not principled thresholds.
+HYDE_GATE_ENABLED = False                     # Disabled — let HyDE run unconditionally; gate saves pennies but masks impact
+HYDE_GATE_MIN_NONZERO_HITS = 6                # ~rich BM25 set out of top-8 (BM25_TOP_K); adjust if BM25_TOP_K changes
+HYDE_GATE_MIN_TOP_SCORE = 8.0                 # AND BM25 top score >= this; calibrate after first gate-audit replay
+
 EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
 SIMILARITY_THRESHOLD = 0.3
 VECTOR_TOP_K = 8
@@ -115,6 +133,7 @@ CRITIC_MAX_TOKENS = 1000
 JUDGE_MODEL = "claude-haiku-4-5-20251001"
 JUDGE_TEMPERATURE = 0.0
 JUDGE_MAX_TOKENS = 300
+JUDGE_WORKERS = 10  # Per-judge thread pool size for parallel LLM calls during eval scoring
 
 RETRIEVAL_CATEGORIES = [
     "technical_issues",

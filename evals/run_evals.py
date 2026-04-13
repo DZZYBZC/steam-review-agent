@@ -372,19 +372,35 @@ def main():
     # raw-output path and snapshot info afterward.
     scored = score_records(cases, records)
     gating = gating_accuracy_batch(cases, records)
-    judge = judge_grounding_batch(
-        cases, records, scored, run_file_basename=out_path.stem
-    )
-    judge_action = judge_action_batch(
-        cases, records, scored, run_file_basename=out_path.stem
-    )
-    pairwise = pairwise_batch(cases, records, run_file_basename=out_path.stem)
-    judge_evd_gold = judge_pool_sufficiency_batch(
-        cases, records, run_file_basename=out_path.stem
-    )
-    judge_evd_draft = judge_draft_grounding_batch(
-        cases, records, run_file_basename=out_path.stem
-    )
+
+    # Run all judge batches in parallel — they're independent of each other.
+    # Each batch also parallelizes its per-case LLM calls internally.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as judge_pool:
+        f_judge = judge_pool.submit(
+            judge_grounding_batch, cases, records, scored,
+            run_file_basename=out_path.stem,
+        )
+        f_judge_action = judge_pool.submit(
+            judge_action_batch, cases, records, scored,
+            run_file_basename=out_path.stem,
+        )
+        f_pairwise = judge_pool.submit(
+            pairwise_batch, cases, records,
+            run_file_basename=out_path.stem,
+        )
+        f_judge_evd_gold = judge_pool.submit(
+            judge_pool_sufficiency_batch, cases, records,
+            run_file_basename=out_path.stem,
+        )
+        f_judge_evd_draft = judge_pool.submit(
+            judge_draft_grounding_batch, cases, records,
+            run_file_basename=out_path.stem,
+        )
+    judge = f_judge.result()
+    judge_action = f_judge_action.result()
+    pairwise = f_pairwise.result()
+    judge_evd_gold = f_judge_evd_gold.result()
+    judge_evd_draft = f_judge_evd_draft.result()
     print()
     print_report(
         cases, records, scored, gating, judge, judge_action, pairwise,

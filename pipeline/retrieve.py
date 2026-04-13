@@ -3,20 +3,36 @@ Embeds patch note chunks into ChromaDB for similarity search.
 
 Uses sentence-transformers for embeddings and ChromaDB with persistent
 storage. The embedding model is loaded lazily and cached at module level.
+HyDE (Hypothetical Document Embedding) optionally generates a hypothetical
+patch note from the query and searches the vector index with it, feeding
+results into RRF as a third retriever source.
 """
 
 import json
 import re
+import time
 import logging
+import threading
 import chromadb
+import anthropic
 from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
 from FlagEmbedding import FlagLLMReranker
 from config import (
     CHROMA_PERSIST_DIR,
     CHUNK_MAX_LENGTH,
+    CLAUDE_API_KEY,
     EMBEDDING_BATCH_SIZE,
     EMBEDDING_MODEL,
+    HYDE_ENABLED,
+    HYDE_GATE_ENABLED,
+    HYDE_GATE_MIN_NONZERO_HITS,
+    HYDE_GATE_MIN_TOP_SCORE,
+    HYDE_MAX_PER_PARENT,
+    HYDE_MAX_TOKENS,
+    HYDE_MODEL,
+    HYDE_TEMPERATURE,
+    HYDE_TOP_K,
     PARENT_CHUNK_MAX_LENGTH,
     PARENT_CONTEXT_SIBLING_BULLETS,
     PARENT_DEDUP_ENABLED,
@@ -24,19 +40,26 @@ from config import (
     PARENT_METADATA_WARN_CHARS,
     RERANKER_MODEL,
     RERANKER_TOP_N,
+    RERANKER_USE_FP16,
     SIMILARITY_THRESHOLD,
     VECTOR_TOP_K,
     BM25_TOP_K,
     RRF_K,
 )
+from utils import load_skill
 from pipeline.chunk import ChunkResult, PatchChunk
 
 logger = logging.getLogger(__name__)
 
 _model: SentenceTransformer | None = None
 _reranker: FlagLLMReranker | None = None
+_reranker_fp16_failed = False
 _chroma_client: chromadb.ClientAPI | None = None
 _bm25_cache: dict[str, tuple[BM25Okapi, list[dict]]] = {}
+
+_hyde_client: anthropic.Anthropic | None = None
+_hyde_prompt: str | None = None
+_hyde_log_lock = threading.Lock()
 
 def _get_model() -> SentenceTransformer:
     """Load the embedding model lazily and cache it."""
@@ -48,11 +71,20 @@ def _get_model() -> SentenceTransformer:
 
 
 def _get_reranker() -> FlagLLMReranker:
-    """Load the Gemma reranker lazily and cache it."""
-    global _reranker
+    """Load the Gemma reranker lazily and cache it. Falls back to fp32 if fp16 fails (sticky)."""
+    global _reranker, _reranker_fp16_failed
     if _reranker is None:
-        logger.info(f"Loading reranker model: {RERANKER_MODEL}")
-        _reranker = FlagLLMReranker(RERANKER_MODEL, use_fp16=True)
+        use_fp16 = RERANKER_USE_FP16 and not _reranker_fp16_failed
+        logger.info(f"Loading reranker model: {RERANKER_MODEL} (fp16={use_fp16})")
+        try:
+            _reranker = FlagLLMReranker(RERANKER_MODEL, use_fp16=use_fp16)
+        except RuntimeError:
+            if use_fp16:
+                logger.warning("fp16 failed for reranker, falling back to fp32 (sticky)")
+                _reranker_fp16_failed = True
+                _reranker = FlagLLMReranker(RERANKER_MODEL, use_fp16=False)
+            else:
+                raise
     return _reranker
 
 
@@ -73,6 +105,135 @@ def _get_or_create_collection(
         name=collection_name,
         metadata={"hnsw:space": "cosine"},
     )
+
+
+def _get_hyde_client() -> anthropic.Anthropic:
+    """Lazy-load Anthropic client for HyDE generation."""
+    global _hyde_client
+    if _hyde_client is None:
+        _hyde_client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+    return _hyde_client
+
+
+def _get_hyde_prompt() -> str:
+    """Lazy-load HyDE skill prompt, cache at module level."""
+    global _hyde_prompt
+    if _hyde_prompt is None:
+        _hyde_prompt = load_skill("generate-hyde")
+    return _hyde_prompt
+
+
+def _generate_hypothetical_doc(query_text: str) -> str | None:
+    """
+    Generate a single hypothetical patch note bullet from a keyword query.
+
+    Returns the generated text, or None on any failure (API error, refusal,
+    empty output). Never crashes — failures are logged and swallowed.
+    """
+    try:
+        t0 = time.perf_counter()
+        hyde_client = _get_hyde_client()
+        response = hyde_client.messages.create(
+            model=HYDE_MODEL,
+            max_tokens=HYDE_MAX_TOKENS,
+            temperature=HYDE_TEMPERATURE,
+            system=_get_hyde_prompt(),
+            messages=[{"role": "user", "content": query_text}],
+        )
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+
+        if response.stop_reason == "refusal":
+            logger.debug("HyDE: model refused query (non-fatal)")
+            return None
+        if response.stop_reason == "max_tokens":
+            logger.warning("HyDE: response truncated at max_tokens")
+
+        text = response.content[0].text.strip() if response.content else ""
+        if not text:
+            logger.debug("HyDE: empty response (non-fatal)")
+            return None
+
+        logger.debug(f"HyDE generated ({elapsed_ms:.0f}ms): {text}")
+        return text
+    except Exception as e:
+        logger.warning(f"HyDE generation failed (non-fatal): {e}")
+        return None
+
+
+def _query_hyde(
+    collection: chromadb.Collection,
+    query_text: str,
+    n_results: int = HYDE_TOP_K,
+) -> list[dict]:
+    """
+    Generate a hypothetical doc, embed it, and query ChromaDB.
+
+    Applies a per-parent diversity cap before returning results.
+    Returns an empty list on any failure (generation, embedding, or query).
+    """
+    hypothetical = _generate_hypothetical_doc(query_text)
+    if hypothetical is None:
+        return []
+
+    model = _get_model()
+    hyde_embedding = model.encode([hypothetical]).tolist()
+
+    results = collection.query(
+        query_embeddings=hyde_embedding,
+        n_results=n_results,
+        include=["documents", "metadatas", "distances"],
+    )
+
+    max_distance = 1.0 - SIMILARITY_THRESHOLD
+
+    ids = results["ids"]
+    documents = results["documents"]
+    metadatas = results["metadatas"]
+    distances = results["distances"]
+
+    if ids is None or documents is None or metadatas is None or distances is None:
+        return []
+
+    raw_results = []
+    for i in range(len(ids[0])):
+        distance = distances[0][i]
+        if distance > max_distance:
+            continue
+
+        raw_results.append({
+            "chunk_id": ids[0][i],
+            "text": documents[0][i],
+            "distance": distance,
+            "metadata": metadatas[0][i],
+            "retriever": "hyde",
+            "rank": len(raw_results),
+        })
+
+    # Per-parent diversity cap: max HYDE_MAX_PER_PARENT results per parent section
+    parent_counts: dict[str, int] = {}
+    capped = []
+    for r in raw_results:
+        parent_id = r.get("metadata", {}).get("parent_id", "") or r["chunk_id"]
+        count = parent_counts.get(parent_id, 0)
+        if count < HYDE_MAX_PER_PARENT:
+            parent_counts[parent_id] = count + 1
+            capped.append(r)
+
+    # Re-assign ranks after capping
+    for i, r in enumerate(capped):
+        r["rank"] = i
+
+    return capped
+
+
+def _log_hyde_gate_decision(row: dict) -> None:
+    """Append one JSON line to hyde_gate_log.jsonl. Thread-safe, fire-and-forget."""
+    try:
+        with _hyde_log_lock:
+            with open("hyde_gate_log.jsonl", "a") as f:
+                f.write(json.dumps(row) + "\n")
+    except Exception as e:
+        logger.warning(f"HyDE gate log write failed (non-fatal): {e}")
 
 
 def embed_chunks(
@@ -299,18 +460,21 @@ def query_bm25(
 
 
 def reciprocal_rank_fusion(
-    vector_results: list[dict],
-    bm25_results: list[dict],
+    *result_lists: list[dict],
     k: int = RRF_K,
     n_results: int = 12,
 ) -> list[dict]:
     """
-    Merge vector and BM25 results using Reciprocal Rank Fusion.
+    Merge N retriever result lists using Reciprocal Rank Fusion.
+
+    Each result dict must carry a "retriever" field (e.g. "vector", "bm25",
+    "hyde") and a "rank" field. Chunks found by multiple retrievers get
+    additive RRF scores and all retriever tags collected.
 
     Parameters:
-        vector_results: Output from query_similar().
-        bm25_results: Output from query_bm25().
+        *result_lists: One or more result lists from different retrievers.
         k: RRF constant (default 60). Higher values flatten rank differences.
+        n_results: Maximum results to return.
 
     Returns:
         A list of dicts sorted by rrf_score descending, each with:
@@ -320,19 +484,14 @@ def reciprocal_rank_fusion(
     docs: dict[str, dict] = {}
     retrievers: dict[str, list[str]] = {}
 
-    for r in vector_results:
-        cid = r["chunk_id"]
-        scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + r["rank"])
-        if cid not in docs:
-            docs[cid] = r
-        retrievers.setdefault(cid, []).append("vector")
-
-    for r in bm25_results:
-        cid = r["chunk_id"]
-        scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + r["rank"])
-        if cid not in docs:
-            docs[cid] = r
-        retrievers.setdefault(cid, []).append("bm25")
+    for result_list in result_lists:
+        for r in result_list:
+            cid = r["chunk_id"]
+            tag = r.get("retriever", "unknown")
+            scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + r["rank"])
+            if cid not in docs:
+                docs[cid] = r
+            retrievers.setdefault(cid, []).append(tag)
 
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:n_results]
 
@@ -375,6 +534,7 @@ def rerank(
 
     reranker = _get_reranker()
 
+    t0 = time.perf_counter()
     pairs = [[query_text, r["text"]] for r in rrf_results]
     scores = reranker.compute_score(pairs)
     if isinstance(scores, (int, float)):
@@ -390,6 +550,9 @@ def rerank(
             "rrf_score": r["rrf_score"],
             "retrievers": r["retrievers"],
         })
+
+    rerank_ms = (time.perf_counter() - t0) * 1000
+    logger.debug(f"Rerank: {rerank_ms:.0f}ms for {len(rrf_results)} candidates")
 
     scored.sort(key=lambda x: x["relevance_score"], reverse=True)
     return scored[:top_n]
@@ -584,9 +747,10 @@ def _dedup_by_parent(
 def retrieve(
     query_text: str,
     app_id: str,
+    run_id: str | None = None,
 ) -> list[dict]:
     """
-    Run the full hybrid retrieval pipeline: vector search + BM25 → RRF fusion → rerank.
+    Run the full hybrid retrieval pipeline: vector search + BM25 (+ optional HyDE) → RRF fusion → rerank.
 
     Both indexes are read from persistent storage (ChromaDB for vector,
     cached BM25 built from ChromaDB documents). No chunk list needed.
@@ -594,11 +758,14 @@ def retrieve(
     Parameters:
         query_text: The search query (review text or reformulated query).
         app_id: Steam app ID, used to select the ChromaDB collection.
+        run_id: Optional run identifier for gate-audit JSONL joinability.
 
     Returns:
         Top reranked results from rerank(), or an empty list if no
         results survive the pipeline.
     """
+    t0_total = time.perf_counter()
+
     # Vector search
     client = _get_client()
     collection = _get_or_create_collection(client, app_id)
@@ -607,9 +774,111 @@ def retrieve(
     # BM25 search (from cached index)
     bm25_results = _query_bm25_from_cache(app_id, query_text, n_results=BM25_TOP_K)
 
+    # BM25-thinness diagnostics (always logged; also used by HyDE gate)
+    bm25_nonzero = [r for r in bm25_results if r.get("score", 0) > 0]
+    bm25_nonzero_count = len(bm25_nonzero)
+    bm25_top_score = bm25_nonzero[0]["score"] if bm25_nonzero else 0.0
+    logger.debug(
+        f"BM25 thinness: {bm25_nonzero_count} nonzero hits, "
+        f"top_score={bm25_top_score:.3f}"
+    )
+
+    # HyDE retrieval (optional third source, with BM25-based gate)
+    hyde_results: list[dict] = []
+    hyde_gate_fired = False
+    hyde_gate_reason = ""
+    sources: list[list[dict]] = [vector_results, bm25_results]
+    if HYDE_ENABLED:
+        # BM25 gate: skip HyDE when BM25 is clearly rich enough
+        if (
+            HYDE_GATE_ENABLED
+            and bm25_nonzero_count >= HYDE_GATE_MIN_NONZERO_HITS
+            and bm25_top_score >= HYDE_GATE_MIN_TOP_SCORE
+        ):
+            hyde_gate_fired = True
+            hyde_gate_reason = (
+                f"BM25 rich enough: {bm25_nonzero_count} nonzero hits "
+                f"(>= {HYDE_GATE_MIN_NONZERO_HITS}), "
+                f"top_score={bm25_top_score:.3f} (>= {HYDE_GATE_MIN_TOP_SCORE})"
+            )
+            logger.debug(f"HyDE gate skipped: {hyde_gate_reason}")
+        else:
+            hyde_results = _query_hyde(collection, query_text, n_results=HYDE_TOP_K)
+            if hyde_results:
+                sources.append(hyde_results)
+            if HYDE_GATE_ENABLED:
+                hyde_gate_reason = (
+                    f"BM25 thin: {bm25_nonzero_count} nonzero hits, "
+                    f"top_score={bm25_top_score:.3f} — HyDE fired"
+                )
+                logger.debug(f"HyDE gate passed: {hyde_gate_reason}")
+
     # Fuse and rerank
-    rrf_results = reciprocal_rank_fusion(vector_results, bm25_results)
+    rrf_results = reciprocal_rank_fusion(*sources)
     reranked = rerank(query_text, rrf_results)
+
+    # HyDE funnel diagnostics (chunk-level + parent-level + duplicate share)
+    hyde_post_rrf_unique_count: int | None = None
+    hyde_pre_unique_count: int | None = None
+    hyde_survived_rerank_count: int | None = None
+    if HYDE_ENABLED and hyde_results:
+        hyde_ids_pre = {r["chunk_id"] for r in hyde_results}
+        hyde_parents_pre = {r.get("metadata", {}).get("parent_id", r["chunk_id"]) for r in hyde_results}
+        hyde_ids_post_rrf = {r["chunk_id"] for r in rrf_results if "hyde" in r["retrievers"]}
+        hyde_ids_post_rerank = {r["chunk_id"] for r in reranked if "hyde" in r.get("retrievers", [])}
+        hyde_parents_post_rerank = {
+            r.get("metadata", {}).get("parent_id", r["chunk_id"])
+            for r in reranked if "hyde" in r.get("retrievers", [])
+        }
+
+        # Pre-RRF duplicate share: compare raw hyde_results against vector+BM25 before fusion
+        vector_ids = {r["chunk_id"] for r in vector_results}
+        bm25_ids = {r["chunk_id"] for r in bm25_results}
+        existing_ids = vector_ids | bm25_ids
+        hyde_pre_unique_count = sum(1 for r in hyde_results if r["chunk_id"] not in existing_ids)
+        hyde_pre_duplicate = len(hyde_results) - hyde_pre_unique_count
+        logger.debug(
+            f"HyDE pre-RRF duplicate share: {hyde_pre_unique_count} unique, "
+            f"{hyde_pre_duplicate} already in vector/BM25"
+        )
+
+        # Post-RRF duplicate share: after fusion, which HyDE chunks were sole-source?
+        hyde_post_rrf_unique_count = sum(
+            1 for r in rrf_results
+            if len(r.get("retrievers", [])) == 1 and "hyde" in r.get("retrievers", [])
+        )
+        hyde_duplicate_count = sum(
+            1 for r in rrf_results
+            if "hyde" in r.get("retrievers", []) and len(r.get("retrievers", [])) > 1
+        )
+        hyde_unique_parent_count = len({
+            r.get("metadata", {}).get("parent_id", r["chunk_id"])
+            for r in rrf_results if len(r.get("retrievers", [])) == 1 and "hyde" in r.get("retrievers", [])
+        })
+
+        hyde_survived_rerank_count = sum(1 for r in reranked if "hyde" in r.get("retrievers", []))
+
+        logger.debug(
+            f"HyDE funnel: {len(hyde_ids_pre)} chunks ({len(hyde_parents_pre)} parents) pre-RRF → "
+            f"{len(hyde_ids_post_rrf)} post-RRF → "
+            f"{len(hyde_ids_post_rerank)} chunks ({len(hyde_parents_post_rerank)} parents) post-rerank | "
+            f"unique={hyde_post_rrf_unique_count} duplicate={hyde_duplicate_count} unique_parents={hyde_unique_parent_count}"
+        )
+
+    # Gate/eval JSONL log (every decision, not just skipped)
+    if HYDE_ENABLED:
+        _log_hyde_gate_decision({
+            "query_text": query_text,
+            "app_id": app_id,
+            "run_id": run_id,
+            "bm25_nonzero_count": bm25_nonzero_count,
+            "bm25_top_score": bm25_top_score,
+            "hyde_gate_fired": hyde_gate_fired,
+            "hyde_gate_reason": hyde_gate_reason,
+            "hyde_post_rrf_unique_count": hyde_post_rrf_unique_count,
+            "hyde_survived_rerank_count": hyde_survived_rerank_count,
+            "hyde_pre_unique_count": hyde_pre_unique_count,
+        })
 
     # Parent context augmentation (always: plumbing)
     reranked = _attach_parent_context(reranked)
@@ -617,5 +886,8 @@ def retrieve(
     # Optional same-parent dedup (off by default)
     if PARENT_DEDUP_ENABLED:
         reranked = _dedup_by_parent(reranked, PARENT_DEDUP_MAX_PER_PARENT)
+
+    retrieve_total_ms = (time.perf_counter() - t0_total) * 1000
+    logger.debug(f"Retrieve total: {retrieve_total_ms:.0f}ms")
 
     return reranked

@@ -78,6 +78,17 @@ FAILURE_MODES: dict[str, FailureMode] = {
         ),
         detection="judge",
     ),
+    "ignored_secondary_complaint": FailureMode(
+        name="ignored_secondary_complaint",
+        description=(
+            "Response addresses the primary complaint but drops a concrete "
+            "secondary aspect that the classifier extracted and the investigator "
+            "had the opportunity to probe. Distinct from ignored_main_complaint: "
+            "the primary issue is handled, but a secondary issue with actionable "
+            "detail is left unacknowledged."
+        ),
+        detection="judge",
+    ),
     "investigate_for_subjective": FailureMode(
         name="investigate_for_subjective",
         description=(

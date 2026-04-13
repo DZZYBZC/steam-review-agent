@@ -25,6 +25,7 @@ chunk filter, output schema), bump JUDGE_INPUT_VERSION below.
 
 from __future__ import annotations
 
+import concurrent.futures
 import datetime as dt
 import hashlib
 import json
@@ -40,6 +41,7 @@ from config import (
     JUDGE_MAX_TOKENS,
     JUDGE_MODEL,
     JUDGE_TEMPERATURE,
+    JUDGE_WORKERS,
 )
 from utils import load_skill, parse_llm_json
 
@@ -349,19 +351,29 @@ def judge_grounding_batch(
     per_case: dict[str, dict] = {}
     n_from_cache = 0
 
+    work_items = []
     for record in records:
         if not record.get("ok"):
             continue
         case = case_by_id.get(record["case_id"])
         if case is None:
             continue
-        result = judge_grounding(case, record, per_case_scored, run_file_basename)
-        if result is None:
-            continue
-        per_case[record["case_id"]] = result
-        rulings[result["ruling"]] = rulings.get(result["ruling"], 0) + 1
-        if result["from_cache"]:
-            n_from_cache += 1
+        work_items.append((case, record))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=JUDGE_WORKERS) as pool:
+        futures = {
+            pool.submit(judge_grounding, case, record, per_case_scored, run_file_basename): record
+            for case, record in work_items
+        }
+        for future in concurrent.futures.as_completed(futures):
+            record = futures[future]
+            result = future.result()
+            if result is None:
+                continue
+            per_case[record["case_id"]] = result
+            rulings[result["ruling"]] = rulings.get(result["ruling"], 0) + 1
+            if result["from_cache"]:
+                n_from_cache += 1
 
     return {
         "n_flagged": len(per_case),

@@ -24,7 +24,7 @@ export HF_TOKEN=hf_...
 #    Runs the full agent graph (investigator → responder → critic) against a fake
 #    "game crashes in dungeon" review and auto-approves at the human gate.
 #    Makes ~3-5 real LLM calls. Wall clock ~30s. Costs a few cents on Haiku+Sonnet.
-#    First run also downloads embedding + reranker models (~100MB).
+#    First run also downloads embedding + reranker models (~5GB).
 python test_graph.py
 ```
 
@@ -63,7 +63,7 @@ steam-review-agent/
 │   ├── cluster.py                 # Time-windowed category clustering + priority signals
 │   ├── stats.py                   # Aggregate statistics over reviews + clusters
 │   ├── chunk.py                   # Parent-child section-aware patch-note chunking
-│   ├── retrieve.py                # Hybrid RAG: vector + BM25 → RRF → cross-encoder rerank
+│   ├── retrieve.py                # Hybrid RAG: vector + BM25 → RRF → Gemma rerank
 │   ├── storage.py                 # SQLite schema, DAO functions, cluster-note lifecycle
 │   ├── keywords.py                # Keyword extraction helpers
 │   └── retry.py                   # Retry decorator for flaky API calls
@@ -169,7 +169,7 @@ Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — ci
    - Check a deterministic category gate — some categories skip retrieval entirely
    - Load active cluster notes for the category
    - If the LLM judges from notes alone that no response is needed, exit early
-   - Otherwise, the investigator LLM (Sonnet 4.6) drives retrieval via Anthropic's tool-use API: formulate a search query, call the retrieval tool (hybrid vector + BM25 → RRF → cross-encoder rerank), inspect results, and optionally reformulate and call again (up to 4 total calls). For multi-part reviews, the classifier extracts secondary aspect phrases; the investigator may use its final call to probe the top secondary aspect if primary evidence is already sufficient
+   - Otherwise, the investigator LLM (Sonnet 4.6) drives retrieval via Anthropic's tool-use API: formulate a search query, call the retrieval tool (hybrid vector + BM25 → RRF → Gemma rerank), inspect results, and optionally reformulate and call again (up to 4 total calls). For multi-part reviews, the classifier extracts secondary aspect phrases; the investigator may use its final call to probe the top secondary aspect if primary evidence is already sufficient
 7. **Draft** — generate a player-facing reply citing only chunks the investigator retrieved (Sonnet 4.6)
 8. **Critique → Human approval**
    - Validate the evidence chain, tone, and action choice
@@ -242,7 +242,7 @@ Five nodes: coordinator (plain Python), investigator, responder, critic, and hum
 <details>
 <summary><strong>Retrieval pipeline (hybrid RAG)</strong></summary>
 
-Patch notes → **parent-child section-aware chunker** → dual index (ChromaDB bge-base-en-v1.5 + in-memory BM25). Query time: **RRF fusion** (top 12) → **cross-encoder rerank** (ms-marco-MiniLM-L-6-v2, top 5) → **parent context attachment**. Each retrieval call returns a top-5 reranked pool, merged across up to 4 calls into a single accumulated evidence set.
+Patch notes → **parent-child section-aware chunker** → dual index (ChromaDB bge-base-en-v1.5 + in-memory BM25). Query time: **RRF fusion** (top 12) → **Gemma rerank** (bge-reranker-v2-gemma, top 5) → **parent context attachment**. Each retrieval call returns a top-5 reranked pool, merged across up to 4 calls into a single accumulated evidence set.
 
 **Parent-child chunking.** Each bullet point is a child chunk (embedded and searched); each section is a parent chunk (stored as metadata, never embedded). After reranking, each matched child gets a context window of its parent section — the matched bullet plus up to 3 sibling bullets before/after, using a stable positional index for deterministic centering. This gives the investigator surrounding context without inflating the embedding index. Child chunk IDs are unchanged, so citation chain-of-custody and eval scorers work unmodified. Three independent feature flags control whether the investigator sees parent context, whether the responder/critic sees it, and whether same-parent dedup is applied — each testable in isolation.
 
@@ -300,7 +300,7 @@ Three memory layers, each with a different lifetime and scope.
 **Semantic memory — patch note vector store (persistent)**
 - ChromaDB collection indexed with bge-base-en-v1.5 embeddings, plus a parallel in-memory BM25 index
 - Built from parent-child section-aware chunked patch notes — each bullet is a child chunk (embedded), each section is a parent chunk (metadata only)
-- Queried at run time via RRF fusion (top 12) → cross-encoder rerank (top 5) → parent context attachment
+- Queried at run time via RRF fusion (top 12) → Gemma rerank (top 5) → parent context attachment
 - The investigator drives retrieval through Anthropic's tool-use API — it formulates queries, inspects results, and can reformulate up to 4 total calls (the 4th reserved for secondary aspect probes on multi-part reviews)
 - Vector store persisted to disk; BM25 index is rebuilt each run
 
@@ -460,7 +460,7 @@ The metrics below cite four distinct populations:
 - **Storage:** SQLite (reviews, audit log, audit log iterations, cluster notes, classifications, schema version)
 - **Vector store:** ChromaDB
 - **Embeddings:** sentence-transformers (`BAAI/bge-base-en-v1.5`)
-- **Reranker:** cross-encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
+- **Reranker:** Gemma reranker (`BAAI/bge-reranker-v2-gemma`)
 - **Lexical search:** rank-bm25 (in-memory, rebuilt per run)
 - **Other:** pandas, python-frontmatter (for skill files), python-dotenv
 

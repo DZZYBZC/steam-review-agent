@@ -11,7 +11,7 @@ import logging
 import chromadb
 from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
-from sentence_transformers import CrossEncoder
+from FlagEmbedding import FlagLLMReranker
 from config import (
     CHROMA_PERSIST_DIR,
     CHUNK_MAX_LENGTH,
@@ -34,7 +34,7 @@ from pipeline.chunk import ChunkResult, PatchChunk
 logger = logging.getLogger(__name__)
 
 _model: SentenceTransformer | None = None
-_reranker: CrossEncoder | None = None
+_reranker: FlagLLMReranker | None = None
 _chroma_client: chromadb.ClientAPI | None = None
 _bm25_cache: dict[str, tuple[BM25Okapi, list[dict]]] = {}
 
@@ -47,12 +47,12 @@ def _get_model() -> SentenceTransformer:
     return _model
 
 
-def _get_reranker() -> CrossEncoder:
-    """Load the cross-encoder reranker lazily and cache it."""
+def _get_reranker() -> FlagLLMReranker:
+    """Load the Gemma reranker lazily and cache it."""
     global _reranker
     if _reranker is None:
         logger.info(f"Loading reranker model: {RERANKER_MODEL}")
-        _reranker = CrossEncoder(RERANKER_MODEL)
+        _reranker = FlagLLMReranker(RERANKER_MODEL, use_fp16=True)
     return _reranker
 
 
@@ -356,9 +356,9 @@ def rerank(
     top_n: int = RERANKER_TOP_N,
 ) -> list[dict]:
     """
-    Re-score RRF candidates using a cross-encoder for fine-grained relevance.
+    Re-score RRF candidates using the Gemma reranker for fine-grained relevance.
 
-    Scores each (query, chunk_text) pair with the cross-encoder, then returns
+    Scores each (query, chunk_text) pair with the reranker, then returns
     the top_n results sorted by relevance score descending.
 
     Parameters:
@@ -376,7 +376,9 @@ def rerank(
     reranker = _get_reranker()
 
     pairs = [[query_text, r["text"]] for r in rrf_results]
-    scores = reranker.predict(pairs)
+    scores = reranker.compute_score(pairs)
+    if isinstance(scores, (int, float)):
+        scores = [scores]
 
     scored = []
     for i, r in enumerate(rrf_results):

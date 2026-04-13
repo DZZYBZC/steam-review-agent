@@ -49,7 +49,7 @@ RETRIEVE_PATCHES_TOOL = {
     "name": "retrieve_patches",
     "description": (
         "Search the game's patch notes for chunks relevant to a query. Runs the "
-        "full hybrid retrieval pipeline (vector + BM25 → RRF fusion → cross-encoder "
+        "full hybrid retrieval pipeline (vector + BM25 → RRF fusion → Gemma "
         "rerank). Use search-style keywords (3-10 tokens), not full sentences or raw "
         "review text. Rewrite the complaint into keywords before calling. May be "
         "called up to INVESTIGATOR_MAX_TOOL_CALLS times per investigation."

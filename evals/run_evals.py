@@ -289,7 +289,7 @@ def main():
     app = build_graph()
 
     # Best-effort warmup of the retrieval lazy-loaders (sentence-transformer
-    # embedder, cross-encoder reranker, ChromaDB client) on the main thread,
+    # embedder, Gemma reranker, ChromaDB client) on the main thread,
     # so worker threads don't race on first init. Performance-only — never
     # fatal. If warmup fails for any reason, the first real case pays the
     # lazy-load cost itself.

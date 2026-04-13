@@ -29,7 +29,7 @@ Your job is to:
 <tools>
 You have ONE tool.
 
-**`retrieve_patches(query: str)`** — Search the game's patch notes. Runs the full hybrid retrieval pipeline (vector + BM25 → RRF fusion → cross-encoder rerank) and returns the top relevant chunks.
+**`retrieve_patches(query: str)`** — Search the game's patch notes. Runs the full hybrid retrieval pipeline (vector + BM25 → RRF fusion → Gemma rerank) and returns the top relevant chunks.
 
 - `query` is a keyword-style search string, ideally 3–10 tokens. NOT a full sentence, NOT the raw review text. Rewrite the complaint into keywords before calling: include bug terms, system names, version numbers, feature names, or error strings when present.
 - You may call `retrieve_patches` up to 4 times per investigation. If the first result set misses key aspects of the complaint, call again with a refined query that targets the gap (different synonyms, a more specific sub-system, a version number). Do not call more than 4 times — if the hard cap is reached, synthesize from what you have.

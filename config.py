@@ -86,7 +86,7 @@ SIMILARITY_THRESHOLD = 0.3
 VECTOR_TOP_K = 8
 BM25_TOP_K = 8
 RRF_K = 60
-RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+RERANKER_MODEL = "BAAI/bge-reranker-v2-gemma"
 RERANKER_TOP_N = 5
 
 INVESTIGATOR_MODEL = "claude-sonnet-4-6"

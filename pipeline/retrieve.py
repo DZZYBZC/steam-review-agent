@@ -54,6 +54,7 @@ logger = logging.getLogger(__name__)
 _model: SentenceTransformer | None = None
 _reranker: FlagLLMReranker | None = None
 _reranker_fp16_failed = False
+_reranker_lock = threading.Lock()
 _chroma_client: chromadb.ClientAPI | None = None
 _bm25_cache: dict[str, tuple[BM25Okapi, list[dict]]] = {}
 
@@ -536,7 +537,8 @@ def rerank(
 
     t0 = time.perf_counter()
     pairs = [[query_text, r["text"]] for r in rrf_results]
-    scores = reranker.compute_score(pairs)
+    with _reranker_lock:
+        scores = reranker.compute_score(pairs)
     if isinstance(scores, (int, float)):
         scores = [scores]
 

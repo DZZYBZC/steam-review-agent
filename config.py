@@ -79,9 +79,9 @@ PARENT_CONTEXT_SIBLING_BULLETS = 3      # Max sibling bullets before/after match
 PARENT_METADATA_WARN_CHARS = 10_000     # Log warning when parent metadata exceeds this per child
 PARENT_CONTEXT_INVESTIGATOR = True      # Flip first in staged rollout
 PARENT_CONTEXT_RESPONDER = True         # Flip second after investigator context is measured
-PARENT_DEDUP_ENABLED = False            # Same-parent dedup — flip after gate-disabled eval establishes baseline
+PARENT_DEDUP_ENABLED = False            # Reverted — dedup dropped concept-carrying chunks, regressed retrieval metrics
 PARENT_DEDUP_MAX_PER_PARENT = 2         # When dedup enabled: max children kept per parent (not hard-1)
-RERANKER_USE_FP16 = True                      # Use fp16 for Gemma reranker; set False on hardware without fp16 support
+RERANKER_USE_FP16 = True                # Use fp16 for Gemma reranker; set False on hardware without fp16 support
 
 # HyDE (Hypothetical Document Embedding) retrieval
 HYDE_ENABLED = True                           # Feature flag — staged rollout

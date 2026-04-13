@@ -80,10 +80,12 @@ When a one-rung swap could be category_drift or a failure bucket, use these dist
 Specific patterns (use these when judging whether a mismatch is a failure or tolerable):
 - **Promised/acknowledged feature gap** — `monitor` is the expected default. `investigate→monitor` on a feature-gap case = tolerable_disagreement or category_drift, not missed_escalation.
 - **Design-architecture annoyance** — `no_action` is the expected default. `no_action→monitor` on a pure structural taste complaint = over_escalation.
+- **Vague or monetization complaint** — `no_action` is the expected default. The "recurring subjective pain" clause requires the review itself to describe a measurable product symptom — not merely that other players voice similar topics. `no_action→monitor` on a vague complaint ("tedious, bad maps") or a monetization complaint with no concrete failure mode = over_escalation.
 - **Named balance/tuning change** — `monitor` is defensible even with emotional tone. `no_action` on a review naming a specific product change = missed_escalation if the change is identifiable.
 - **Regional/network/VPN issue** — `investigate` is the expected default when a region/scenario is identified. `monitor→investigate` = tolerable_disagreement or category_drift. `investigate→escalate` without outage/persistence framing = over_escalation.
 - **Post-patch performance regression** — `investigate` is the default. `escalate` without broad impact or persistence = over_escalation.
 - **Single-user severe technical issue** — `investigate` is the default. `escalate` without persistence/reproducibility framing = over_escalation.
+- **Patches exist but reviewer still blocked** — Evidence of related patches does not reduce the escalation level. If the reviewer is still experiencing a hard-blocker despite shipped fixes, the delay-harm test still applies. `escalate→investigate` or `escalate→monitor` because "patches were shipped" = missed_escalation when the review conveys ongoing persistence/reproducibility. **This "patches don't reduce" clause applies only at the escalate boundary** — at the monitor→investigate boundary, evidence of active patching for the issue area is a legitimate reason for `monitor` over `investigate`. `monitor→investigate` on a complaint in an actively-patched area without a specific unresolved reproduction case = over_escalation, not category_drift.
 - **Real but underspecified** — `monitor` is the default. `investigate` without concrete reproduction detail = over_escalation.
 </disambiguation>
 </judgment_rules>

@@ -87,6 +87,7 @@ steam-review-agent/
 │   ├── investigate-evidence/      # Investigator retrieval-reasoning prompt
 │   ├── draft-response/            # Responder draft template
 │   ├── critique-draft/            # Critic quality-gate checklist
+│   ├── generate-hyde/             # HyDE hypothetical patch-note generator
 │   ├── judge-grounding/           # Eval judge: low-confidence citation classifier
 │   ├── judge-action/              # Eval judge: action severity classifier
 │   ├── judge-pairwise/            # Eval judge: revision improvement
@@ -169,7 +170,7 @@ Citation chain of custody: 5 source chunks retrieved, 5 relevant, 5 cited — ci
    - Check a deterministic category gate — some categories skip retrieval entirely
    - Load active cluster notes for the category
    - If the LLM judges from notes alone that no response is needed, exit early
-   - Otherwise, the investigator LLM (Sonnet 4.6) drives retrieval via Anthropic's tool-use API: formulate a search query, call the retrieval tool (hybrid vector + BM25 → RRF → Gemma rerank), inspect results, and optionally reformulate and call again (up to 4 total calls). For multi-part reviews, the classifier extracts secondary aspect phrases; the investigator may use its final call to probe the top secondary aspect if primary evidence is already sufficient
+   - Otherwise, the investigator LLM (Sonnet 4.6) drives retrieval via Anthropic's tool-use API: formulate a search query, call the retrieval tool (hybrid vector + BM25 + HyDE → RRF → Gemma rerank), inspect results, and optionally reformulate and call again (up to 4 total calls). Each retrieval call also generates a hypothetical patch note from the query (HyDE), embeds it, and feeds matching chunks into RRF as a third retriever source — bridging the vocabulary gap between player complaints and developer patch-note language. For multi-part reviews, the classifier extracts secondary aspect phrases; the investigator may use its final call to probe the top secondary aspect if primary evidence is already sufficient
 7. **Draft** — generate a player-facing reply citing only chunks the investigator retrieved (Sonnet 4.6)
 8. **Critique → Human approval**
    - Validate the evidence chain, tone, and action choice
@@ -242,9 +243,9 @@ Five nodes: coordinator (plain Python), investigator, responder, critic, and hum
 <details>
 <summary><strong>Retrieval pipeline (hybrid RAG)</strong></summary>
 
-Patch notes → **parent-child section-aware chunker** → dual index (ChromaDB bge-base-en-v1.5 + in-memory BM25). Query time: optional **HyDE** (hypothetical patch note via Haiku, embedded and searched as a third retriever source) + **RRF fusion** (top 12) → **Gemma rerank** (bge-reranker-v2-gemma, top 5) → **parent context attachment**. Each retrieval call returns a top-5 reranked pool, merged across up to 4 calls into a single accumulated evidence set. HyDE is behind the `HYDE_ENABLED` feature flag (default off); a BM25-based gate skips it when BM25 is already rich enough.
+Patch notes → **parent-child section-aware chunker** → dual index (ChromaDB bge-base-en-v1.5 + in-memory BM25). Query time: **HyDE** (hypothetical patch note via Haiku, embedded and searched as a third retriever source) + **RRF fusion** (top 12) → **Gemma rerank** (bge-reranker-v2-gemma, top 5) → **parent context attachment**. Each retrieval call returns a top-5 reranked pool, merged across up to 4 calls into a single accumulated evidence set. HyDE runs on every retrieval call by default (`HYDE_ENABLED=True`); a BM25-based gate (`HYDE_GATE_ENABLED`, currently off) can skip it when BM25 is already rich enough.
 
-**Parent-child chunking.** Each bullet point is a child chunk (embedded and searched); each section is a parent chunk (stored as metadata, never embedded). After reranking, each matched child gets a context window of its parent section — the matched bullet plus up to 3 sibling bullets before/after, using a stable positional index for deterministic centering. This gives the investigator surrounding context without inflating the embedding index. Child chunk IDs are unchanged, so citation chain-of-custody and eval scorers work unmodified. Three independent feature flags control whether the investigator sees parent context, whether the responder/critic sees it, and whether same-parent dedup is applied — each testable in isolation.
+**Parent-child chunking.** Each bullet point is a child chunk (embedded and searched); each section is a parent chunk (stored as metadata, never embedded). After reranking, each matched child gets a context window of its parent section — the matched bullet plus up to 3 sibling bullets before/after, using a stable positional index for deterministic centering. This gives the investigator surrounding context without inflating the embedding index. Child chunk IDs are unchanged, so citation chain-of-custody and eval scorers work unmodified. Three independent feature flags control rollout: investigator parent context (on), responder/critic parent context (on), and same-parent dedup (off — dedup dropped concept-carrying chunks and regressed retrieval metrics).
 
 Reranker absolute scores are **not** passed to the investigator — they're uncalibrated and anchoring on them would amplify noise. The reranker orders; the investigator reasons about content.
 
@@ -352,7 +353,7 @@ The agent matters; the eval system is what made it iterable. Each block below is
 <details>
 <summary><strong>Eval iteration arc (chronological)</strong></summary>
 
-Twenty iterations. Three reverted, one partial success, sixteen shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
+Twenty-four iterations. Three reverted, one partial success, twenty shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
 
 | # | Name | Outcome | Key signal |
 |---|------|---------|------------|
@@ -376,6 +377,10 @@ Twenty iterations. Three reverted, one partial success, sixteen shipped — hone
 | 18 | Phase A2 — manual concept cleanup + sufficiency | shipped | Manual concept merges, equivalent-chunk additions, sufficient-set authoring (100% coverage across retrieval-eligible). Adds evidence sufficiency + relevant-concept precision. First snapshot where concept recall legitimately diverges from slot recall |
 | 19 | Phase B — split retrieval judges | shipped | Pool sufficiency (retrieval-only) and draft grounding (joint), sharing scorer infrastructure. Schema v7. Disentangles "is the evidence enough for an ideal answer?" from "does the evidence back the draft's actual claims?" |
 | 20 | Multi-category retrieval | shipped | Investigator queries across all categories the review touches (primary + secondary aspects), not just the primary. Schema v8 |
+| 21 | Parent-child context | shipped | Investigator and responder see sibling bullets around matched chunks. Concept recall lifted; dedup tested and reverted (dropped concept-carrying chunks) |
+| 22 | HyDE retrieval | shipped | Hypothetical patch note generation (Haiku) as third retriever into RRF. Source recall +0.10, concept recall +0.05, sufficiency +0.08 vs pre-HyDE baseline |
+| 23 | Action-ladder boundary sharpening | shipped | Three targeted disambiguation rules across responder/critic/judge: escalate-boundary scoping of "patches don't reduce," evidence-richness ≠ complaint-specificity guardrail, vague/monetization carve-out reinforcement |
+| 24 | [infra] Critic batching + judge parallelization | shipped | Critic evaluates full checklist before ruling; judges run in parallel thread pools. Drafting rejections dropped, token usage down ~13%. No quality movement |
 
 *Why Iter16 used threads, not asyncio:* the agent graph, Anthropic SDK calls, LangGraph checkpointer, and SQLite are all sync; switching to asyncio would have meant rewriting every node, every tool call, every DB access, and every test, for an I/O-bound workload where the GIL releases during the wait and a thread pool gives effectively the same throughput. WAL + busy_timeout on the SQLite connections handles the only real shared-state contention — a two-line pragma change instead of a graph rewrite.
 
@@ -399,26 +404,26 @@ The metrics below cite four distinct populations:
 
 | Metric | Value |
 |---|---|
-| Action correctness | **76.9%** (30 / 39 action-eligible cases; 0 infra errors) |
-| Effective first-pass rate | **84.6%** (across action-eligible cases — critic approved or action-freeze override at iter0) |
-| Gating accuracy | **94.3%** (across all 56 cases — 10 true_skip / 40 true_retrieve / 3 false_skip / 0 false_retrieve / 3 unknown) |
+| Action correctness | **75.6%** (34 / 45 action-eligible cases; 0 infra errors) |
+| Effective first-pass rate | **97.8%** (across action-eligible cases — critic approved or action-freeze override at iter0) |
+| Gating accuracy | **92.2%** (across all 56 cases — 5 true_skip / 42 true_retrieve / 1 false_skip / 3 false_retrieve / 5 unknown) |
 
 **Retrieval quality** (22 retrieval-eligible cases — cases with hand-annotated must-include chunk IDs)
 
 | Metric | Value |
 |---|---|
-| Concept recall — source / post-filter | **0.719 / 0.675** |
-| Sufficiency — at-source / post-filter | **0.636 / 0.636** |
-| Relevant-concept precision (pool) | **0.326** (cases with a non-empty post-filter pool) |
-| Citation-concept precision (cited) | **0.406** (cases where the responder cited at least one chunk) |
+| Concept recall — source / post-filter | **0.750 / 0.727** |
+| Sufficiency — at-source / post-filter | **0.708 / 0.667** |
+| Relevant-concept precision (pool) | **0.320** (cases with a non-empty post-filter pool) |
+| Citation-concept precision (cited) | **0.319** (cases where the responder cited at least one chunk) |
 
-**Judge rulings** (35 judge-eligible cases — cases where the agent retrieved a non-empty post-filter pool)
+**Judge rulings** (43 judge-eligible cases — cases where the agent retrieved a non-empty post-filter pool)
 
 | Metric | Value |
 |---|---|
-| Pool sufficiency | supports 14 / partial 17 / no_support 4 / judge_error 0 |
-| Draft grounding | supports 22 / partial 12 / no_support 1 / judge_error 0 |
-| Disagreement | 17 agreement / 18 disagreement — within disagreements: **2 strong under-use, 1 over-claim**, 15 other |
+| Pool sufficiency | supports 18 / partial 18 / no_support 7 / judge_error 0 |
+| Draft grounding | supports 15 / partial 28 / no_support 0 / judge_error 0 |
+| Disagreement | 17 agreement / 26 disagreement — within disagreements: **0 strong under-use, 2 over-claim**, 24 other |
 
 #### Where the numbers come from
 
@@ -428,26 +433,26 @@ The metrics below cite four distinct populations:
   - Legacy slot recall lives in the snapshot but is omitted from the table for brevity (kept as a debuggability floor so historical snapshots remain comparable)
   - Pool precision = share of investigator-kept chunks mapping to any annotated concept
   - Citation precision = same metric scoped to chunks the responder actually cited
-  - When citation > pool, the responder is selectively picking better chunks out of a noisy pool
+  - When citation > pool, the responder is selectively picking better chunks out of a noisy pool. When they converge (as in the current run), the responder is citing roughly in proportion to pool quality
 - **Retrieval-vs-draft disagreement is the new dominant signal.**
   - Two retrieval judges split usefulness into pure retrieval signal (could an ideal responder produce the right answer from this evidence?) and joint retrieval+drafting signal (does the evidence back what the draft actually claims?)
   - Strong under-use diagonal: gold says evidence is enough, draft fails to use it — flags responses that left load-bearing evidence on the floor
   - Strong over-claim diagonal: gold says evidence isn't enough, draft asserts a fix anyway — flags fabricated claims
-  - Under-use dropped after upgrading the investigator to Sonnet (better evidence packages)
-  - Over-claim is near-zero — the responder remains conservative
+  - Under-use dropped to zero after upgrading the investigator to Sonnet and adding HyDE retrieval (better evidence packages)
+  - Over-claim remains low — the responder is conservative, though a small number of cases show the draft asserting coverage the pool doesn't fully support
 
 ### Open gaps
 
-- **Retrieval recall.**
-  - Post-filter is still the dominant gap, but layered metrics give the next investigation a sharper target
-  - Most strong under-use cases have full sufficiency at the post-filter pool — the evidence is there, the responder is not consuming it
-  - Next steps: (a) audit under-use cases for prompt-side fixes that get the responder to consume load-bearing chunks, (b) tighten section-aware chunking on the remaining multi-version patches
+- **Citation precision.**
+  - HyDE and parent context lifted retrieval recall and sufficiency materially, but citation precision dropped (pool and citation precision converged around 0.32, down from a prior gap where citation precision exceeded pool precision)
+  - The responder is citing more broadly from a richer pool rather than selectively picking the best chunks — the next lever is responder evidence consumption, not more retrieval augmentation
+  - Candidates: require the responder to explicitly reference load-bearing chunks before drafting, add an evidence checklist in the investigator output, or force mention of unresolved contradictions when multiple patch versions disagree
 
 - **Critic node-level over-rejection.**
-  - System-level churn is solved (action-freeze), but the critic *node itself* still over-rejects on action grounds at the monitor ↔ investigate boundary
-  - Disambiguation rules were added to the critic prompt — over-rejection pattern persists; action-freeze still does the heavy lifting
-  - Broad rubric rewrites look closed as a lever; targeted boundary-sharpening rules improved action correctness but did not materially lift raw iter-0 approval
-  - Further improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node)
+  - System-level churn is fully solved — action-freeze intercepts action-only rejections and effective first-pass rate is near-ceiling at 97.8%, with zero cases reaching max iterations
+  - The critic *node itself* still over-rejects on action grounds (22 action rejections vs 2 drafting rejections), but action-freeze renders this operationally harmless
+  - Broad rubric rewrites are closed as a lever (the critic reconstructs rung semantics from action names alone); targeted boundary-sharpening rules improved action correctness but did not lift raw iter-0 approval
+  - Further improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node), but the cost-benefit is low given action-freeze's effectiveness
 
 ---
 
@@ -502,7 +507,7 @@ export HF_TOKEN=...
 
 - **Data pipeline** (500 reviews, fresh fetch): ~5–10 min wall clock; cost dominated by classification (~500 Haiku calls × ~300 input tokens ≈ ~$0.10).
 - **Single-review agent run**: ~30–60 sec including retrieval; ~5–15K total tokens depending on revision iterations; <$0.05 per review (Sonnet on the responder, Haiku elsewhere).
-- **Full eval suite** (56 cases): **~3 min wall clock at 10 workers** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + busy timeout to avoid lock contention). Sequential is closer to ~25 min; pre-parallelization sequential was 25–35 min. ~1.5M total tokens; on the order of $2–3 per full run with all judges enabled.
+- **Full eval suite** (56 cases): **~3 min wall clock at 10 workers** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + busy timeout to avoid lock contention). Sequential is closer to ~25 min; pre-parallelization sequential was 25–35 min. ~760K total tokens (down from ~880K before action-freeze eliminated revision thrash); on the order of $1–2 per full run with all judges enabled.
 - **Cached judge re-score** (offline against a saved run JSON): ~30 sec; $0 (cache hit on every flagged case).
 
 Numbers are approximations from the latest eval run. Actual cost depends on Anthropic pricing at run time.

@@ -45,38 +45,51 @@ client = anthropic.Anthropic(api_key=CLAUDE_API_KEY, max_retries=5)
 SYSTEM_PROMPT = load_skill("investigate-evidence")
 
 
-RETRIEVE_PATCHES_TOOL = {
-    "name": "retrieve_patches",
+_TOOL_DESCRIPTION = (
+    "Search the game's patch notes for chunks relevant to a query. Runs the "
+    "full hybrid retrieval pipeline (vector + BM25 + HyDE → RRF fusion → Gemma "
+    "rerank). Use search-style keywords (3-10 tokens), not full sentences or raw "
+    "review text. Rewrite the complaint into keywords before calling. May be "
+    "called up to INVESTIGATOR_MAX_TOOL_CALLS times per investigation."
+)
+
+_QUERY_PROPERTY = {
+    "type": "string",
     "description": (
-        "Search the game's patch notes for chunks relevant to a query. Runs the "
-        "full hybrid retrieval pipeline (vector + BM25 → RRF fusion → Gemma "
-        "rerank). Use search-style keywords (3-10 tokens), not full sentences or raw "
-        "review text. Rewrite the complaint into keywords before calling. May be "
-        "called up to INVESTIGATOR_MAX_TOOL_CALLS times per investigation."
+        "Keyword-style search query, 3-10 tokens. Include version "
+        "numbers, feature names, or error terms when relevant."
     ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": (
-                    "Keyword-style search query, 3-10 tokens. Include version "
-                    "numbers, feature names, or error terms when relevant."
-                ),
-            },
-            "call_role": {
-                "type": "string",
-                "enum": ["primary", "secondary"],
-                "description": (
-                    "Tag this call as 'primary' (investigating the main complaint) "
-                    "or 'secondary' (probing a secondary aspect from a multi-part review). "
-                    "Defaults to 'primary' if omitted."
-                ),
-            },
-        },
-        "required": ["query"],
-    },
 }
+
+_CALL_ROLE_PROPERTY = {
+    "type": "string",
+    "enum": ["primary", "secondary"],
+    "description": (
+        "Tag this call as 'primary' (investigating the main complaint) "
+        "or 'secondary' (probing a secondary aspect from a multi-part review). "
+        "Defaults to 'primary' if omitted."
+    ),
+}
+
+
+def _build_retrieve_tool(has_secondary: bool) -> dict:
+    """Build the retrieve_patches tool schema.
+
+    Only includes the call_role parameter when secondary_aspects are present,
+    preventing the LLM from tagging single-issue reviews as 'secondary'.
+    """
+    properties: dict = {"query": _QUERY_PROPERTY}
+    if has_secondary:
+        properties["call_role"] = _CALL_ROLE_PROPERTY
+    return {
+        "name": "retrieve_patches",
+        "description": _TOOL_DESCRIPTION,
+        "input_schema": {
+            "type": "object",
+            "properties": properties,
+            "required": ["query"],
+        },
+    }
 
 
 _INVESTIGATOR_LOG_DIR = Path(__file__).resolve().parents[2] / "evals" / "logs"
@@ -266,6 +279,8 @@ def _run_investigator_tool_loop(
     token_totals = {"input": 0, "output": 0}
     tool_calls_used = 0
     tool_call_log_buffer: list[dict] = []
+    has_secondary = bool(secondary_aspects)
+    tool_schema = _build_retrieve_tool(has_secondary)
 
     while True:
         response = client.messages.create(
@@ -273,7 +288,7 @@ def _run_investigator_tool_loop(
             max_tokens=INVESTIGATOR_MAX_TOKENS,
             temperature=INVESTIGATOR_TEMPERATURE,
             system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-            tools=[RETRIEVE_PATCHES_TOOL],
+            tools=[tool_schema],
             messages=messages,  # type: ignore[arg-type]
         )
 
@@ -385,7 +400,6 @@ def _run_investigator_tool_loop(
             tool_calls_used += 1
 
             # Call-role provenance: derive call_role label with safeguards.
-            has_secondary = bool(secondary_aspects)
             raw_role = tool_input.get("call_role", "primary")
             role_coerced = False
             aspect_phrase_used: str | None = None

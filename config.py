@@ -149,6 +149,7 @@ RETRIEVAL_CATEGORIES = [
 
 INVESTIGATOR_MAX_TOOL_CALLS = 4  # Hard cap on retrieve_patches tool calls per investigator invocation
 
+CLASSIFIER_WORKERS = 10     # Thread pool size for parallel classification
 CLASSIFICATION_LIMIT = 200  # Default number of reviews to classify per run
 
 TEST_APP_ID = "2246340"  # Monster Hunter Wilds — used by test scripts

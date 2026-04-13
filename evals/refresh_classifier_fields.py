@@ -27,6 +27,7 @@ import argparse
 import json
 import logging
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 # Allow `python evals/refresh_classifier_fields.py` from the repo root.
@@ -34,6 +35,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from config import CLASSIFIER_WORKERS
 from pipeline.classify import classify_review
 
 logging.basicConfig(
@@ -86,32 +88,61 @@ def main():
     flipped: list[tuple[str, str, str]] = []          # (case_id, old_cat, new_cat)
     failed: list[str] = []
 
+    # Build the work list (skip non-selected and empty-review cases up front)
+    work: list[tuple[int, dict]] = []
     for i, case in enumerate(cases, start=1):
         case_id = case.get("case_id", f"<no-id-{i}>")
         if selected_ids is not None and case_id not in selected_ids:
             continue
         review_text = case.get("review_text", "")
         if not review_text:
-            logger.warning(f"[{i}/{len(cases)}] {case_id}: empty review_text, skipping")
+            logger.warning(f"{case_id}: empty review_text, skipping")
             failed.append(case_id)
             continue
+        work.append((i, case))
 
-        old_cat = case.get("classifier_category", "")
-
-        result = classify_review(review_text)
+    def _classify_one(idx: int, case: dict) -> tuple[str, str | None]:
+        """Return (case_id, new_category) or (case_id, None) on failure."""
+        case_id = case.get("case_id", f"<no-id-{idx}>")
+        result = classify_review(case.get("review_text", ""))
         if result is None:
-            logger.warning(f"[{i}/{len(cases)}] {case_id}: classifier returned None")
-            failed.append(case_id)
-            continue
+            return case_id, None
+        return case_id, result.primary_category
 
-        new_cat = result.primary_category
-        case["classifier_category"] = new_cat
+    workers = min(CLASSIFIER_WORKERS, len(work)) if work else 1
+    # Map case_id → (idx, case) for result reconciliation
+    case_by_id = {case.get("case_id", f"<no-id-{idx}>"): case for idx, case in work}
 
-        if new_cat != old_cat:
-            flipped.append((case_id, old_cat, new_cat))
-            logger.info(f"[{i}/{len(cases)}] {case_id}: {old_cat!r} → {new_cat!r}")
-        else:
-            logger.info(f"[{i}/{len(cases)}] {case_id}: unchanged ({new_cat})")
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(_classify_one, idx, case): case.get("case_id", f"<no-id-{idx}>")
+            for idx, case in work
+        }
+        done = 0
+        for future in as_completed(futures):
+            done += 1
+            try:
+                case_id, new_cat = future.result()
+            except Exception as e:
+                case_id = futures[future]
+                logger.error(f"{case_id}: unexpected error: {e}")
+                failed.append(case_id)
+                continue
+
+            if new_cat is None:
+                logger.warning(f"{case_id}: classifier returned None")
+                failed.append(case_id)
+                continue
+
+            case = case_by_id[case_id]
+            old_cat = case.get("classifier_category", "")
+            case["classifier_category"] = new_cat
+
+            if new_cat != old_cat:
+                flipped.append((case_id, old_cat, new_cat))
+                logger.info(f"[{done}/{len(work)}] {case_id}: {old_cat!r} → {new_cat!r}")
+            else:
+                logger.info(f"[{done}/{len(work)}] {case_id}: unchanged ({new_cat})")
 
     # Checkpoint summary
     print()

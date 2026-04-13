@@ -507,7 +507,7 @@ export HF_TOKEN=...
 
 - **Data pipeline** (500 reviews, fresh fetch): ~5–10 min wall clock; cost dominated by classification (~500 Haiku calls × ~300 input tokens ≈ ~$0.10).
 - **Single-review agent run**: ~30–60 sec including retrieval; ~5–15K total tokens depending on revision iterations; <$0.05 per review (Sonnet on the responder, Haiku elsewhere).
-- **Full eval suite** (56 cases): **~3 min wall clock at 10 workers** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + busy timeout to avoid lock contention). Sequential is closer to ~25 min; pre-parallelization sequential was 25–35 min. ~760K total tokens (down from ~880K before action-freeze eliminated revision thrash); on the order of $1–2 per full run with all judges enabled.
+- **Full eval suite** (56 cases): **~5 min wall clock at 10 workers** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + busy timeout to avoid lock contention). Sequential is closer to ~25 min; pre-parallelization sequential was 25–35 min. ~760K total tokens (down from ~880K before action-freeze eliminated revision thrash); on the order of $3–4 per full run with all judges enabled.
 - **Cached judge re-score** (offline against a saved run JSON): ~30 sec; $0 (cache hit on every flagged case).
 
 Numbers are approximations from the latest eval run. Actual cost depends on Anthropic pricing at run time.

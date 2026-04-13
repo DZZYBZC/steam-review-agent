@@ -4,6 +4,9 @@ classify.py — Classifies Steam reviews into categories using an LLM.
 
 import json
 import logging
+import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import anthropic
 from pydantic import BaseModel, Field, field_validator, model_validator
 from utils import load_skill, strip_code_fence, parse_llm_json
@@ -14,6 +17,8 @@ from config import (
     CLASSIFIER_MODEL,
     CLASSIFIER_TEMPERATURE,
     CLASSIFIER_MAX_TOKENS,
+    CLASSIFIER_WORKERS,
+    DB_PATH,
     REVIEW_CATEGORIES,
     CONFIDENCE_THRESHOLD,
     TONE_CLASSIFIER_MODEL,
@@ -160,6 +165,9 @@ def run_classification(conn, app_id: str, limit: int | None = None) -> dict:
     """
     Classify all unclassified reviews for a given app.
 
+    API calls run in parallel (CLASSIFIER_WORKERS threads). DB writes are
+    serialized through a lock since they share a single SQLite connection.
+
     Parameters:
         conn: Database connection.
         app_id: The Steam game ID.
@@ -180,47 +188,76 @@ def run_classification(conn, app_id: str, limit: int | None = None) -> dict:
         logger.info("No unclassified reviews found. Nothing to do.")
         return {"total": 0, "classified": 0, "failed": 0}
 
+    # Cap the work list to the requested limit
     if limit:
-        logger.info(f"Targeting {limit} successful classifications.")
+        df = df.head(limit)
+        logger.info(f"Targeting {limit} classifications ({CLASSIFIER_WORKERS} workers).")
 
+    total = len(df)
     classified = 0
     failed = 0
-    attempted = 0
+    db_lock = threading.Lock()
+    counter_lock = threading.Lock()
 
-    for _, row in df.iterrows():
-        if limit and classified >= limit:
-            break
+    # Dedicated write connection for worker threads — check_same_thread=False
+    # allows cross-thread use; db_lock serializes all writes.
+    write_conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    write_conn.execute("PRAGMA journal_mode = WAL")
+    write_conn.execute("PRAGMA busy_timeout = 5000")
 
-        review_id = row["review_id"]
-        review_text = row["review_text"]
-        attempted += 1
-
-        if attempted % 10 == 0 or attempted == 1:
-            logger.info(f"Classification progress: {classified}/{limit or '?'} successful ({attempted} attempted)")
+    def _classify_and_save(review_id: str, review_text: str) -> bool:
+        """Classify one review and save to DB. Returns True on success."""
+        nonlocal classified, failed
 
         result = classify_review(review_text)
 
         if result is None:
-            failed += 1
-            continue
+            with counter_lock:
+                failed += 1
+            return False
 
-        save_classification(
-            conn=conn,
-            review_id=review_id,
-            app_id=app_id,
-            result=result,
-            model_used=CLASSIFIER_MODEL,
-        )
-        classified += 1
+        with db_lock:
+            save_classification(
+                conn=write_conn,
+                review_id=review_id,
+                app_id=app_id,
+                result=result,
+                model_used=CLASSIFIER_MODEL,
+            )
+
+        with counter_lock:
+            classified += 1
+        return True
+
+    workers = min(CLASSIFIER_WORKERS, total)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(_classify_and_save, row["review_id"], row["review_text"]): row["review_id"]
+            for _, row in df.iterrows()
+        }
+
+        for i, future in enumerate(as_completed(futures), 1):
+            review_id = futures[future]
+            try:
+                future.result()
+            except Exception as e:
+                logger.error(f"Unexpected error classifying {review_id}: {e}")
+                with counter_lock:
+                    failed += 1
+
+            if i % 20 == 0 or i == total:
+                logger.info(f"Classification progress: {classified} classified, {failed} failed ({i}/{total} done)")
+
+    write_conn.close()
 
     summary = {
-        "total": attempted,
+        "total": total,
         "classified": classified,
-        "failed": failed
+        "failed": failed,
     }
 
     logger.info(
-        f"Classification complete: {classified} classified, {failed} failed out of {attempted} attempted."
+        f"Classification complete: {classified} classified, {failed} failed out of {total} attempted."
     )
 
     return summary

@@ -16,6 +16,9 @@ chroma_db/
 .DS_Store
 Thumbs.db
 
+.claude/
+CLAUDE.md
+
 data/*.json
 data/*.csv
 embeddings/

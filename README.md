@@ -243,13 +243,13 @@ Five nodes: coordinator (plain Python), investigator, responder, critic, and hum
 <details>
 <summary><strong>Retrieval pipeline (hybrid RAG)</strong></summary>
 
-Patch notes → **parent-child section-aware chunker** → dual index (ChromaDB bge-base-en-v1.5 + in-memory BM25). Query time: **HyDE** (hypothetical patch note via Haiku, embedded and searched as a third retriever source) + **RRF fusion** (top 12) → **Gemma rerank** (bge-reranker-v2-gemma, top 5) → **parent context attachment**. Each retrieval call returns a top-5 reranked pool, merged across up to 4 calls into a single accumulated evidence set. HyDE runs on every retrieval call by default (`HYDE_ENABLED=True`); a BM25-based gate (`HYDE_GATE_ENABLED`, currently off) can skip it when BM25 is already rich enough.
+Patch notes → **parent-child section-aware chunker** → dual index (ChromaDB vector embeddings + in-memory BM25). Query time: **HyDE** (hypothetical patch note via Haiku, embedded and searched as a third retriever source) + **RRF fusion** (top 12) → **Gemma rerank** (top 5) → **parent context attachment**. Each retrieval call returns a top-5 reranked pool, merged across up to 4 calls into a single accumulated evidence set. HyDE runs on every retrieval call by default; a BM25-richness gate (currently off) can skip it when keyword search alone returns strong results.
 
-**Parent-child chunking.** Each bullet point is a child chunk (embedded and searched); each section is a parent chunk (stored as metadata, never embedded). After reranking, each matched child gets a context window of its parent section — the matched bullet plus up to 3 sibling bullets before/after, using a stable positional index for deterministic centering. This gives the investigator surrounding context without inflating the embedding index. Child chunk IDs are unchanged, so citation chain-of-custody and eval scorers work unmodified. Three independent feature flags control rollout: investigator parent context (on), responder/critic parent context (on), and same-parent dedup (off — dedup dropped concept-carrying chunks and regressed retrieval metrics).
+**Parent-child chunking.** Each bullet point is a child chunk (embedded and searched); each section is a parent chunk (stored as metadata, never embedded). After reranking, each matched child gets a context window of its parent section — the matched bullet plus up to 3 sibling bullets before/after, centered on the match position. This gives the investigator surrounding context without inflating the embedding index. Chunk identifiers are unchanged, so citation chain-of-custody and eval scorers work unmodified. Three independent feature flags control rollout: investigator parent context (on), responder/critic parent context (on), and same-parent dedup (off — dedup dropped concept-carrying chunks and regressed retrieval metrics).
 
-Reranker absolute scores are **not** passed to the investigator — they're uncalibrated and anchoring on them would amplify noise. The reranker orders; the investigator reasons about content.
+Reranker scores are **not** passed to the investigator — they're uncalibrated and anchoring on them would amplify noise. The reranker orders; the investigator reasons about content.
 
-The investigator LLM formulates each search query and calls the retrieval tool up to 4 times total, reformulating between calls based on what it has seen. For multi-part reviews, the classifier extracts secondary aspect phrases; if the investigator's primary evidence is sufficient and a call remains, it may probe the top secondary aspect. Each call is tagged with a role (initial, reformulation, or secondary probe) for provenance tracking; probe metadata (role, kind, index, aspect label) also travels on result dicts through the evidence package for eval attribution. Embedding and reranker models lazy-loaded and cached at module level.
+The investigator formulates each search query and calls the retrieval tool up to 4 times total, reformulating between calls based on what it has seen. For multi-part reviews, the classifier extracts secondary aspect phrases; if the investigator's primary evidence is sufficient and a call remains, it may probe the top secondary aspect. Each call is tagged with a role (initial, reformulation, or secondary probe) for provenance tracking, and that provenance follows the results through the evidence package for eval attribution. Embedding and reranker models are lazy-loaded and cached at module level.
 
 </details>
 
@@ -273,7 +273,7 @@ The investigator LLM formulates each search query and calls the retrieval tool u
 - Precedence on approve: valid override > frozen action > current action (invalid override falls through to frozen-action restore)
 - Rejection ignores the override and clears it on the way back into the revision loop
 
-**Run identity.** The coordinator mints a UUID on first entry; both the run-level and per-iteration audit tables carry it, so a review's full revision history can be reassembled from the DB alone.
+**Run identity.** The coordinator generates a unique identifier on first entry; both the run-level and per-iteration audit tables carry it, so a review's full revision history can be reassembled from the database alone.
 
 **Termination.** Human approval, max iterations reached, human approval after max iterations, or terminal LLM/parse error.
 
@@ -299,11 +299,11 @@ Three memory layers, each with a different lifetime and scope.
   - Investigator loads active, non-stale notes for the current category — can exit early if notes alone resolve the issue
 
 **Semantic memory — patch note vector store (persistent)**
-- ChromaDB collection indexed with bge-base-en-v1.5 embeddings, plus a parallel in-memory BM25 index
+- Vector store indexed with dense embeddings, plus a parallel in-memory keyword index
 - Built from parent-child section-aware chunked patch notes — each bullet is a child chunk (embedded), each section is a parent chunk (metadata only)
-- Queried at run time via RRF fusion (top 12) → Gemma rerank (top 5) → parent context attachment
+- Queried at run time via reciprocal rank fusion (top 12) → cross-encoder rerank (top 5) → parent context attachment
 - The investigator drives retrieval through Anthropic's tool-use API — it formulates queries, inspects results, and can reformulate up to 4 total calls (the 4th reserved for secondary aspect probes on multi-part reviews)
-- Vector store persisted to disk; BM25 index is rebuilt each run
+- Vector store persisted to disk; keyword index is rebuilt each run
 
 </details>
 
@@ -327,8 +327,8 @@ The agent matters; the eval system is what made it iterable. Each block below is
 - The delta between the two retrieval judges surfaces responder over-claim vs under-use
 
 **Cache key.**
-- sha256 over a stable set of inputs: run file, case ID, judge model, skill hash, input schema version, and user message hash
-- Retrieval judges add a 7th component (judge kind) so the two sibling judges share a cache directory without collision
+- Content hash over a stable set of inputs: run file, case ID, judge model, skill hash, input schema version, and user message hash
+- Retrieval judges add a seventh component (judge kind) so the two sibling judges share a cache directory without collision
 - Identical inputs → free re-run; any input change invalidates cleanly
 
 **Isolated judge-error bucket.** API / parse / schema failures get a dedicated ruling, not absorbed into tolerable disagreement. Surfaces separately in the snapshot, diff, and reporter — a misfiring judge can never pass as healthy.
@@ -353,7 +353,7 @@ The agent matters; the eval system is what made it iterable. Each block below is
 <details>
 <summary><strong>Eval iteration arc (chronological)</strong></summary>
 
-Twenty-four iterations. Three reverted, one partial success, twenty shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
+Twenty-five iterations. Four reverted, one partial success, twenty shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
 
 | # | Name | Outcome | Key signal |
 |---|------|---------|------------|
@@ -368,21 +368,22 @@ Twenty-four iterations. Three reverted, one partial success, twenty shipped — 
 | 9 | Rubric remedial (4R) | shipped | Tightened Iter8's rubric. Action correctness held; critic regression persisted |
 | 10 | Header-block rearrangement | **reverted** | Critic still cited rung definitions verbatim. Hypothesis falsified at smoke test |
 | 11 | Full rung-definition removal | **reverted** | Critic reconstructed rung semantics from action names alone. Closed prompt-text edits as a lever |
-| 12 | Tool-use investigator | shipped | Anthropic tool-use API with self-RAG retries. Source recall 0.381 → 0.580 |
-| 13 | Action-freeze | shipped | Graph-level interception of action-only critic rejections. Action correctness 0.651 → 0.780, max-iter 7 → 0 |
+| 12 | Tool-use investigator | shipped | Investigator drives retrieval via tool-use API with self-directed retries. Source recall 0.381 → 0.580 |
+| 13 | Action-freeze | shipped | Graph-level interception of action-only critic rejections. Action correctness 0.651 → 0.780, max iterations 7 → 0 |
 | 14 | Few-shot examples | shipped | Responder few-shot examples + JSON parsing robustness fix. Infra errors 5 → 0 |
-| 15 | Boundary sharpening | shipped | 7 disambiguation rules across all skills + 3 golden corrections. Action correctness 71.1% → 76.9%, category_drift 4 → 1 |
-| 16 | [infra] Parallel eval execution | shipped | SQLite WAL + busy timeout on storage + checkpointer; thread pool + workers flag. Wall-clock 25–35 min sequential → ~3 min at 10 workers. Iteration speed only — no quality movement |
+| 15 | Boundary sharpening | shipped | 7 disambiguation rules across all skills + 3 golden corrections. Action correctness 71.1% → 76.9%, category drift 4 → 1 |
+| 16 | [infra] Parallel eval execution | shipped | SQLite write-ahead logging + thread pool parallelism. Wall-clock 25–35 min sequential → ~3 min at 10 workers. Iteration speed only — no quality movement |
 | 17 | Phase A1 — concept recall + 1:1 migration | shipped | New concept recall scorer; mechanical backfill of slots → required concepts. Identity check vs retrieval recall byte-equal per case (the whole point of A1 in isolation) |
 | 18 | Phase A2 — manual concept cleanup + sufficiency | shipped | Manual concept merges, equivalent-chunk additions, sufficient-set authoring (100% coverage across retrieval-eligible). Adds evidence sufficiency + relevant-concept precision. First snapshot where concept recall legitimately diverges from slot recall |
 | 19 | Phase B — split retrieval judges | shipped | Pool sufficiency (retrieval-only) and draft grounding (joint), sharing scorer infrastructure. Schema v7. Disentangles "is the evidence enough for an ideal answer?" from "does the evidence back the draft's actual claims?" |
 | 20 | Multi-category retrieval | shipped | Investigator queries across all categories the review touches (primary + secondary aspects), not just the primary. Schema v8 |
 | 21 | Parent-child context | shipped | Investigator and responder see sibling bullets around matched chunks. Concept recall lifted; dedup tested and reverted (dropped concept-carrying chunks) |
-| 22 | HyDE retrieval | shipped | Hypothetical patch note generation (Haiku) as third retriever into RRF. Source recall +0.10, concept recall +0.05, sufficiency +0.08 vs pre-HyDE baseline |
+| 22 | HyDE retrieval | shipped | Hypothetical patch note generation (Haiku) as third retriever source into rank fusion. Source recall +0.10, concept recall +0.05, sufficiency +0.08 vs pre-HyDE baseline |
 | 23 | Action-ladder boundary sharpening | shipped | Three targeted disambiguation rules across responder/critic/judge: escalate-boundary scoping of "patches don't reduce," evidence-richness ≠ complaint-specificity guardrail, vague/monetization carve-out reinforcement |
 | 24 | [infra] Critic batching + judge parallelization | shipped | Critic evaluates full checklist before ruling; judges run in parallel thread pools. Drafting rejections dropped, token usage down ~13%. No quality movement |
+| 25 | Reranker HyDE augmentation | **reverted** | Augmented reranker query with truncated HyDE hypothetical doc. Mechanism worked (net +250 rank gain for HyDE chunks, 68% of calls changed top-5), but displaced load-bearing chunks — concept recall -0.10, sufficiency -0.13, action correctness -0.06 |
 
-*Why Iter16 used threads, not asyncio:* the agent graph, Anthropic SDK calls, LangGraph checkpointer, and SQLite are all sync; switching to asyncio would have meant rewriting every node, every tool call, every DB access, and every test, for an I/O-bound workload where the GIL releases during the wait and a thread pool gives effectively the same throughput. WAL + busy_timeout on the SQLite connections handles the only real shared-state contention — a two-line pragma change instead of a graph rewrite.
+*Why Iter16 used threads, not asyncio:* the agent graph, Anthropic SDK calls, LangGraph checkpointer, and SQLite are all synchronous; switching to asyncio would have meant rewriting every node, every tool call, every database access, and every test, for an I/O-bound workload where threads give effectively the same throughput. Write-ahead logging on SQLite handles the only real shared-state contention — a two-line configuration change instead of a graph rewrite.
 
 Full detail in the iteration log under the evals directory.
 
@@ -424,6 +425,7 @@ The metrics below cite four distinct populations:
 | Pool sufficiency | supports 18 / partial 18 / no_support 7 / judge_error 0 |
 | Draft grounding | supports 15 / partial 28 / no_support 0 / judge_error 0 |
 | Disagreement | 17 agreement / 26 disagreement — within disagreements: **0 strong under-use, 2 over-claim**, 24 other |
+| Low-confidence citations | 10 flagged — **10 honest hedge** / 0 misleading claim / 0 unclear |
 
 #### Where the numbers come from
 
@@ -507,7 +509,7 @@ export HF_TOKEN=...
 
 - **Data pipeline** (500 reviews, fresh fetch): ~5–10 min wall clock; cost dominated by classification (~500 Haiku calls × ~300 input tokens ≈ ~$0.10).
 - **Single-review agent run**: ~30–60 sec including retrieval; ~5–15K total tokens depending on revision iterations; <$0.05 per review (Sonnet on the responder, Haiku elsewhere).
-- **Full eval suite** (56 cases): **~5 min wall clock at 10 workers** (parallel execution lands all cases concurrently against the agent graph; SQLite uses WAL + busy timeout to avoid lock contention). Sequential is closer to ~25 min; pre-parallelization sequential was 25–35 min. ~760K total tokens (down from ~880K before action-freeze eliminated revision thrash); on the order of $3–4 per full run with all judges enabled.
+- **Full eval suite** (56 cases): **~5 min wall clock at 10 workers** (parallel execution lands all cases concurrently against the agent graph; SQLite uses write-ahead logging to avoid lock contention). Sequential is closer to ~25 min; pre-parallelization sequential was 25–35 min. ~760K total tokens (down from ~880K before action-freeze eliminated revision thrash); on the order of $3–4 per full run with all judges enabled.
 - **Cached judge re-score** (offline against a saved run JSON): ~30 sec; $0 (cache hit on every flagged case).
 
 Numbers are approximations from the latest eval run. Actual cost depends on Anthropic pricing at run time.

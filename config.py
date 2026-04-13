@@ -82,6 +82,9 @@ PARENT_CONTEXT_RESPONDER = True         # Flip second after investigator context
 PARENT_DEDUP_ENABLED = False            # Reverted — dedup dropped concept-carrying chunks, regressed retrieval metrics
 PARENT_DEDUP_MAX_PER_PARENT = 2         # When dedup enabled: max children kept per parent (not hard-1)
 RERANKER_USE_FP16 = True                # Use fp16 for Gemma reranker; set False on hardware without fp16 support
+RERANKER_HYDE_AUGMENT = False             # Augment reranker query with HyDE hypothetical doc; reverted — displaced load-bearing chunks
+RERANKER_HYDE_MAX_CHARS = 150             # Truncate hypothetical doc for reranker query (query dominance guard)
+RERANKER_HYDE_AUGMENT_DIAGNOSTIC = False  # Log rank-shift + membership diff (2x reranker cost); disable in production
 
 # HyDE (Hypothetical Document Embedding) retrieval
 HYDE_ENABLED = True                           # Feature flag — staged rollout

@@ -37,9 +37,6 @@ SNAPSHOT_SCHEMA_VERSION = 8
 DIFF_METRICS: list[tuple[str, str, str]] = [
     # (label, dotted_path, format_spec)
     ("action_correct_rate",          "action.correct_rate",                ".3f"),
-    # Schema v6: recall_at_k_mean (which conflated raw-retriever output with
-    # investigator filtering) was split into source vs relevant recall, plus
-    # companion concept hit-rates and a filter-drop diagnostic.
     ("recall_source_mean",           "retrieval.recall_source_mean",       ".3f"),
     ("recall_relevant_mean",         "retrieval.recall_relevant_mean",     ".3f"),
     # concept_recall generalizes retrieval_recall over named concepts.

@@ -14,9 +14,7 @@ final approved draft and rules:
   - judge_error         — infrastructure-failure fallback (LLM/parse/validation)
 
 Sibling of `evals/scorers/judge_action.py` and `evals/scorers/judge_grounding.py`.
-Same cache key shape, same batch shape, same skill-loading pattern. Three
-cleanly-cloned files now exist — that is the trigger for the `_judge_base.py`
-extraction (Task #53), which should happen AFTER this lands, not during.
+Same cache key shape, same batch shape, same skill-loading pattern.
 
 The eval run JSON only stores the FINAL drafted_response per record. The
 iter-0 draft lives in the `audit_log_iterations` SQLite table and is fetched

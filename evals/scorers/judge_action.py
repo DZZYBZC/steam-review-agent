@@ -15,10 +15,7 @@ wrong:
 This module asks Claude to make that ruling, one case at a time.
 
 Sibling of `evals/scorers/judge_grounding.py`. Same cache key shape, same
-batch shape, same skill-loading pattern. The two cleanly-cloned files are
-the artifact that will make the right shape of a future `_judge_base.py`
-extraction visible — DO NOT extract until both judges exist and are
-exercised.
+batch shape, same skill-loading pattern.
 
 Caching: results are cached on disk under `evals/judge_cache/`. The cache
 key covers every input that affects the ruling — see _cache_key() for the

@@ -461,3 +461,4 @@ python evals/run_evals.py --canary
 
 ## Next action after approval
 Step 0 (re-classify, move docs, copy plan to `evals/ITERATION_LOG.md`) → Step 1 (scaffolding) → Step 2 (failure modes). Steps 1 and 2 are tiny and unblock the annotation work in Step 3, which is the slowest sequential step.
+

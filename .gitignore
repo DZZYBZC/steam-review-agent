@@ -9,6 +9,7 @@ __pycache__/
 *.db-shm
 *.db-wal
 chroma_db/
+data/chroma/
 
 .vscode/
 .idea/
@@ -23,6 +24,7 @@ data/*.json
 data/*.csv
 embeddings/
 logs/
+hyde_gate_log.jsonl
 
 evals/snapshots/*
 !evals/snapshots/.gitkeep

@@ -34,6 +34,7 @@ from config import (
     INVESTIGATOR_TEMPERATURE,
     INVESTIGATOR_MAX_TOKENS,
     INVESTIGATOR_MAX_TOOL_CALLS,
+    INVESTIGATOR_SECONDARY_PROBE_BUDGET,
     PARENT_CONTEXT_INVESTIGATOR,
     RETRIEVAL_CATEGORIES,
     CLUSTER_NOTE_AUTO_MIN_SOURCES,
@@ -49,8 +50,10 @@ _TOOL_DESCRIPTION = (
     "Search the game's patch notes for chunks relevant to a query. Runs the "
     "full hybrid retrieval pipeline (vector + BM25 + HyDE → RRF fusion → Gemma "
     "rerank). Use search-style keywords (3-10 tokens), not full sentences or raw "
-    "review text. Rewrite the complaint into keywords before calling. May be "
-    "called up to INVESTIGATOR_MAX_TOOL_CALLS times per investigation."
+    "review text. Rewrite the complaint into keywords before calling. Primary "
+    "calls (call_role='primary') share one budget; an optional secondary-aspect "
+    "probe (call_role='secondary') has its own separate budget and does NOT "
+    "consume a primary call."
 )
 
 _QUERY_PROPERTY = {
@@ -278,6 +281,8 @@ def _run_investigator_tool_loop(
     accumulated_chunks: dict[str, dict] = {}
     token_totals = {"input": 0, "output": 0}
     tool_calls_used = 0
+    primary_calls_used = 0
+    secondary_calls_used = 0
     tool_call_log_buffer: list[dict] = []
     has_secondary = bool(secondary_aspects)
     tool_schema = _build_retrieve_tool(has_secondary)
@@ -372,19 +377,6 @@ def _run_investigator_tool_loop(
                 })
                 continue
 
-            if tool_calls_used >= INVESTIGATOR_MAX_TOOL_CALLS:
-                tool_result_blocks.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,  # type: ignore[union-attr]
-                    "content": (
-                        "(max retrieval calls reached — synthesize final "
-                        "assessment from the chunks already retrieved and "
-                        "return your final JSON now)"
-                    ),
-                    "is_error": True,
-                })
-                continue
-
             tool_input = block.input or {}  # type: ignore[union-attr]
             query = tool_input.get("query", "").strip()
             if not query:
@@ -396,10 +388,8 @@ def _run_investigator_tool_loop(
                 })
                 continue
 
-            results = retrieve(query, app_id, run_id=run_id)
-            tool_calls_used += 1
-
-            # Call-role provenance: derive call_role label with safeguards.
+            # Resolve intended role before budget check so primary and
+            # secondary probes draw from separate budgets.
             raw_role = tool_input.get("call_role", "primary")
             role_coerced = False
             aspect_phrase_used: str | None = None
@@ -417,10 +407,47 @@ def _run_investigator_tool_loop(
                     # Log which aspect phrase was probed (best-effort: first aspect)
                     aspect_phrase_used = secondary_aspects[0].get("phrase", "") if secondary_aspects else None
 
+            # Role-specific budget gate. Primary and secondary probes have
+            # independent budgets — a secondary probe does not starve primary
+            # reformulation calls.
+            if raw_role == "secondary":
+                if secondary_calls_used >= INVESTIGATOR_SECONDARY_PROBE_BUDGET:
+                    tool_result_blocks.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,  # type: ignore[union-attr]
+                        "content": (
+                            "(secondary-probe budget exhausted — do not issue "
+                            "another secondary call; use remaining primary "
+                            "budget on the main complaint or return final JSON)"
+                        ),
+                        "is_error": True,
+                    })
+                    continue
+            else:
+                if primary_calls_used >= INVESTIGATOR_MAX_TOOL_CALLS:
+                    tool_result_blocks.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,  # type: ignore[union-attr]
+                        "content": (
+                            "(max primary retrieval calls reached — synthesize "
+                            "final assessment from the chunks already retrieved "
+                            "and return your final JSON now)"
+                        ),
+                        "is_error": True,
+                    })
+                    continue
+
+            results = retrieve(query, app_id, run_id=run_id)
+            if raw_role == "secondary":
+                secondary_calls_used += 1
+            else:
+                primary_calls_used += 1
+            tool_calls_used = primary_calls_used + secondary_calls_used
+
             # Derive granular call_role label
             if raw_role == "secondary":
                 call_role = "secondary_probe"
-            elif tool_calls_used == 1:
+            elif primary_calls_used == 1:
                 call_role = "primary_initial"
             else:
                 call_role = "primary_reformulation"

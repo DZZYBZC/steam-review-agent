@@ -150,7 +150,8 @@ RETRIEVAL_CATEGORIES = [
     "monetization_value",
 ]
 
-INVESTIGATOR_MAX_TOOL_CALLS = 4  # Hard cap on retrieve_patches tool calls per investigator invocation
+INVESTIGATOR_MAX_TOOL_CALLS = 4  # Hard cap on PRIMARY retrieve_patches calls per investigator invocation
+INVESTIGATOR_SECONDARY_PROBE_BUDGET = 1  # Extra call budget reserved for secondary-aspect probes on multipart reviews. Not consumed by primary calls.
 
 CLASSIFIER_WORKERS = 10     # Thread pool size for parallel classification
 CLASSIFICATION_LIMIT = 200  # Default number of reviews to classify per run

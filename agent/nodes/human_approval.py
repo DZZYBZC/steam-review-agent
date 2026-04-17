@@ -14,18 +14,27 @@ from config import PROPOSED_ACTIONS
 from pipeline.storage import (
     get_connection, save_audit_entry, save_cluster_note,
     find_recent_similar_note, update_cluster_note_text,
+    promote_audit_entry, promote_cluster_note,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def _log_audit(state: AgentState, stop_reason: str) -> None:
-    """Save audit entry and cluster notes based on the human decision."""
+    """Save audit entry and cluster notes based on the human decision.
+
+    Promotion policy: real human decisions (is_eval=False) auto-promote their
+    audit_log row (on approve) and response_history / human_feedback note.
+    Eval runs never promote — promoted_at stays NULL. Each promotion demotes
+    prior promoted rows for the same review to cap the readable pool at 1/review.
+    """
     decision = state.get("human_decision", "")
     feedback = state.get("human_feedback", "")
     app_id = state.get("app_id", "")
     category = state.get("cluster_summary", {}).get("category", "")
     review_id = state.get("review_id", "")
+    run_id = state.get("run_id", "")
+    is_eval = bool(state.get("is_eval", False))
 
     # Merge the final stop_reason so the audit entry reflects the node's decision
     audit_state = {**state, "stop_reason": stop_reason}
@@ -33,6 +42,9 @@ def _log_audit(state: AgentState, stop_reason: str) -> None:
     conn = get_connection()
     try:
         save_audit_entry(conn, audit_state)
+
+        if decision == "approved" and not is_eval and run_id:
+            promote_audit_entry(conn, run_id=run_id, promoted_by="human_approved")
 
         if not app_id or not category:
             return
@@ -45,13 +57,21 @@ def _log_audit(state: AgentState, stop_reason: str) -> None:
             )
             if existing:
                 update_cluster_note_text(conn, existing["id"], feedback)
+                if not is_eval:
+                    promote_cluster_note(
+                        conn, note_id=existing["id"], promoted_by="human_rejected"
+                    )
             else:
-                save_cluster_note(
+                note_id = save_cluster_note(
                     conn, app_id=app_id, category=category,
                     note_type="human_feedback", note_text=feedback,
                     created_by="human", source_review_id=review_id,
-                    is_eval=state.get("is_eval", False),
+                    is_eval=is_eval,
                 )
+                if note_id and not is_eval:
+                    promote_cluster_note(
+                        conn, note_id=note_id, promoted_by="human_rejected"
+                    )
 
         elif decision == "approved":
             # Save response history for future investigator context
@@ -63,13 +83,22 @@ def _log_audit(state: AgentState, stop_reason: str) -> None:
                 conn, app_id, category, "response_history",
                 source_review_id=review_id,
             )
-            if not existing:
-                save_cluster_note(
+            if existing:
+                if not is_eval:
+                    promote_cluster_note(
+                        conn, note_id=existing["id"], promoted_by="human_approved"
+                    )
+            else:
+                note_id = save_cluster_note(
                     conn, app_id=app_id, category=category,
                     note_type="response_history", note_text=note_text,
                     created_by="system", source_review_id=review_id,
-                    is_eval=state.get("is_eval", False),
+                    is_eval=is_eval,
                 )
+                if note_id and not is_eval:
+                    promote_cluster_note(
+                        conn, note_id=note_id, promoted_by="human_approved"
+                    )
 
     except Exception as e:
         logger.error(f"Failed to save audit/cluster note: {e}")

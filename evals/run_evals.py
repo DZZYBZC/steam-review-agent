@@ -163,6 +163,8 @@ def build_initial_state(case: dict) -> AgentState:
         "action_freeze_applied": False,
         "action_override_count": 0,
         "first_override_at_iteration": -1,
+        "action_filter_skip_count": 0,
+        "critic_preferred_action": "",
         "is_eval": True,
     }
 
@@ -239,6 +241,8 @@ def _serialize_result(result: dict) -> dict:
         "action_freeze_applied": result.get("action_freeze_applied", False),
         "action_override_count": result.get("action_override_count", 0),
         "first_override_at_iteration": result.get("first_override_at_iteration", -1),
+        "action_filter_skip_count": result.get("action_filter_skip_count", 0),
+        "critic_preferred_action": result.get("critic_preferred_action", ""),
     }
 
 

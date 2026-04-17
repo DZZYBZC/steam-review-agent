@@ -80,6 +80,16 @@
       "judge_ruling_before_fix": "n/a (was action-correct in baseline)",
       "expected_outcome_after_fix": "action_correctness.correct == True (proposed_action == 'no_action')",
       "in_golden": true
+    },
+    {
+      "case_id": "civ7_other_001",
+      "added": "2026-04-16",
+      "added_in_iteration": "Iter9 — classify-review example 11 (multi-anchor false-skip fix)",
+      "failure_pattern": "multi_anchor_misclassified_as_other",
+      "description": "Long multi-aspect review enumerating 5+ concrete game elements (tech/culture trees, civs, map choice, help popups, menus, graphics palette) wrapped in venting framing ('step down from the last civ', 'whole vibe is severely off'). Pre-fix, the classifier misclassified as 'other' despite the existing line-34 rule that multi-anchor substantive complaints are never 'other' — the emotional summary framing was overriding the concrete enumeration. This triggered the investigator's deterministic skip-retrieval path (stop_reason=no_response_needed), producing the only false_skip in the gating confusion matrix (gating.false_skip_rate = 0.021 = 1/47). Example 11 added to classify-review demonstrates the multi-anchor pattern correctly classified into gameplay_mechanics (the largest anchor cluster) with secondaries ui_controls and story_presentation, explicitly contrasting with example 10 (vocabulary trap) to teach the boundary. After fix, the review should classify into a substantive primary category, retrieval should fire, and the downstream action should land at monitor. **Negative controls guarded implicitly by golden.json**: the five true-skip cases — payday3_other_001, starfield_other_001, mhw_other_001, poe2_other_001, praise_smoke_001 — must still classify as 'other' (all have zero concrete anchors passing both parts of the specificity test, so example 11 should not over-fire on them). poe2_other_001 is the sharpest adjective-only canary ('extremely boring and slow') — if it flips to a substantive category, the fix has over-corrected.",
+      "judge_ruling_before_fix": "n/a (gate false_skip, not a judge ruling)",
+      "expected_outcome_after_fix": "classify.primary_category != 'other' AND gating decision == 'retrieve' AND action_correctness.correct == True (proposed_action == 'monitor')",
+      "in_golden": true
     }
   ]
 }

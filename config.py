@@ -62,6 +62,12 @@ CLUSTER_NOTE_STATUSES = ["active", "resolved"]
 
 AGENT_MAX_ITERATIONS = 3
 ACTION_FREEZE_ENABLED = True  # Iter7 action-freeze interception. Iter 8 alt 1 tested False → triple stop-rule failure (revert); kept as feature flag for future experiments.
+# Action-freeze filter: when the critic's preferred action is a bump-down-by-1
+# (noisy in baseline data — 83% R-right on bump-down), skip freeze and approve
+# the responder's action. Both paths still route to human_approval; only the
+# freeze metadata differs. Gated so we can revert.
+ACTION_FREEZE_FILTER_ENABLED = True
+ACTION_FREEZE_MIN_PROXIMITY = 2
 LLM_PARSE_RETRIES = 2  # max retries on JSON parse failure in responder/critic before terminal parse_error
 CHECKPOINT_BACKEND = "sqlite"
 CHECKPOINT_DB_PATH = "checkpoints.db"

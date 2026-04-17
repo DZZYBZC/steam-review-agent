@@ -21,6 +21,7 @@ class AgentState(TypedDict):
     proposed_action: str    # Responder
     source_ids_cited: list[str]  # Responder — chunk ids cited in the draft
     critique: str           # Critic (Reflection)
+    critic_preferred_action: str  # Critic's preferred action when reason_type=="action"; "" otherwise. Must be in config.PROPOSED_ACTIONS or empty.
 
     # Control flow
     iteration_count: int
@@ -40,6 +41,7 @@ class AgentState(TypedDict):
     # Persistent override record (NEVER cleared — survives human rejections for metrics/audit):
     action_override_count: int       # Incremented each time coordinator overrides a critic action rejection
     first_override_at_iteration: int # iteration_count at the moment of the FIRST override; -1 when no override has occurred; never overwritten after first set
+    action_filter_skip_count: int    # Incremented each time the action-freeze filter skips a noisy bump-down critic rejection (approve-anyway path)
 
     # Human-in-the-loop
     human_decision: str     # "approved", "rejected", or "" (empty = awaiting)

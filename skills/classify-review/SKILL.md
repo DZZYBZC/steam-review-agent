@@ -256,6 +256,22 @@ Rules:
 </classification>
 </example>
 
+<example index="11">
+<review>This is such a step down from the last civ. There are so many reasons; the claymation graphics with browns and greens, the incessant help popups, the menus, the tech and culture trees, the civs, the lack of map choice, the general character of the game - the whole vibe is severely off.</review>
+<classification>
+{
+  "primary_category": "gameplay_mechanics",
+  "secondary_categories": ["ui_controls", "story_presentation"],
+  "secondary_aspects": [
+    {"phrase": "incessant help popups and cluttered menus", "category": "ui_controls"},
+    {"phrase": "claymation graphics with browns and greens", "category": "story_presentation"}
+  ],
+  "confidence": 0.55,
+  "reasoning": "Multi-anchor case: the review enumerates 5+ distinct concrete targets — tech and culture trees, the civs (factions), lack of map choice (gameplay_mechanics); help popups, menus (ui_controls); claymation graphics with a brown/green palette (story_presentation/visuals). The emotional framing ('step down from the last civ', 'whole vibe is severely off') and summary verdict do NOT override the concrete enumeration. Contrast with example 10, where substantive-sounding vocabulary lacked any specific anchor — here the anchors are real and multiple. The largest anchor cluster is gameplay_mechanics (trees, civs, map choice), so it's primary. Confidence is medium-low because the three clusters are close in weight — this is genuinely multi-topic rather than a clear primary, and the emotional framing adds borderline risk."
+}
+</classification>
+</example>
+
 </examples>
 
 <guardrails>

@@ -353,41 +353,38 @@ The agent matters; the eval system is what made it iterable. Each block below is
 
 ## Results
 
-Latest full-eval run (56 cases, schema v8).
+Latest full-eval run (56 cases).
 
 The metrics below cite four distinct populations:
-- **Total cases** (56) — the full golden set
+- **Total cases** (56) — the full golden set across 5 games, 11–12 each
 - **Action-eligible** (50) — total minus no-response cases and infra errors.
 - **Retrieval-eligible** (27) — cases with hand-annotated must-include chunk IDs
 - **Judge-eligible** (44) — cases where the agent retrieved a non-empty post-filter pool, scored by the two retrieval judges
 
-**Coverage & actions** (56 total cases across 5 games, 11–12 each)
+**Coverage & actions** (33 non-freeze cases)
 
 | Metric | Value |
 |---|---|
-| Action Macro F1 | **0.75** |
-| Action Correctness - non-freeze| **87.0%** (20 / 23) |
-| Action Correctness — blended | **78.0%** (39 / 50) |
-| Gating Accuracy | **91.1%** |
-| First-pass Rate | **82.6%** (19 / 23 non-freeze) |
-| False Skip Rate | **2.1%** (1 / 47) |
+| Action Correctness | **72.7%** (24 / 33) |
+| Action Macro F1 | **0.51** |
+| Gating Accuracy | **92.9%** |
+| First-pass Rate | **84.8%** (28 / 33) |
 
 - **Action Macro F1** — average F1 across all 4 action labels, weighted equally regardless of class size. Penalizes poor performance on rare actions that raw accuracy would hide.
-- **Action Correctness** — how often the agent picks the right action (no_action / monitor / investigate / escalate) compared to human-annotated ground truth. The headline number is reported over **non-freeze** cases only (23 of 50 action-eligible): cases where responder and critic agreed on action. The remaining 27 freeze cases — where responder and critic disagreed and the coordinator routed to human approval — are excluded because the eval auto-approves at the human gate, so freeze outcomes would reflect the responder's initial choice rather than a real human decision. The **blended** row is the raw aggregate over all 50 action-eligible cases (including the auto-approved freeze cases), shown for completeness.
+- **Action Correctness** — how often the agent picks the right action (no_action / monitor / investigate / escalate) compared to human-annotated ground truth. Reported over **non-freeze** cases only (33 of 50 action-eligible): cases where responder and critic agreed on action. The remaining 17 freeze cases — where responder and critic disagreed and the coordinator routed to human approval — are excluded because the eval auto-approves at the human gate, so freeze outcomes would reflect the responder's initial choice rather than a real human decision.
 - **Gating Accuracy** — how often the retrieval gate makes the right call: skip retrieval for subjective reviews, retrieve for ones that need evidence.
 - **First-pass Rate** — how often the first draft passes the critic without needing a revision loop. Reported over **non-freeze** cases only — freeze cases short-circuit to human approval at iter 0 and would trivially inflate the rate.
-- **False Skip Rate** — how often the gate wrongly skips retrieval when evidence was needed. The most dangerous failure mode for the gate — a miss here means the agent responds without looking anything up.
 
 **Retrieval quality** (27 retrieval-eligible cases — cases with hand-annotated must-include chunk IDs)
 
 | Metric | Value |
 |---|---|
-| NDCG@7 | **0.417** |
-| Concept Recall | **0.583** |
-| Concept Precision | **0.193** |
-| Evidence Sufficiency | **0.577** |
-| Evidence Utilization Recall | **0.895** |
-| Attribution Precision | **0.215** |
+| NDCG@7 | **0.472** |
+| Concept Recall | **0.545** |
+| Concept Precision | **0.271** |
+| Evidence Sufficiency | **0.538** |
+| Evidence Utilization Recall | **0.850** |
+| Attribution Precision | **0.317** |
 
 - **NDCG@7** — measures whether the most useful chunks are ranked near the top of the retrieval results, not just present somewhere in the list. Truncated at K=7 (the reranker pool size per tool call).
 - **Concept Recall** — of the key pieces of evidence a human annotated as important, what fraction did the retriever actually find?
@@ -400,17 +397,17 @@ The metrics below cite four distinct populations:
 
 | Metric | Value |
 |---|---|
-| Faithfulness | supports 11 / partial 33 / no_support 0 |
-| Strong Over-claim | **1** |
+| Faithfulness | supports 15 / partial 29 / no_support 0 |
+| Strong Over-claim | **3** |
 | Strong Under-use | **0** |
-| Context Sufficiency (judge) | supports 20 / partial 18 / no_support 6 |
-| Low-confidence Citations | 9 flagged — 9 honest hedge / 0 misleading / 0 unclear |
+| Context Sufficiency (judge) | supports 19 / partial 17 / no_support 8 |
+| Low-confidence Citations | 11 flagged — 10 honest hedge / 1 misleading / 0 unclear |
 
 - **Faithfulness** — does the draft only claim things the retrieved evidence actually supports? An LLM judge reads the evidence pool and the draft, then rules supports / partially supports / does not support. Zero "does not support" means no fabricated claims.
 - **Strong Over-claim** — the evidence wasn't sufficient, but the draft asserted a fix anyway. The most dangerous failure mode — this is where hallucination lives.
 - **Strong Under-use** — the evidence was sufficient, but the draft failed to use it. Wasted retrieval — the agent had what it needed and didn't leverage it.
 - **Context Sufficiency (judge)** — could an ideal responder produce the right answer from this evidence pool alone? Measures retrieval quality independent of how well the responder actually used it.
-- **Low-confidence Citations** — when evidence confidence is low but the responder still cites sources, does it hedge honestly or misleadingly claim a fix? All 9 flagged cases were honest hedges.
+- **Low-confidence Citations** — when evidence confidence is low but the responder still cites sources, does it hedge honestly or misleadingly claim a fix? Of 11 flagged cases, 10 were honest hedges and 1 misleadingly framed a tangential fix as resolution.
 
 ### Open gaps
 
@@ -420,8 +417,8 @@ The metrics below cite four distinct populations:
   - Candidates: require the responder to explicitly reference load-bearing chunks before drafting, add an evidence checklist in the investigator output, or force mention of unresolved contradictions when multiple patch versions disagree
 
 - **Critic node-level over-rejection.**
-  - System-level churn is largely solved — action-freeze intercepts action-only rejections and non-freeze first-pass rate is 82.6%, with zero cases reaching max iterations
-  - The critic *node itself* still over-rejects on action grounds (27 action rejections vs 13 drafting rejections), but action-freeze renders this operationally harmless
+  - System-level churn is largely solved — action-freeze intercepts action-only rejections and non-freeze first-pass rate is 84.8%, with zero cases reaching max iterations
+  - The critic *node itself* still over-rejects on action grounds (17 action rejections vs 9 drafting rejections), but action-freeze renders this operationally harmless
   - Broad rubric rewrites are closed as a lever (the critic reconstructs rung semantics from action names alone); targeted boundary-sharpening rules improved action correctness but did not lift raw iter-0 approval
   - Further improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node), but the cost-benefit is low given action-freeze's effectiveness
 

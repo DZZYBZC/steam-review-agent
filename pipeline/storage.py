@@ -204,6 +204,18 @@ def create_tables(conn: sqlite3.Connection) -> None:
         ],
     )
 
+    _apply_migration(
+        conn,
+        version=5,
+        description="promotion gate: add promoted_at/promoted_by to audit_log and cluster_notes",
+        sql_statements=[
+            "ALTER TABLE audit_log ADD COLUMN promoted_at TEXT",
+            "ALTER TABLE audit_log ADD COLUMN promoted_by TEXT",
+            "ALTER TABLE cluster_notes ADD COLUMN promoted_at TEXT",
+            "ALTER TABLE cluster_notes ADD COLUMN promoted_by TEXT",
+        ],
+    )
+
     conn.execute("CREATE INDEX IF NOT EXISTS idx_reviews_app_id ON reviews(app_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_classifications_app_id ON classifications(app_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_app_category ON audit_log(app_id, category)")
@@ -214,6 +226,8 @@ def create_tables(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_iter_review ON audit_log_iterations(app_id, review_id, iteration)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_run ON audit_log(run_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_iter_run ON audit_log_iterations(run_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_promoted ON audit_log(app_id, category, promoted_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_notes_promoted ON cluster_notes(app_id, category, promoted_at)")
 
     conn.commit()
     logger.info("Database tables ready.")
@@ -468,6 +482,135 @@ def save_audit_entry(conn: sqlite3.Connection, state: dict) -> bool:
         return False
 
 
+def promote_audit_entry(
+    conn: sqlite3.Connection,
+    run_id: str,
+    promoted_by: str,
+) -> bool:
+    """
+    Mark an audit_log row as promoted (readable by production few-shot selection).
+
+    Demotes any prior promoted rows for the same (app_id, category, review_id)
+    so the readable pool stays at most one entry per review. This is the
+    dedup strategy: keep history in the DB, cap the visible pool to 1/review.
+
+    Returns:
+        True if the target row was promoted, False if not found.
+    """
+    cursor = conn.execute(
+        "SELECT app_id, category, review_id FROM audit_log WHERE run_id = ? LIMIT 1",
+        (run_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        logger.warning(f"promote_audit_entry: no row with run_id={run_id}")
+        return False
+    app_id, category, review_id = row
+
+    conn.execute(
+        """
+        UPDATE audit_log
+           SET promoted_at = NULL, promoted_by = NULL
+         WHERE app_id = ? AND category = ? AND review_id = ?
+           AND promoted_at IS NOT NULL
+           AND run_id != ?
+        """,
+        (app_id, category, review_id, run_id),
+    )
+    conn.execute(
+        """
+        UPDATE audit_log
+           SET promoted_at = datetime('now'), promoted_by = ?
+         WHERE run_id = ?
+        """,
+        (promoted_by, run_id),
+    )
+    conn.commit()
+    logger.info(
+        f"Promoted audit_log run_id={run_id} ({app_id}/{category}/{review_id}) "
+        f"by={promoted_by}."
+    )
+    return True
+
+
+def promote_cluster_note(
+    conn: sqlite3.Connection,
+    note_id: int,
+    promoted_by: str,
+) -> bool:
+    """
+    Mark a cluster_notes row as promoted (readable by investigator).
+
+    Demotes any prior promoted notes of the same (app_id, category, note_type,
+    source_review_id) so the readable pool stays at most one entry per review
+    per note_type.
+
+    Returns:
+        True if promoted, False if the note id was not found.
+    """
+    cursor = conn.execute(
+        """
+        SELECT app_id, category, note_type, source_review_id
+          FROM cluster_notes
+         WHERE id = ? LIMIT 1
+        """,
+        (note_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        logger.warning(f"promote_cluster_note: no note with id={note_id}")
+        return False
+    app_id, category, note_type, source_review_id = row
+
+    # Dedup scope: notes with a source_review_id dedup within that review;
+    # source_review_id=NULL notes (e.g. manual policy notes) dedup globally
+    # by (app_id, category, note_type).
+    if source_review_id:
+        conn.execute(
+            """
+            UPDATE cluster_notes
+               SET promoted_at = NULL, promoted_by = NULL
+             WHERE app_id = ? AND category = ? AND note_type = ?
+               AND source_review_id = ?
+               AND promoted_at IS NOT NULL
+               AND id != ?
+            """,
+            (app_id, category, note_type, source_review_id, note_id),
+        )
+    conn.execute(
+        """
+        UPDATE cluster_notes
+           SET promoted_at = datetime('now'), promoted_by = ?, updated_at = datetime('now')
+         WHERE id = ?
+        """,
+        (promoted_by, note_id),
+    )
+    conn.commit()
+    logger.info(
+        f"Promoted cluster_note id={note_id} ({app_id}/{category}/{note_type}) "
+        f"by={promoted_by}."
+    )
+    return True
+
+
+def demote_cluster_note(conn: sqlite3.Connection, note_id: int) -> bool:
+    """Clear promoted_at/promoted_by on a cluster_note (reverses a promotion)."""
+    cursor = conn.execute(
+        """
+        UPDATE cluster_notes
+           SET promoted_at = NULL, promoted_by = NULL, updated_at = datetime('now')
+         WHERE id = ?
+        """,
+        (note_id,),
+    )
+    conn.commit()
+    if cursor.rowcount == 0:
+        logger.warning(f"demote_cluster_note: no note with id={note_id}")
+        return False
+    logger.info(f"Demoted cluster_note id={note_id}.")
+    return True
+
+
 def save_audit_iteration(
     conn: sqlite3.Connection,
     state: Mapping[str, Any],
@@ -594,9 +737,10 @@ def load_feedback_examples(
         exclude_review_id: if provided, rows with this review_id are excluded
             from the pool. Prevents the current review from appearing as its
             own few-shot example.
-        include_eval: if True, include eval-generated rows (is_eval=1) in the
-            pool. Used by eval runs so the responder still gets few-shot
-            calibration without cluster note contamination.
+        include_eval: if True, widen the pool to include eval-generated rows
+            (is_eval=1) in addition to promoted production rows. Used by eval
+            runs so the responder still gets few-shot calibration from past
+            eval outputs even when the promoted pool is small.
         exclude_run_id: if provided, rows written by this run_id are excluded.
             Prevents concurrent eval workers from contaminating each other's
             few-shot pools within the same eval run.
@@ -608,7 +752,16 @@ def load_feedback_examples(
         - selection_log: list of dicts with pool_index, action, confidence,
           reason for each selected example (for node_log debugging).
     """
-    eval_filter = "" if include_eval else "AND COALESCE(is_eval, 0) = 0"
+    # Production: only rows explicitly promoted (promoted_at set on human approval
+    # or via one-time golden backfill). promoted_at IS NOT NULL is strictly more
+    # restrictive than is_eval=0 going forward (eval auto-approvals never promote),
+    # and the backfill deliberately promotes select is_eval=1 rows that match the
+    # golden ideal_action — so the is_eval column is not checked here.
+    # Eval mode widens to include all eval-generated rows for few-shot calibration.
+    if include_eval:
+        eval_filter = "AND (promoted_at IS NOT NULL OR is_eval = 1)"
+    else:
+        eval_filter = "AND promoted_at IS NOT NULL"
     run_filter = "AND (run_id IS NULL OR run_id != ?)" if exclude_run_id else ""
     base_params: list = [app_id, category]
     if exclude_review_id:
@@ -712,7 +865,7 @@ def save_cluster_note(
     created_by: str = "system",
     source_review_id: str | None = None,
     is_eval: bool = False,
-) -> bool:
+) -> int | None:
     """
     Save a note to the cluster_notes table.
 
@@ -725,10 +878,12 @@ def save_cluster_note(
         is_eval: If True, marks the note as eval-generated (excluded from production reads).
 
     Returns:
-        True if inserted successfully, False on error.
+        The inserted note id on success, None on error. Callers can pass the
+        id to promote_cluster_note(); truthy/falsy checks still work since
+        SQLite row ids start at 1.
     """
     try:
-        conn.execute("""
+        cursor = conn.execute("""
             INSERT INTO cluster_notes
             (app_id, category, note_type, tags, note_text, created_by, source_review_id, is_eval)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -744,10 +899,10 @@ def save_cluster_note(
         ))
         conn.commit()
         logger.info(f"Saved {note_type} note for {app_id}/{category}.")
-        return True
+        return cursor.lastrowid
     except sqlite3.Error as e:
         logger.error(f"Failed to save cluster note: {e}")
-        return False
+        return None
 
 
 def load_cluster_notes(
@@ -774,7 +929,7 @@ def load_cluster_notes(
         FROM cluster_notes
         WHERE app_id = ?
           AND category = ?
-          AND COALESCE(is_eval, 0) = 0
+          AND promoted_at IS NOT NULL
     """
     params: list = [app_id, category]
 

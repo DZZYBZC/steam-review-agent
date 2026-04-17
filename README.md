@@ -365,10 +365,10 @@ The metrics below cite four distinct populations:
 
 | Metric | Value | What it measures |
 |---|---|---|
-| Action Correctness | **72.7%** (24 / 33) | How often the agent picks the right action (no_action / monitor / investigate / escalate) compared to human-annotated ground truth. Reported over **non-freeze** cases only (33 of 50 action-eligible): cases where responder and critic agreed on action. The remaining 17 freeze cases — where responder and critic disagreed and the coordinator routed to human approval — are excluded because the eval auto-approves at the human gate, so freeze outcomes would reflect the responder's initial choice rather than a real human decision. |
+| Action Correctness | **72.7%** | How often the agent picks the right action (no_action / monitor / investigate / escalate) compared to human-annotated ground truth. Reported over **non-freeze** cases only (33 of 50 action-eligible): cases where responder and critic agreed on action. The remaining 17 freeze cases — where responder and critic disagreed and the coordinator routed to human approval — are excluded because the eval auto-approves at the human gate, so freeze outcomes would reflect the responder's initial choice rather than a real human decision. |
 | Action Macro F1 | **0.51** | Average F1 across all 4 action labels, weighted equally regardless of class size. Penalizes poor performance on rare actions that raw accuracy would hide. |
 | Gating Accuracy | **92.9%** | How often the retrieval gate makes the right call: skip retrieval for subjective reviews, retrieve for ones that need evidence. |
-| First-pass Rate | **84.8%** (28 / 33) | How often the first draft passes the critic without needing a revision loop. Reported over **non-freeze** cases only — freeze cases short-circuit to human approval at iter 0 and would trivially inflate the rate. |
+| First-pass Rate | **84.8%** | How often the first draft passes the critic without needing a revision loop. Reported over **non-freeze** cases only — freeze cases short-circuit to human approval at iter 0 and would trivially inflate the rate. |
 
 **Retrieval quality** (27 retrieval-eligible cases — cases with hand-annotated must-include chunk IDs)
 

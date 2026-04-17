@@ -230,23 +230,17 @@
       "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [
-        {
-          "any_of": [
-            "1823191198599924-0",
-            "1823191198599924-1"
-          ]
-        },
+        "1823191198599924-0",
         "1802354289595370-5"
       ],
-      "notes": "Player count + content velocity complaint. Onboarding blog (1802354289595370-5) acknowledges the player count problem internally; future-of-payday blog (1823191198599924-0) discusses content plans. Ideal: monitor with honest acknowledgment. Failure: overclaimed_fix if 'player count is recovering' fabrication.",
+      "notes": "Player count + content velocity complaint. Onboarding blog (1802354289595370-5) acknowledges the player count problem internally; future-of-payday blog (1823191198599924-0) discusses content plans. The sibling bullet 1823191198599924-1 is a P2P milestone and does not address content volume, so it's excluded from this concept. Ideal: monitor with honest acknowledgment. Failure: overclaimed_fix if 'player count is recovering' fabrication.",
       "quick": false,
       "required_concepts": [
         {
           "concept_id": "c_001",
           "name": "future_of_payday_content_plans",
           "any_of": [
-            "1823191198599924-0",
-            "1823191198599924-1"
+            "1823191198599924-0"
           ]
         },
         {
@@ -356,15 +350,9 @@
       "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [
-        "1800357164569792-77",
-        {
-          "any_of": [
-            "1808061939503633-10",
-            "1800357164569792-76"
-          ]
-        }
+        "1800357164569792-77"
       ],
-      "notes": "Multi-issue: AI pathing + screen scroll + age transitions. AI pathing patches exist (1800357164569792-77 'improved AI Commander pathing', 1808061939503633-10 trade fix). Screen scroll bug has no patch. Ideal: monitor, address AI pathing with citation, acknowledge scroll bug as known-shape. Failure: ignored_main_complaint if response only handles one of three issues.",
+      "notes": "Multi-issue: AI pathing + screen scroll + age transitions. Only direct pathing fix in corpus is 1800357164569792-77 ('improved AI Commander pathing'); other AI patches (trade, diplomacy, targeting) don't address pathing specifically. Screen scroll bug has no patch. Ideal: monitor, address AI pathing with citation, acknowledge scroll bug as known-shape. Failure: ignored_main_complaint if response only handles one of three issues.",
       "quick": true,
       "multipart": true,
       "secondary_aspects": [
@@ -380,23 +368,11 @@
           "any_of": [
             "1800357164569792-77"
           ]
-        },
-        {
-          "concept_id": "c_002",
-          "name": "additional_ai_pathing_improvements",
-          "any_of": [
-            "1808061939503633-10",
-            "1808061939503633-11",
-            "1800357164569792-76"
-          ]
         }
       ],
       "sufficient_sets": [
         [
           "c_001"
-        ],
-        [
-          "c_002"
         ]
       ]
     },
@@ -714,6 +690,12 @@
             "1828894815567746-8"
           ]
         }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001",
+          "c_002"
+        ]
       ]
     },
     {
@@ -755,7 +737,7 @@
         "1826992588604218-32",
         "1828894815567746-31"
       ],
-      "notes": "Three-axis complaint: content sparsity + loading screens + crashes. Free Lanes update (1826992588604218-32 'Many more planetary POIs') addresses POI density; 1.16.236 (1828894815567746-31) general crash fixes; ship optimization (1828894815567715-20) for loading. All three axes have at least partial patch coverage. Ideal: monitor, address all three. Failure: ignored_main_complaint if only one axis is touched.",
+      "notes": "Three-axis complaint: content sparsity + loading screens + crashes. Free Lanes update (1826992588604218-32 'Many more planetary POIs') addresses POI density; 1.16.236 (1828894815567746-31) general crash fixes; Cruise Mode (1828894815567715-8 / 1828894815567746-2 / 1826992588604218-8) gives partial loading-screen relief by letting players fly between planets instead of transitioning via loads. All three axes have at least partial patch coverage. Ideal: monitor, address all three. Failure: ignored_main_complaint if only one axis is touched.",
       "quick": false,
       "multipart": true,
       "secondary_aspects": [
@@ -787,7 +769,9 @@
           "concept_id": "c_003",
           "name": "partial_loading_screen_relief",
           "any_of": [
-            "1828894815567715-20"
+            "1828894815567715-8",
+            "1828894815567746-2",
+            "1826992588604218-8"
           ]
         }
       ],
@@ -893,12 +877,7 @@
       "gate_should_skip": false,
       "must_include_chunk_ids": [
         "1818752592127214-19",
-        {
-          "any_of": [
-            "1818752592127214-15",
-            "1823191198598921-6"
-          ]
-        }
+        "1818752592127214-15"
       ],
       "notes": "Specific complaint: a Feb performance patch regressed perf for a 900h player. The 'Commitment to Improving Stability' post (1818752592127214-19) discusses 1.041 update (Feb 2026) explicitly. Ver.1.040.03.01 (1823191198598921-6) addresses stability across platforms. Escalate per path (b): concrete hard-blocker ('stuttery, unplayable mess'), explicit persistence ('over a month' with no fix), post-patch regression framing. Cite the commitment post, do NOT claim 'this is fully fixed'. Failure: overclaimed_fix is the headline risk.",
       "quick": false,
@@ -914,8 +893,7 @@
           "concept_id": "c_002",
           "name": "ver_1_040_earlier_stability_fix",
           "any_of": [
-            "1818752592127214-15",
-            "1823191198598921-6"
+            "1818752592127214-15"
           ]
         }
       ],
@@ -1227,31 +1205,9 @@
       "annotated_category": "balance_difficulty",
       "ideal_action": "monitor",
       "gate_should_skip": false,
-      "must_include_chunk_ids": [
-        {
-          "any_of": [
-            "1811772772254360-29",
-            "1811772772254360-25"
-          ]
-        }
-      ],
-      "notes": "Endgame death penalty + oneshot complaint. Major Endgame Changes patch 0.3.1 (1811772772254360-29 'fixed problems', 1811772772254360-25 atlas trees) addresses endgame friction broadly but does NOT remove XP loss on death. Ideal: monitor with honest acknowledgment of design intent, do NOT claim XP loss has been removed. Failure: overclaimed_fix; defensive_tone justifying death penalty.",
-      "quick": false,
-      "required_concepts": [
-        {
-          "concept_id": "c_001",
-          "name": "endgame_friction_improvements_0_3_1",
-          "any_of": [
-            "1811772772254360-29",
-            "1811772772254360-25"
-          ]
-        }
-      ],
-      "sufficient_sets": [
-        [
-          "c_001"
-        ]
-      ]
+      "must_include_chunk_ids": [],
+      "notes": "Endgame death penalty + oneshot complaint. No patch in corpus removes XP loss on death or addresses one-shot mechanics directly — the 0.3.1 endgame changes (map boss difficulty, atlas tree) are orthogonal to this complaint and were previously mis-annotated as evidence. Subjective/no-evidence case. Ideal: monitor with honest acknowledgment of design intent, do NOT fabricate a fix or cite an unrelated patch. Failure: overclaimed_fix; defensive_tone justifying death penalty; cited_irrelevant_patch.",
+      "quick": false
     },
     {
       "case_id": "poe2_balance_002",
@@ -1265,28 +1221,21 @@
       "must_include_chunk_ids": [
         "1810503566531744-0"
       ],
-      "notes": "Build-nerf complaint with meta-build resentment. 0.4.0d patch notes (1821922921809503-25) discusses ability changes; Build of the Week 'Last Lament Lich' (1810503566531744-0) is direct context for the witch build the player references. Ideal: monitor, calm acknowledgment, do not argue against the player's build feeling. Failure: defensive_tone is the headline risk on meta-balance complaints.",
+      "notes": "Build-nerf complaint with meta-build resentment. Build of the Week 'Last Lament Lich' (1810503566531744-0) is the direct context for the witch build the player references — the only corpus chunk with a real semantic link to this review. 0.4.0d patch notes (1821922921809503-25) cover Phantasmal Arrow range bug fixes, not witch/lich balance, so they were previously mis-annotated as evidence for this case. Ideal: monitor, calm acknowledgment, do not argue against the player's build feeling. Failure: defensive_tone is the headline risk on meta-balance complaints.",
       "quick": false,
       "required_concepts": [
         {
           "concept_id": "c_001",
           "name": "last_lament_lich_build_context",
           "any_of": [
-            "1810503566531744-0"
-          ]
-        },
-        {
-          "concept_id": "c_002",
-          "name": "ability_balance_changes_0_4_0d",
-          "any_of": [
-            "1821922921809503-25"
+            "1810503566531744-0",
+            "1810503566531744-1"
           ]
         }
       ],
       "sufficient_sets": [
         [
-          "c_001",
-          "c_002"
+          "c_001"
         ]
       ]
     },

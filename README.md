@@ -358,7 +358,7 @@ Latest full-eval run (56 cases).
 The metrics below cite four distinct populations:
 - **Total cases** (56) — the full golden set across 5 games, 11–12 each
 - **Action-eligible** (50) — total minus no-response cases and infra errors.
-- **Retrieval-eligible** (27) — cases with hand-annotated must-include chunk IDs
+- **Retrieval-eligible** (26) — cases with hand-annotated must-include chunk IDs
 - **Judge-eligible** (44) — cases where the agent retrieved a non-empty post-filter pool, scored by the two retrieval judges
 
 **Coverage & actions** (33 non-freeze cases)
@@ -370,16 +370,16 @@ The metrics below cite four distinct populations:
 | Gating Accuracy | **92.9%** | How often the retrieval gate makes the right call: skip retrieval for subjective reviews, retrieve for ones that need evidence. |
 | First-pass Rate | **84.8%** | How often the first draft passes the critic without needing a revision loop. Reported over **non-freeze** cases only — freeze cases short-circuit to human approval at iter 0 and would trivially inflate the rate. |
 
-**Retrieval quality** (27 retrieval-eligible cases — cases with hand-annotated must-include chunk IDs)
+**Retrieval quality** (26 retrieval-eligible cases — cases with hand-annotated must-include chunk IDs)
 
 | Metric | Value | What it measures |
 |---|---|---|
-| NDCG@7 | **0.472** | Whether the most useful chunks are ranked near the top of the retrieval results, not just present somewhere in the list. Truncated at K=7 (the reranker pool size per tool call). |
-| Concept Recall | **0.545** | Of the key pieces of evidence a human annotated as important, what fraction did the retriever actually find? |
-| Concept Precision | **0.271** | Of the chunks the investigator kept, what fraction carry useful information? Low values mean the pool is noisy. |
-| Evidence Sufficiency | **0.538** | Does the retrieved evidence contain enough information to support a correct answer? A stricter test than recall — all pieces of a complete answer must be present together. |
+| NDCG@7 | **0.535** | Whether the most useful chunks are ranked near the top of the retrieval results, not just present somewhere in the list. Truncated at K=7 (the reranker pool size per tool call). |
+| Concept Recall | **0.620** | Of the key pieces of evidence a human annotated as important, what fraction did the retriever actually find? |
+| Concept Precision | **0.306** | Of the chunks the investigator kept, what fraction carry useful information? Low values mean the pool is noisy. |
+| Evidence Sufficiency | **0.615** | Does the retrieved evidence contain enough information to support a correct answer? A stricter test than recall — all pieces of a complete answer must be present together. |
 | Evidence Utilization Recall | **0.850** | Of the gold-standard concepts the retriever successfully found, how many did the responder actually use in its draft? Measures whether generation wastes good evidence. |
-| Attribution Precision | **0.317** | Of the chunks the responder cited in its draft, what fraction map to actual gold-standard concepts? Measures how selective the responder is when choosing what to reference. |
+| Attribution Precision | **0.356** | Of the chunks the responder cited in its draft, what fraction map to actual gold-standard concepts? Measures how selective the responder is when choosing what to reference. |
 
 **Judge rulings** (44 judge-eligible cases — cases where the agent retrieved a non-empty post-filter pool)
 

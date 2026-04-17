@@ -737,6 +737,7 @@ def investigator_node(state: AgentState) -> dict:
                         note_type="known_issue",
                         note_text=evidence.summary,
                         source_review_id=state.get("review_id", ""),
+                        is_eval=state.get("is_eval", False),
                     )
             finally:
                 conn.close()

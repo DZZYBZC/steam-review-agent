@@ -156,7 +156,8 @@ def _select_cited_chunks(evidence_package: dict, source_ids_cited: list[str]) ->
 def _format_chunk(chunk: dict) -> str:
     cid = chunk.get("chunk_id") or chunk.get("id") or "?"
     text = chunk.get("text") or chunk.get("content") or ""
-    return f"  [{cid}] {text}"
+    tag = " [secondary]" if chunk.get("probe_kind") == "secondary" else ""
+    return f"  [{cid}]{tag} {text}"
 
 
 def _build_judge_user_message(

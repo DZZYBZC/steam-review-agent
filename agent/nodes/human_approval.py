@@ -50,6 +50,7 @@ def _log_audit(state: AgentState, stop_reason: str) -> None:
                     conn, app_id=app_id, category=category,
                     note_type="human_feedback", note_text=feedback,
                     created_by="human", source_review_id=review_id,
+                    is_eval=state.get("is_eval", False),
                 )
 
         elif decision == "approved":
@@ -67,6 +68,7 @@ def _log_audit(state: AgentState, stop_reason: str) -> None:
                     conn, app_id=app_id, category=category,
                     note_type="response_history", note_text=note_text,
                     created_by="system", source_review_id=review_id,
+                    is_eval=state.get("is_eval", False),
                 )
 
     except Exception as e:

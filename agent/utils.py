@@ -28,10 +28,11 @@ def format_evidence_sources(evidence: dict) -> str:
     source_lines = []
     for i, s in enumerate(sources):
         meta = s.get("metadata", {})
+        tag = " [secondary]" if s.get("probe_kind") == "secondary" else ""
         source_lines.append(
             f"[{i}] chunk_id={s.get('chunk_id', 'unknown')} "
             f"version={escape_xml(meta.get('patch_version', 'unknown'))} "
-            f"section={escape_xml(meta.get('section', 'unknown'))}"
+            f"section={escape_xml(meta.get('section', 'unknown'))}{tag}"
         )
 
         parent_context = s.get("parent_context", "")

@@ -41,9 +41,6 @@ from config import (
     RERANKER_MODEL,
     RERANKER_TOP_N,
     RERANKER_USE_FP16,
-    RERANKER_HYDE_AUGMENT,
-    RERANKER_HYDE_MAX_CHARS,
-    RERANKER_HYDE_AUGMENT_DIAGNOSTIC,
     SIMILARITY_THRESHOLD,
     VECTOR_TOP_K,
     BM25_TOP_K,
@@ -168,17 +165,16 @@ def _query_hyde(
     collection: chromadb.Collection,
     query_text: str,
     n_results: int = HYDE_TOP_K,
-) -> tuple[list[dict], str | None]:
+) -> list[dict]:
     """
     Generate a hypothetical doc, embed it, and query ChromaDB.
 
     Applies a per-parent diversity cap before returning results.
-    Returns (results, hypothetical_text) on success, or ([], None) on failure.
-    The hypothetical text is returned so callers can use it for reranker augmentation.
+    Returns results on success, or [] on failure.
     """
     hypothetical = _generate_hypothetical_doc(query_text)
     if hypothetical is None:
-        return ([], None)
+        return []
 
     model = _get_model()
     hyde_embedding = model.encode([hypothetical]).tolist()
@@ -197,7 +193,7 @@ def _query_hyde(
     distances = results["distances"]
 
     if ids is None or documents is None or metadatas is None or distances is None:
-        return ([], hypothetical)
+        return []
 
     raw_results = []
     for i in range(len(ids[0])):
@@ -228,7 +224,7 @@ def _query_hyde(
     for i, r in enumerate(capped):
         r["rank"] = i
 
-    return (capped, hypothetical)
+    return capped
 
 
 def _log_hyde_gate_decision(row: dict) -> None:
@@ -518,7 +514,6 @@ def rerank(
     query_text: str,
     rrf_results: list[dict],
     top_n: int = RERANKER_TOP_N,
-    hypothetical_doc: str | None = None,
 ) -> list[dict]:
     """
     Re-score RRF candidates using the Gemma reranker for fine-grained relevance.
@@ -530,7 +525,6 @@ def rerank(
         query_text: The player complaint or search query.
         rrf_results: Output from reciprocal_rank_fusion().
         top_n: Number of top results to return (default 5).
-        hypothetical_doc: Optional HyDE-generated text to augment the query.
 
     Returns:
         A list of dicts sorted by relevance_score descending, each with:
@@ -542,12 +536,7 @@ def rerank(
     reranker = _get_reranker()
 
     t0 = time.perf_counter()
-    effective_query = query_text
-    if RERANKER_HYDE_AUGMENT and hypothetical_doc:
-        truncated = hypothetical_doc[:RERANKER_HYDE_MAX_CHARS]
-        effective_query = f"{query_text}\n{truncated}"
-        logger.debug(f"Rerank: augmented query ({len(effective_query)} chars, hyde truncated to {len(truncated)})")
-    pairs = [[effective_query, r["text"]] for r in rrf_results]
+    pairs = [[query_text, r["text"]] for r in rrf_results]
     with _reranker_lock:
         scores = reranker.compute_score(pairs)
     if isinstance(scores, (int, float)):
@@ -798,7 +787,6 @@ def retrieve(
 
     # HyDE retrieval (optional third source, with BM25-based gate)
     hyde_results: list[dict] = []
-    hypothetical_doc: str | None = None
     hyde_gate_fired = False
     hyde_gate_reason = ""
     sources: list[list[dict]] = [vector_results, bm25_results]
@@ -817,7 +805,7 @@ def retrieve(
             )
             logger.debug(f"HyDE gate skipped: {hyde_gate_reason}")
         else:
-            hyde_results, hypothetical_doc = _query_hyde(collection, query_text, n_results=HYDE_TOP_K)
+            hyde_results = _query_hyde(collection, query_text, n_results=HYDE_TOP_K)
             if hyde_results:
                 sources.append(hyde_results)
             if HYDE_GATE_ENABLED:
@@ -829,58 +817,7 @@ def retrieve(
 
     # Fuse and rerank
     rrf_results = reciprocal_rank_fusion(*sources)
-
-    # Diagnostic variables (null when gate fired or pool ≤ 1)
-    top5_new_vs_orig = None
-    added_chunk_ids = None
-    displaced_chunk_ids = None
-    hyde_rank_gain_sum = None
-    hyde_best_rank_after_rerank = None
-
-    if (
-        RERANKER_HYDE_AUGMENT_DIAGNOSTIC
-        and RERANKER_HYDE_AUGMENT
-        and hypothetical_doc
-        and len(rrf_results) > 1
-    ):
-        # Diagnostic path: full-pool rerank for rank comparison
-        reranked_full = rerank(query_text, rrf_results, hypothetical_doc=hypothetical_doc, top_n=len(rrf_results))
-        reranked = reranked_full[:RERANKER_TOP_N]
-
-        reranked_orig_full = rerank(query_text, rrf_results, top_n=len(rrf_results))
-        orig_top5 = {r["chunk_id"] for r in reranked_orig_full[:RERANKER_TOP_N]}
-        aug_top5 = {r["chunk_id"] for r in reranked_full[:RERANKER_TOP_N]}
-        top5_new_vs_orig = len(aug_top5 - orig_top5)
-        # Displaced: original top-5 members pushed out, in original-rank order (highest-ranked first)
-        displaced_chunk_ids = [r["chunk_id"] for r in reranked_orig_full[:RERANKER_TOP_N] if r["chunk_id"] not in aug_top5]
-        # Added: new top-5 members from augmentation, in augmented-rank order
-        added_chunk_ids = [r["chunk_id"] for r in reranked_full[:RERANKER_TOP_N] if r["chunk_id"] not in orig_top5]
-
-        orig_rank = {r["chunk_id"]: i for i, r in enumerate(reranked_orig_full)}
-        aug_rank = {r["chunk_id"]: i for i, r in enumerate(reranked_full)}
-        hyde_chunk_ids = {r["chunk_id"] for r in rrf_results if "hyde" in r.get("retrievers", [])}
-        hyde_rank_gain_sum = sum(
-            orig_rank[cid] - aug_rank[cid]
-            for cid in hyde_chunk_ids
-            if cid in orig_rank and cid in aug_rank
-        )
-
-        hyde_ranks = [aug_rank[cid] + 1 for cid in hyde_chunk_ids if cid in aug_rank]  # 1-indexed
-        hyde_best_rank_after_rerank = min(hyde_ranks) if hyde_ranks else None
-
-        assert top5_new_vs_orig == len(added_chunk_ids) == len(displaced_chunk_ids), (
-            f"Diagnostic bookkeeping mismatch: new={top5_new_vs_orig}, "
-            f"added={len(added_chunk_ids)}, displaced={len(displaced_chunk_ids)}"
-        )
-
-        logger.debug(
-            f"Rerank diagnostics: top5_new={top5_new_vs_orig}, "
-            f"hyde_rank_gain_sum={hyde_rank_gain_sum}, "
-            f"hyde_best_rank={hyde_best_rank_after_rerank}"
-        )
-    else:
-        # Normal path: identical to current behavior
-        reranked = rerank(query_text, rrf_results, hypothetical_doc=hypothetical_doc)
+    reranked = rerank(query_text, rrf_results)
 
     # HyDE funnel diagnostics (chunk-level + parent-level + duplicate share)
     hyde_post_rrf_unique_count: int | None = None
@@ -943,15 +880,9 @@ def retrieve(
             "hyde_post_rrf_unique_count": hyde_post_rrf_unique_count,
             "hyde_survived_rerank_count": hyde_survived_rerank_count,
             "hyde_pre_unique_count": hyde_pre_unique_count,
-            "reranker_augmented": RERANKER_HYDE_AUGMENT and hypothetical_doc is not None,
             "hyde_in_rrf_pool": len([r for r in rrf_results if "hyde" in r.get("retrievers", [])]) if not hyde_gate_fired else None,
             "hyde_sole_source_in_top5": sum(1 for r in reranked if set(r.get("retrievers", [])) == {"hyde"}) if not hyde_gate_fired else None,
             "rrf_pool_size": len(rrf_results),
-            "top5_new_vs_orig": top5_new_vs_orig,
-            "added_chunk_ids": added_chunk_ids,
-            "displaced_chunk_ids": displaced_chunk_ids,
-            "hyde_best_rank_after_rerank": hyde_best_rank_after_rerank,
-            "hyde_rank_gain_sum": hyde_rank_gain_sum,
         })
 
     # Parent context augmentation (always: plumbing)

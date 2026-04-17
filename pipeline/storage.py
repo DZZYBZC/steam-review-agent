@@ -193,6 +193,17 @@ def create_tables(conn: sqlite3.Connection) -> None:
         ],
     )
 
+    _apply_migration(
+        conn,
+        version=4,
+        description="eval isolation: add is_eval flag to audit_log, audit_log_iterations, cluster_notes",
+        sql_statements=[
+            "ALTER TABLE audit_log ADD COLUMN is_eval INTEGER DEFAULT 0",
+            "ALTER TABLE audit_log_iterations ADD COLUMN is_eval INTEGER DEFAULT 0",
+            "ALTER TABLE cluster_notes ADD COLUMN is_eval INTEGER DEFAULT 0",
+        ],
+    )
+
     conn.execute("CREATE INDEX IF NOT EXISTS idx_reviews_app_id ON reviews(app_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_classifications_app_id ON classifications(app_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_app_category ON audit_log(app_id, category)")
@@ -426,8 +437,8 @@ def save_audit_entry(conn: sqlite3.Connection, state: dict) -> bool:
              evidence_summary, evidence_confidence, drafted_response,
              proposed_action, source_ids_cited, critique, human_decision,
              human_feedback, iteration_count, stop_reason, retrieval_decision,
-             token_usage, run_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             token_usage, run_id, is_eval)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             state.get("app_id", ""),
             state.get("review_id", ""),
@@ -447,6 +458,7 @@ def save_audit_entry(conn: sqlite3.Connection, state: dict) -> bool:
             evidence.get("retrieval_decision", ""),
             json.dumps(state.get("token_usage", {})),
             state.get("run_id", ""),
+            1 if state.get("is_eval") else 0,
         ))
         conn.commit()
         logger.info(f"Saved audit entry for review {state.get('review_id', '???')}.")
@@ -481,8 +493,8 @@ def save_audit_iteration(
             INSERT INTO audit_log_iterations
             (app_id, review_id, iteration, drafted_response, proposed_action,
              source_ids_cited, critique, approved, revision_reason,
-             reason_type, retrieval_hint, token_usage, run_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             reason_type, retrieval_hint, token_usage, run_id, is_eval)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             state.get("app_id", ""),
             state.get("review_id", ""),
@@ -497,6 +509,7 @@ def save_audit_iteration(
             retrieval_hint,
             json.dumps(tokens or {}),
             state.get("run_id", ""),
+            1 if state.get("is_eval") else 0,
         ))
         conn.commit()
         logger.debug(
@@ -562,6 +575,9 @@ def load_feedback_examples(
     category: str,
     n: int = 3,
     pool_size: int = 10,
+    exclude_review_id: str | None = None,
+    include_eval: bool = False,
+    exclude_run_id: str | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """
     Load approved drafts from the audit log for few-shot examples.
@@ -574,6 +590,17 @@ def load_feedback_examples(
 
     Falls back to next-most-recent for any unfillable slot.
 
+    Args:
+        exclude_review_id: if provided, rows with this review_id are excluded
+            from the pool. Prevents the current review from appearing as its
+            own few-shot example.
+        include_eval: if True, include eval-generated rows (is_eval=1) in the
+            pool. Used by eval runs so the responder still gets few-shot
+            calibration without cluster note contamination.
+        exclude_run_id: if provided, rows written by this run_id are excluded.
+            Prevents concurrent eval workers from contaminating each other's
+            few-shot pools within the same eval run.
+
     Returns:
         A tuple of (examples, selection_log):
         - examples: list of dicts with review_text, drafted_response,
@@ -581,7 +608,17 @@ def load_feedback_examples(
         - selection_log: list of dicts with pool_index, action, confidence,
           reason for each selected example (for node_log debugging).
     """
-    cursor = conn.execute("""
+    eval_filter = "" if include_eval else "AND COALESCE(is_eval, 0) = 0"
+    run_filter = "AND (run_id IS NULL OR run_id != ?)" if exclude_run_id else ""
+    base_params: list = [app_id, category]
+    if exclude_review_id:
+        base_params.append(exclude_review_id)
+    if exclude_run_id:
+        base_params.append(exclude_run_id)
+    base_params.append(pool_size)
+
+    review_filter = "AND review_id != ?" if exclude_review_id else ""
+    cursor = conn.execute(f"""
         SELECT review_text, drafted_response, evidence_summary,
                review_tone, proposed_action, evidence_confidence
         FROM audit_log
@@ -590,9 +627,12 @@ def load_feedback_examples(
           AND human_decision = 'approved'
           AND drafted_response IS NOT NULL
           AND drafted_response != ''
+          {review_filter}
+          {eval_filter}
+          {run_filter}
         ORDER BY created_at DESC
         LIMIT ?
-    """, (app_id, category, pool_size))
+    """, base_params)
 
     rows = cursor.fetchall()
     columns = [
@@ -671,6 +711,7 @@ def save_cluster_note(
     tags: list[str] | None = None,
     created_by: str = "system",
     source_review_id: str | None = None,
+    is_eval: bool = False,
 ) -> bool:
     """
     Save a note to the cluster_notes table.
@@ -681,6 +722,7 @@ def save_cluster_note(
         tags: Optional list of tags for filtering.
         created_by: "system" or "human".
         source_review_id: Review ID that triggered this note.
+        is_eval: If True, marks the note as eval-generated (excluded from production reads).
 
     Returns:
         True if inserted successfully, False on error.
@@ -688,8 +730,8 @@ def save_cluster_note(
     try:
         conn.execute("""
             INSERT INTO cluster_notes
-            (app_id, category, note_type, tags, note_text, created_by, source_review_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (app_id, category, note_type, tags, note_text, created_by, source_review_id, is_eval)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             app_id,
             category,
@@ -698,6 +740,7 @@ def save_cluster_note(
             note_text,
             created_by,
             source_review_id,
+            1 if is_eval else 0,
         ))
         conn.commit()
         logger.info(f"Saved {note_type} note for {app_id}/{category}.")
@@ -731,6 +774,7 @@ def load_cluster_notes(
         FROM cluster_notes
         WHERE app_id = ?
           AND category = ?
+          AND COALESCE(is_eval, 0) = 0
     """
     params: list = [app_id, category]
 
@@ -818,6 +862,7 @@ def find_recent_similar_note(
             FROM cluster_notes
             WHERE app_id = ? AND category = ? AND note_type = ?
               AND source_review_id = ? AND status = 'active'
+              AND COALESCE(is_eval, 0) = 0
             ORDER BY updated_at DESC
             LIMIT 1
         """, (app_id, category, note_type, source_review_id))
@@ -834,6 +879,7 @@ def find_recent_similar_note(
         WHERE app_id = ? AND category = ? AND note_type = ?
           AND status = 'active'
           AND created_at >= ?
+          AND COALESCE(is_eval, 0) = 0
         ORDER BY updated_at DESC
         LIMIT 1
     """, (app_id, category, note_type, cutoff.strftime("%Y-%m-%d %H:%M:%S")))

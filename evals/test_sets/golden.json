@@ -1,7 +1,5 @@
 {
   "_schema": {
-    "version": "v0",
-    "note": "v0 hypothesis. Per-case fields below. Annotate with eyes-on-review-text + retrieval lookup. Failure-mode tags use evals/failure_modes.py names.",
     "fields": {
       "case_id": "stable id, e.g., 'payday3_tech_001'",
       "app_id": "Steam app id (string)",
@@ -78,7 +76,7 @@
       "ideal_action": "no_action",
       "gate_should_skip": true,
       "must_include_chunk_ids": [],
-      "notes": "General nostalgic venting comparing to PD2. Single weak signal ('cant find a game') but the dominant frame is undirected disappointment, not an actionable matchmaking complaint. Inverse of civ7_other_001: classifier put it in multiplayer_network so the current category-only gate WILL retrieve, but the IDEAL gate would skip on text vagueness + comparison-rant signals. Failure: gate_misjudged false-negative, responded_to_junk if a substantive matchmaking response is generated, tone_too_apologetic if Responder grovels at the PD2 nostalgia.",
+      "notes": "General nostalgic venting comparing to PD2. Single weak signal ('cant find a game in') but the dominant frame is undirected disappointment, not an actionable matchmaking complaint. Inverse of civ7_other_001: classifier put it in multiplayer_network so the current category-only gate WILL retrieve, but the IDEAL gate would skip on text vagueness + comparison-rant signals. Failure: gate_misjudged false-negative, responded_to_junk if a substantive matchmaking response is generated, tone_too_apologetic if Responder grovels at the PD2 nostalgia.",
       "quick": false
     },
     {
@@ -195,15 +193,9 @@
         },
         {
           "concept_id": "c_002",
-          "name": "future_of_payday_roadmap_a",
+          "name": "content_roadmap_acknowledged",
           "any_of": [
-            "1823191198599924-0"
-          ]
-        },
-        {
-          "concept_id": "c_003",
-          "name": "future_of_payday_roadmap_b",
-          "any_of": [
+            "1823191198599924-0",
             "1823191198599924-5"
           ]
         }
@@ -212,10 +204,6 @@
         [
           "c_001",
           "c_002"
-        ],
-        [
-          "c_001",
-          "c_003"
         ]
       ]
     },
@@ -378,6 +366,13 @@
       ],
       "notes": "Multi-issue: AI pathing + screen scroll + age transitions. AI pathing patches exist (1800357164569792-77 'improved AI Commander pathing', 1808061939503633-10 trade fix). Screen scroll bug has no patch. Ideal: monitor, address AI pathing with citation, acknowledge scroll bug as known-shape. Failure: ignored_main_complaint if response only handles one of three issues.",
       "quick": true,
+      "multipart": true,
+      "secondary_aspects": [
+        {
+          "phrase": "the screen scroll often bugs out and gets stuck scrolling",
+          "category": "technical_issues"
+        }
+      ],
       "required_concepts": [
         {
           "concept_id": "c_001",
@@ -388,7 +383,7 @@
         },
         {
           "concept_id": "c_002",
-          "name": "ai_pathing_alternate_evidence",
+          "name": "additional_ai_pathing_improvements",
           "any_of": [
             "1808061939503633-10",
             "1808061939503633-11",
@@ -438,13 +433,6 @@
       ],
       "notes": "Yield breakdown UX complaint. Update 1.2.5 (1811772772410550-11) explicitly reformatted constructible tooltips and (1811772772410550-10) lists UI/UX changes. Update 1.2.1 patch (1800991756447780-1) fixed building yield breakdown display. Ideal: monitor, cite the cleanup honestly. Failure: overclaimed_fix if 'UI is now cleaner' assertion without nuance.",
       "quick": false,
-      "multipart": true,
-      "secondary_aspects": [
-        {
-          "phrase": "yield breakdown requires opening several tabs to drill down with confusing natural yield and income tabs",
-          "category": "ui_controls"
-        }
-      ],
       "required_concepts": [
         {
           "concept_id": "c_001",
@@ -480,9 +468,25 @@
       "annotated_category": "ui_controls",
       "ideal_action": "investigate",
       "gate_should_skip": false,
-      "must_include_chunk_ids": [],
+      "must_include_chunk_ids": [
+        "1811772772410550-20"
+      ],
       "notes": "Accessibility regression — strategic view removed. Update 1.2.5 (1811772772410550-20) mentions accessibility goals broadly but does NOT restore strategic view. Ideal: investigate (real accessibility regression, dev should know), cite the accessibility note honestly without fabricating a fix. Failure: unsourced_claim if response promises strategic view is coming back.",
-      "quick": false
+      "quick": true,
+      "required_concepts": [
+        {
+          "concept_id": "c_001",
+          "name": "accessibility_work_acknowledged_no_strategic_view_return",
+          "any_of": [
+            "1811772772410550-20"
+          ]
+        }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
+      ]
     },
     {
       "case_id": "civ7_monetize_001",
@@ -633,9 +637,33 @@
       "annotated_category": "performance_optimization",
       "ideal_action": "monitor",
       "gate_should_skip": false,
-      "must_include_chunk_ids": [],
+      "must_include_chunk_ids": [
+        {
+          "any_of": [
+            "1828894815567715-8",
+            "1828894815567746-2",
+            "1826992588604218-8"
+          ]
+        }
+      ],
       "notes": "Loading-screen pacing complaint — recurring, widely-shared pain point with a concrete symptom (every planet/dock transition triggers a loading screen). Cruise Mode in Free Lanes Update partially addressed this for space travel, making this a partially-resolved known issue. Ideal: monitor per recurring subjective-but-meaningful pain signal overlapping with measurable symptoms. Failure: overclaimed_fix if the response implies loading screens are fully fixed; wrong_action_severity if investigate or higher.",
-      "quick": true
+      "quick": true,
+      "required_concepts": [
+        {
+          "concept_id": "c_001",
+          "name": "cruise_mode_partial_loading_relief",
+          "any_of": [
+            "1828894815567715-8",
+            "1828894815567746-2",
+            "1826992588604218-8"
+          ]
+        }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
+      ]
     },
     {
       "case_id": "starfield_tech_001",
@@ -670,13 +698,6 @@
       ],
       "notes": "Multi-issue: flight controls + ship combat + base building + ship building. 1.16.236 update (1828894815567746-17) added Outpost QoL improvements; Free Lanes added Pre-Built Outpost (1828894815567715-51); ship optimization terminal (1828894815567746-8) addresses ship side. Flight controls have NO direct fix. Ideal: monitor. Failure: ignored_main_complaint if response only addresses ship-building; overclaimed_fix on flight controls.",
       "quick": false,
-      "multipart": true,
-      "secondary_aspects": [
-        {
-          "phrase": "base building is mediocre and ship building is meh",
-          "category": "gameplay_mechanics"
-        }
-      ],
       "required_concepts": [
         {
           "concept_id": "c_001",
@@ -693,12 +714,6 @@
             "1828894815567746-8"
           ]
         }
-      ],
-      "sufficient_sets": [
-        [
-          "c_001",
-          "c_002"
-        ]
       ]
     },
     {
@@ -721,27 +736,11 @@
       "review_text": "The opposite of show, don't tell. Everything that was interesting takes place before the events of the game. Only worth playing if you don't mind modding.",
       "classifier_category": "story_presentation",
       "annotated_category": "story_presentation",
-      "ideal_action": "monitor",
+      "ideal_action": "no_action",
       "gate_should_skip": false,
-      "must_include_chunk_ids": [
-        "6909171012614938755-2"
-      ],
-      "notes": "Narrative-design complaint. Shattered Space DLC announcement (6909171012614938755-2) is the first story expansion — relevant context. Ideal: monitor, mention DLC as 'additional story content' without overclaiming it 'addresses' the show-don't-tell critique. Failure: overclaimed_fix if 'Shattered Space fixes the storytelling' assertion.",
-      "quick": false,
-      "required_concepts": [
-        {
-          "concept_id": "c_001",
-          "name": "shattered_space_dlc",
-          "any_of": [
-            "6909171012614938755-2"
-          ]
-        }
-      ],
-      "sufficient_sets": [
-        [
-          "c_001"
-        ]
-      ]
+      "must_include_chunk_ids": [],
+      "notes": "Narrative-design complaint. Shattered Space DLC announcement (6909171012614938755-2) is relevant context but not load-bearing — responder can answer correctly without it. Pure design-architecture taste critique with no measurable symptom or regression — no_action per rubric. Failure: overclaimed_fix if 'Shattered Space fixes the storytelling' assertion.",
+      "quick": false
     },
     {
       "case_id": "starfield_content_001",
@@ -763,6 +762,10 @@
         {
           "phrase": "constant crashes",
           "category": "technical_issues"
+        },
+        {
+          "phrase": "you have to navigate with a ton of loading screens",
+          "category": "performance_optimization"
         }
       ],
       "required_concepts": [
@@ -779,12 +782,20 @@
           "any_of": [
             "1828894815567746-31"
           ]
+        },
+        {
+          "concept_id": "c_003",
+          "name": "partial_loading_screen_relief",
+          "any_of": [
+            "1828894815567715-20"
+          ]
         }
       ],
       "sufficient_sets": [
         [
           "c_001",
-          "c_002"
+          "c_002",
+          "c_003"
         ]
       ]
     },
@@ -799,7 +810,18 @@
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
       "notes": "Multi-issue: quests + exploration + UI map + loading screens. Loading partially addressed by ship optimization. Quest design and UI have no direct fix. Ideal: monitor with honest acknowledgment of mixed coverage. Failure: ignored_main_complaint.",
-      "quick": false
+      "quick": false,
+      "multipart": true,
+      "secondary_aspects": [
+        {
+          "phrase": "The UI is terrible (closing the map is a pain)",
+          "category": "ui_controls"
+        },
+        {
+          "phrase": "the constant loading screens are a dealbreaker",
+          "category": "performance_optimization"
+        }
+      ]
     },
     {
       "case_id": "starfield_content_003",
@@ -812,7 +834,14 @@
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
       "notes": "MISCLASSIFIED — review is mostly about a game-breaking ship NPC bug (technical_issues) but classifier put it in content_progression because of the 'story is boring' opener. No patch in corpus directly addresses this NPC-stuck-on-ship bug. Ideal: investigate, treat the bug as the main complaint. Failure: ignored_main_complaint if response only addresses the story comment; unsourced_claim if response invents a fix. Also tests classifier-vs-annotated category divergence.",
-      "quick": false
+      "quick": false,
+      "multipart": true,
+      "secondary_aspects": [
+        {
+          "phrase": "The story is so boring and cliche its like a toddlers book",
+          "category": "story_presentation"
+        }
+      ]
     },
     {
       "case_id": "starfield_monetize_001",
@@ -919,17 +948,24 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "ongoing_perf_optimization_patches",
+          "name": "perf_optimization_patches_shipped",
           "any_of": [
             "1818752592134338-37",
-            "1818752592127214-13",
+            "1818752592127214-13"
+          ]
+        },
+        {
+          "concept_id": "c_002",
+          "name": "stability_commitment_acknowledged",
+          "any_of": [
             "1818752592127214-19"
           ]
         }
       ],
       "sufficient_sets": [
         [
-          "c_001"
+          "c_001",
+          "c_002"
         ]
       ]
     },
@@ -963,23 +999,30 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "ongoing_perf_optimization_patches",
+          "name": "stability_commitment_or_core_perf_work",
           "any_of": [
             "1818752592127214-13",
             "1818752592127214-19",
+            "1818752592127214-15"
+          ]
+        },
+        {
+          "concept_id": "c_002",
+          "name": "followup_optimization_patches",
+          "any_of": [
             "1818752592134338-37",
             "1825093633183688-24",
             "1825093633183688-20",
             "1823191198598921-7",
             "1815034432855905-8",
-            "1818752592127214-15",
             "1823191198598921-0"
           ]
         }
       ],
       "sufficient_sets": [
         [
-          "c_001"
+          "c_001",
+          "c_002"
         ]
       ]
     },
@@ -1064,7 +1107,7 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "ig_buffs_in_ver_1_021",
+          "name": "insect_glaive_aerial_and_kinsect_adjustments",
           "any_of": [
             "1808061939339147-68",
             "1808061939339147-69",
@@ -1073,7 +1116,7 @@
         },
         {
           "concept_id": "c_002",
-          "name": "ig_buffs_in_ver_1_040",
+          "name": "insect_glaive_followup_descending_thrust_adjustment",
           "any_of": [
             "1818752592134338-208"
           ]
@@ -1099,7 +1142,7 @@
       "gate_should_skip": false,
       "must_include_chunk_ids": [],
       "notes": "Endgame armor / elemental defense complaint. The Director's Letter (1807332909734059-11) raised the armor upgrade limit for rarity 5+, which addresses general defense but not elemental resistance specifically. The player's core complaint is elemental weakness, not overall defense cap. Ideal: monitor with honest acknowledgment. Do NOT cite weapon balance patches as armor elemental fixes, and do not overclaim the armor upgrade limit addresses the elemental issue. Failure: cited_irrelevant_patch if weapon-balance chunks are cited as armor fix; overclaimed_fix if armor upgrade limit is presented as resolving elemental weakness; unsourced_claim if 'armor will be rebalanced' fabrication.",
-      "quick": true
+      "quick": false
     },
     {
       "case_id": "mhw_gameplay_001",
@@ -1123,9 +1166,31 @@
       "annotated_category": "content_progression",
       "ideal_action": "monitor",
       "gate_should_skip": false,
-      "must_include_chunk_ids": [],
+      "must_include_chunk_ids": [
+        {
+          "any_of": [
+            "1825093633183688-45",
+            "1825093633183688-26"
+          ]
+        }
+      ],
       "notes": "Anti-FOMO design feedback about timed events. Timed event rewards were made permanent in Ver.1.041.00.00, making this a partially-resolved known issue. Ideal: monitor per partially-resolved known issue bucket. Failure: wrong_action_severity if investigate or higher; defensive_tone justifying timed events.",
-      "quick": false
+      "quick": false,
+      "required_concepts": [
+        {
+          "concept_id": "c_001",
+          "name": "timed_event_rewards_made_permanent",
+          "any_of": [
+            "1825093633183688-45",
+            "1825093633183688-26"
+          ]
+        }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
+      ]
     },
     {
       "case_id": "mhw_vague_001",
@@ -1162,9 +1227,31 @@
       "annotated_category": "balance_difficulty",
       "ideal_action": "monitor",
       "gate_should_skip": false,
-      "must_include_chunk_ids": [],
+      "must_include_chunk_ids": [
+        {
+          "any_of": [
+            "1811772772254360-29",
+            "1811772772254360-25"
+          ]
+        }
+      ],
       "notes": "Endgame death penalty + oneshot complaint. Major Endgame Changes patch 0.3.1 (1811772772254360-29 'fixed problems', 1811772772254360-25 atlas trees) addresses endgame friction broadly but does NOT remove XP loss on death. Ideal: monitor with honest acknowledgment of design intent, do NOT claim XP loss has been removed. Failure: overclaimed_fix; defensive_tone justifying death penalty.",
-      "quick": false
+      "quick": false,
+      "required_concepts": [
+        {
+          "concept_id": "c_001",
+          "name": "endgame_friction_improvements_0_3_1",
+          "any_of": [
+            "1811772772254360-29",
+            "1811772772254360-25"
+          ]
+        }
+      ],
+      "sufficient_sets": [
+        [
+          "c_001"
+        ]
+      ]
     },
     {
       "case_id": "poe2_balance_002",
@@ -1187,11 +1274,19 @@
           "any_of": [
             "1810503566531744-0"
           ]
+        },
+        {
+          "concept_id": "c_002",
+          "name": "ability_balance_changes_0_4_0d",
+          "any_of": [
+            "1821922921809503-25"
+          ]
         }
       ],
       "sufficient_sets": [
         [
-          "c_001"
+          "c_001",
+          "c_002"
         ]
       ]
     },
@@ -1217,9 +1312,15 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "endgame_rewards_breach_rings_improved",
+          "name": "endgame_reward_baseline_improved",
           "any_of": [
-            "1800357164389149-2",
+            "1800357164389149-2"
+          ]
+        },
+        {
+          "concept_id": "c_002",
+          "name": "guaranteed_breach_rings_added",
+          "any_of": [
             "1800357164389149-14"
           ]
         }
@@ -1227,6 +1328,9 @@
       "sufficient_sets": [
         [
           "c_001"
+        ],
+        [
+          "c_002"
         ]
       ]
     },
@@ -1252,9 +1356,15 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "ongoing_crash_hotfixes_third_edict",
+          "name": "ongoing_hotfix_work_acknowledged",
           "any_of": [
-            "1809869179987885-1",
+            "1809869179987885-1"
+          ]
+        },
+        {
+          "concept_id": "c_002",
+          "name": "specific_client_crash_fixes",
+          "any_of": [
             "1809869179987885-96",
             "1809869179987885-94",
             "1809869179987885-95",
@@ -1267,6 +1377,9 @@
       "sufficient_sets": [
         [
           "c_001"
+        ],
+        [
+          "c_002"
         ]
       ]
     },
@@ -1287,9 +1400,15 @@
       "required_concepts": [
         {
           "concept_id": "c_001",
-          "name": "ongoing_crash_hotfixes_third_edict",
+          "name": "ongoing_hotfix_work_acknowledged",
           "any_of": [
-            "1809869179987885-1",
+            "1809869179987885-1"
+          ]
+        },
+        {
+          "concept_id": "c_002",
+          "name": "specific_client_crash_fixes",
+          "any_of": [
             "1809869179987885-94",
             "1809869179987885-95",
             "1809869179987885-96",
@@ -1301,6 +1420,9 @@
       "sufficient_sets": [
         [
           "c_001"
+        ],
+        [
+          "c_002"
         ]
       ]
     },
@@ -1311,13 +1433,13 @@
       "review_text": "I never experienced a game with this kind of networking. Server lags make it impossible to play, even in singleplayer. I looked around for a while online - seems that there is no fix and it is a known issue. Also seems kinda random who this is happening to.",
       "classifier_category": "multiplayer_network",
       "annotated_category": "multiplayer_network",
-      "ideal_action": "investigate",
+      "ideal_action": "monitor",
       "gate_should_skip": false,
       "must_include_chunk_ids": [
         "1800357164389149-45",
         "1809869179987885-1"
       ],
-      "notes": "Server lag affecting singleplayer (PoE2 is always-online). Patch 0.2.1 plans (1800357164389149-45) mentions performance improvements; Third Edict (1809869179987885-1) lists 13 hotfixes. Neither is a direct fix for the random network issue. Ideal: investigate (real network problem, dev should know). Failure: unsourced_claim if 'this is fixed in next patch' fabrication.",
+      "notes": "Server lag affecting singleplayer (PoE2 is always-online). Patch 0.2.1 plans (1800357164389149-45) mentions performance improvements; Third Edict (1809869179987885-1) lists 13 hotfixes. Neither is a direct fix for the random network issue. Ideal: monitor — real but underspecified per boundary rules (no region, ISP, timing, or reproduction detail; player explicitly notes randomness). Failure: unsourced_claim if 'this is fixed in next patch' fabrication.",
       "quick": false,
       "required_concepts": [
         {

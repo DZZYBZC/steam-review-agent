@@ -16,6 +16,7 @@ from pipeline.storage import get_connection, load_feedback_examples
 from utils import load_skill, parse_llm_json, escape_xml
 from config import (
     CLAUDE_API_KEY,
+    LLM_PARSE_RETRIES,
     RESPONDER_MODEL,
     RESPONDER_TEMPERATURE,
     RESPONDER_MAX_TOKENS,
@@ -51,6 +52,7 @@ def _build_user_message(
     evidence: dict,
     iteration: int,
     revision_reason: str,
+    reason_type: str,
     previous_draft: str,
     feedback_examples_block: str = "",
 ) -> str:
@@ -66,6 +68,7 @@ def _build_user_message(
     if iteration > 0 and revision_reason:
         parts.append(f"<previous_draft>{escape_xml(previous_draft)}</previous_draft>")
         parts.append(f"<revision_feedback>{escape_xml(revision_reason)}</revision_feedback>")
+        parts.append(f"<revision_type>{escape_xml(reason_type)}</revision_type>")
 
     if feedback_examples_block:
         parts.append(feedback_examples_block)
@@ -190,6 +193,7 @@ def responder_node(state: AgentState) -> dict:
         logger.info("Responder: drafting initial response")
 
     app_id = state.get("app_id", "")
+    review_id = state.get("review_id", "")
     category = state.get("cluster_summary", {}).get("category", "")
 
     feedback_examples_block = ""
@@ -202,6 +206,9 @@ def responder_node(state: AgentState) -> dict:
                     conn, app_id, category,
                     n=RESPONDER_FEEDBACK_EXAMPLES,
                     pool_size=RESPONDER_FEEDBACK_SELECTION_POOL,
+                    exclude_review_id=review_id,
+                    include_eval=state.get("is_eval", False),
+                    exclude_run_id=state.get("run_id", ""),
                 )
             finally:
                 conn.close()
@@ -223,28 +230,38 @@ def responder_node(state: AgentState) -> dict:
             logger.warning(f"Responder: failed to load feedback examples: {e}")
             feedback_log = f"responder: feedback examples failed: {e}"
 
+    reason_type = state.get("reason_type", "")
     user_message = _build_user_message(
         review_text, review_tone, evidence,
-        iteration, revision_reason, previous_draft,
+        iteration, revision_reason, reason_type, previous_draft,
         feedback_examples_block=feedback_examples_block,
     )
 
-    try:
-        data, tokens = _call_responder_llm(user_message)
-    except json.JSONDecodeError as e:
-        logger.error(f"Responder: LLM response parse failed: {e}")
-        return {
-            "drafted_response": previous_draft or f"[Parse failed: {e}]",
-            "stop_reason": "parse_error",
-            "node_log": [f"responder: parse_error — {e}", feedback_log],
-        }
-    except Exception as e:
-        logger.error(f"Responder: LLM call failed: {e}")
-        return {
-            "drafted_response": previous_draft or f"[Draft failed: {e}]",
-            "stop_reason": "llm_error",
-            "node_log": [f"responder: llm_error — {e}", feedback_log],
-        }
+    last_error = None
+    data = None
+    tokens = None
+    for attempt in range(1, LLM_PARSE_RETRIES + 2):
+        try:
+            data, tokens = _call_responder_llm(user_message)
+            break
+        except json.JSONDecodeError as e:
+            last_error = e
+            if attempt <= LLM_PARSE_RETRIES:
+                logger.warning(f"Responder: parse attempt {attempt} failed: {e}. Retrying...")
+                continue
+            logger.error(f"Responder: LLM response parse failed after {attempt} attempts: {e}")
+            return {
+                "drafted_response": previous_draft or f"[Parse failed: {e}]",
+                "stop_reason": "parse_error",
+                "node_log": [f"responder: parse_error after {attempt} attempts — {e}", feedback_log],
+            }
+        except Exception as e:
+            logger.error(f"Responder: LLM call failed: {e}")
+            return {
+                "drafted_response": previous_draft or f"[Draft failed: {e}]",
+                "stop_reason": "llm_error",
+                "node_log": [f"responder: llm_error — {e}", feedback_log],
+            }
 
     return {
         "drafted_response": data.get("response_text", ""),

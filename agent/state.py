@@ -45,3 +45,6 @@ class AgentState(TypedDict):
     human_decision: str     # "approved", "rejected", or "" (empty = awaiting)
     human_feedback: str     # Free-text feedback from human reviewer
     human_action_override: str  # Optional action swap on approve; empty = no swap. Must be a value in config.PROPOSED_ACTIONS or empty.
+
+    # Eval isolation — when True, DB writes are tagged so they don't pollute production reads
+    is_eval: bool

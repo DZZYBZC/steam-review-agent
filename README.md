@@ -102,8 +102,7 @@ steam-review-agent/
 │   ├── ITERATION_LOG.md                 # Iteration log — every edit, gate, verification result
 │   ├── _negative_controls_locked.md  # Pre-edit gate locks for every prompt iteration
 │   ├── _lock_controls.py          # CLI helper to materialize lock blocks from a run JSON
-│   ├── refresh_classifier_fields.py
-│   ├── migrate_slots_to_concepts.py # One-shot 1:1 backfill of must_include_chunk_ids → required_concepts (Phase A1)
+│   ├── patch_run.py               # Surgical rerun: patches transient-failure cases in a run JSON + re-scores
 │   ├── scorers/
 │   │   ├── deterministic.py       # Deterministic scorers (action_correctness, concept_recall, evidence_sufficiency, ...)
 │   │   ├── gating_accuracy.py     # Retrieval-gating scorer
@@ -346,46 +345,7 @@ The agent matters; the eval system is what made it iterable. Each block below is
 
 **Snapshot diff with schema versioning.** Every snapshot carries a schema version; the diff annotates version transitions. No silent metric drift.
 
-**Iteration log.** Records every edit pass — motivation, two-sided gate, verified result. Later iterations cite earlier ones by name.
-
-</details>
-
-<details>
-<summary><strong>Eval iteration arc (chronological)</strong></summary>
-
-Twenty-five iterations. Four reverted, one partial success, twenty shipped — honest mid-ladder verdicts are what the eval infrastructure exists to make possible.
-
-| # | Name | Outcome | Key signal |
-|---|------|---------|------------|
-| 1 | Baseline | shipped | Deterministic scorers only. Established gating accuracy, action correctness, citation chain-of-custody |
-| 2 | Grounding judge | shipped | LLM judge classifies low-confidence citation cases. Schema v3 |
-| 3 | Action judge | shipped | LLM judge splits action-severity disagreements into 4 buckets. Schema v4 |
-| 4 | Multi-part complaint edit | shipped | First eval-driven prompt edit. Locked gate, clean win, established lock-before-edit discipline |
-| 5 | Action severity precedence | **reverted** | Narrow metric improved but aggregate action correctness regressed 65→49% and 12 runs hit max_iterations |
-| 6 | Pairwise scorer | shipped | "Is the revision loop earning its tokens?" Surfaced that revisions were mostly cosmetic. Schema v5 |
-| 7 | Retrieval scorer + gold recall | shipped | Source vs post-filter recall split, concept hit-rate, equivalence groups. Schema v6 |
-| 8 | Single-axis rubric | partial | Refactored 4 actions into one axis. Action correctness recovered but critic-workload regressed |
-| 9 | Rubric remedial (4R) | shipped | Tightened Iter8's rubric. Action correctness held; critic regression persisted |
-| 10 | Header-block rearrangement | **reverted** | Critic still cited rung definitions verbatim. Hypothesis falsified at smoke test |
-| 11 | Full rung-definition removal | **reverted** | Critic reconstructed rung semantics from action names alone. Closed prompt-text edits as a lever |
-| 12 | Tool-use investigator | shipped | Investigator drives retrieval via tool-use API with self-directed retries. Source recall 0.381 → 0.580 |
-| 13 | Action-freeze | shipped | Graph-level interception of action-only critic rejections. Action correctness 0.651 → 0.780, max iterations 7 → 0 |
-| 14 | Few-shot examples | shipped | Responder few-shot examples + JSON parsing robustness fix. Infra errors 5 → 0 |
-| 15 | Boundary sharpening | shipped | 7 disambiguation rules across all skills + 3 golden corrections. Action correctness 71.1% → 76.9%, category drift 4 → 1 |
-| 16 | [infra] Parallel eval execution | shipped | SQLite write-ahead logging + thread pool parallelism. Wall-clock 25–35 min sequential → ~3 min at 10 workers. Iteration speed only — no quality movement |
-| 17 | Phase A1 — concept recall + 1:1 migration | shipped | New concept recall scorer; mechanical backfill of slots → required concepts. Identity check vs retrieval recall byte-equal per case (the whole point of A1 in isolation) |
-| 18 | Phase A2 — manual concept cleanup + sufficiency | shipped | Manual concept merges, equivalent-chunk additions, sufficient-set authoring (100% coverage across retrieval-eligible). Adds evidence sufficiency + relevant-concept precision. First snapshot where concept recall legitimately diverges from slot recall |
-| 19 | Phase B — split retrieval judges | shipped | Pool sufficiency (retrieval-only) and draft grounding (joint), sharing scorer infrastructure. Schema v7. Disentangles "is the evidence enough for an ideal answer?" from "does the evidence back the draft's actual claims?" |
-| 20 | Multi-category retrieval | shipped | Investigator queries across all categories the review touches (primary + secondary aspects), not just the primary. Schema v8 |
-| 21 | Parent-child context | shipped | Investigator and responder see sibling bullets around matched chunks. Concept recall lifted; dedup tested and reverted (dropped concept-carrying chunks) |
-| 22 | HyDE retrieval | shipped | Hypothetical patch note generation (Haiku) as third retriever source into rank fusion. Source recall +0.10, concept recall +0.05, sufficiency +0.08 vs pre-HyDE baseline |
-| 23 | Action-ladder boundary sharpening | shipped | Three targeted disambiguation rules across responder/critic/judge: escalate-boundary scoping of "patches don't reduce," evidence-richness ≠ complaint-specificity guardrail, vague/monetization carve-out reinforcement |
-| 24 | [infra] Critic batching + judge parallelization | shipped | Critic evaluates full checklist before ruling; judges run in parallel thread pools. Drafting rejections dropped, token usage down ~13%. No quality movement |
-| 25 | Reranker HyDE augmentation | **reverted** | Augmented reranker query with truncated HyDE hypothetical doc. Mechanism worked (net +250 rank gain for HyDE chunks, 68% of calls changed top-5), but displaced load-bearing chunks — concept recall -0.10, sufficiency -0.13, action correctness -0.06 |
-
-*Why Iter16 used threads, not asyncio:* the agent graph, Anthropic SDK calls, LangGraph checkpointer, and SQLite are all synchronous; switching to asyncio would have meant rewriting every node, every tool call, every database access, and every test, for an I/O-bound workload where threads give effectively the same throughput. Write-ahead logging on SQLite handles the only real shared-state contention — a two-line configuration change instead of a graph rewrite.
-
-Full detail in the iteration log under the evals directory.
+**Iteration log.** Records every edit pass — motivation, two-sided gate, verified result. Later iterations cite earlier ones by name. Full chronological detail lives in `evals/ITERATION_LOG.md`.
 
 </details>
 
@@ -397,62 +357,71 @@ Latest full-eval run (56 cases, schema v8).
 
 The metrics below cite four distinct populations:
 - **Total cases** (56) — the full golden set
-- **Action-eligible** (varies run-to-run) — total minus no-response cases and infra errors
-- **Retrieval-eligible** (22) — cases with hand-annotated must-include chunk IDs
-- **Judge-eligible** (varies run-to-run) — cases where the agent retrieved a non-empty post-filter pool, scored by the two retrieval judges
+- **Action-eligible** (50) — total minus no-response cases and infra errors.
+- **Retrieval-eligible** (27) — cases with hand-annotated must-include chunk IDs
+- **Judge-eligible** (44) — cases where the agent retrieved a non-empty post-filter pool, scored by the two retrieval judges
 
 **Coverage & actions** (56 total cases across 5 games, 11–12 each)
 
 | Metric | Value |
 |---|---|
-| Action correctness | **75.6%** (34 / 45 action-eligible cases; 0 infra errors) |
-| Effective first-pass rate | **97.8%** (across action-eligible cases — critic approved or action-freeze override at iter0) |
-| Gating accuracy | **92.2%** (across all 56 cases — 5 true_skip / 42 true_retrieve / 1 false_skip / 3 false_retrieve / 5 unknown) |
+| Action Macro F1 | **0.75** |
+| Action Correctness - non-freeze| **87.0%** (20 / 23) |
+| Action Correctness — blended | **78.0%** (39 / 50) |
+| Gating Accuracy | **91.1%** |
+| First-pass Rate | **82.6%** (19 / 23 non-freeze) |
+| False Skip Rate | **2.1%** (1 / 47) |
 
-**Retrieval quality** (22 retrieval-eligible cases — cases with hand-annotated must-include chunk IDs)
+- **Action Macro F1** — average F1 across all 4 action labels, weighted equally regardless of class size. Penalizes poor performance on rare actions that raw accuracy would hide.
+- **Action Correctness** — how often the agent picks the right action (no_action / monitor / investigate / escalate) compared to human-annotated ground truth. The headline number is reported over **non-freeze** cases only (23 of 50 action-eligible): cases where responder and critic agreed on action. The remaining 27 freeze cases — where responder and critic disagreed and the coordinator routed to human approval — are excluded because the eval auto-approves at the human gate, so freeze outcomes would reflect the responder's initial choice rather than a real human decision. The **blended** row is the raw aggregate over all 50 action-eligible cases (including the auto-approved freeze cases), shown for completeness.
+- **Gating Accuracy** — how often the retrieval gate makes the right call: skip retrieval for subjective reviews, retrieve for ones that need evidence.
+- **First-pass Rate** — how often the first draft passes the critic without needing a revision loop. Reported over **non-freeze** cases only — freeze cases short-circuit to human approval at iter 0 and would trivially inflate the rate.
+- **False Skip Rate** — how often the gate wrongly skips retrieval when evidence was needed. The most dangerous failure mode for the gate — a miss here means the agent responds without looking anything up.
+
+**Retrieval quality** (27 retrieval-eligible cases — cases with hand-annotated must-include chunk IDs)
 
 | Metric | Value |
 |---|---|
-| Concept recall — source / post-filter | **0.750 / 0.727** |
-| Sufficiency — at-source / post-filter | **0.708 / 0.667** |
-| Relevant-concept precision (pool) | **0.320** (cases with a non-empty post-filter pool) |
-| Citation-concept precision (cited) | **0.319** (cases where the responder cited at least one chunk) |
+| NDCG@7 | **0.417** |
+| Concept Recall | **0.583** |
+| Concept Precision | **0.193** |
+| Evidence Sufficiency | **0.577** |
+| Evidence Utilization Recall | **0.895** |
+| Attribution Precision | **0.215** |
 
-**Judge rulings** (43 judge-eligible cases — cases where the agent retrieved a non-empty post-filter pool)
+- **NDCG@7** — measures whether the most useful chunks are ranked near the top of the retrieval results, not just present somewhere in the list. Truncated at K=7 (the reranker pool size per tool call).
+- **Concept Recall** — of the key pieces of evidence a human annotated as important, what fraction did the retriever actually find?
+- **Concept Precision** — of the chunks the investigator kept, what fraction carry useful information? Low values mean the pool is noisy.
+- **Evidence Sufficiency** — does the retrieved evidence contain enough information to support a correct answer? A stricter test than recall — all pieces of a complete answer must be present together.
+- **Evidence Utilization Recall** — of the gold-standard concepts the retriever successfully found, how many did the responder actually use in its draft? Measures whether generation wastes good evidence.
+- **Attribution Precision** — of the chunks the responder cited in its draft, what fraction map to actual gold-standard concepts? Measures how selective the responder is when choosing what to reference.
+
+**Judge rulings** (44 judge-eligible cases — cases where the agent retrieved a non-empty post-filter pool)
 
 | Metric | Value |
 |---|---|
-| Pool sufficiency | supports 18 / partial 18 / no_support 7 / judge_error 0 |
-| Draft grounding | supports 15 / partial 28 / no_support 0 / judge_error 0 |
-| Disagreement | 17 agreement / 26 disagreement — within disagreements: **0 strong under-use, 2 over-claim**, 24 other |
-| Low-confidence citations | 10 flagged — **10 honest hedge** / 0 misleading claim / 0 unclear |
+| Faithfulness | supports 11 / partial 33 / no_support 0 |
+| Strong Over-claim | **1** |
+| Strong Under-use | **0** |
+| Context Sufficiency (judge) | supports 20 / partial 18 / no_support 6 |
+| Low-confidence Citations | 9 flagged — 9 honest hedge / 0 misleading / 0 unclear |
 
-#### Where the numbers come from
-
-- **Retrieval — concept recall, sufficiency, and precision.**
-  - Concept row generalizes hand-listed slots into named concepts — equivalent chunks the original annotator missed no longer mark a case as a miss
-  - Sufficiency answers the operational question directly: *did the retriever bring back enough evidence to support the right answer?* Pre-declared at full annotation coverage, promoted to a primary retrieval metric
-  - Legacy slot recall lives in the snapshot but is omitted from the table for brevity (kept as a debuggability floor so historical snapshots remain comparable)
-  - Pool precision = share of investigator-kept chunks mapping to any annotated concept
-  - Citation precision = same metric scoped to chunks the responder actually cited
-  - When citation > pool, the responder is selectively picking better chunks out of a noisy pool. When they converge (as in the current run), the responder is citing roughly in proportion to pool quality
-- **Retrieval-vs-draft disagreement is the new dominant signal.**
-  - Two retrieval judges split usefulness into pure retrieval signal (could an ideal responder produce the right answer from this evidence?) and joint retrieval+drafting signal (does the evidence back what the draft actually claims?)
-  - Strong under-use diagonal: gold says evidence is enough, draft fails to use it — flags responses that left load-bearing evidence on the floor
-  - Strong over-claim diagonal: gold says evidence isn't enough, draft asserts a fix anyway — flags fabricated claims
-  - Under-use dropped to zero after upgrading the investigator to Sonnet and adding HyDE retrieval (better evidence packages)
-  - Over-claim remains low — the responder is conservative, though a small number of cases show the draft asserting coverage the pool doesn't fully support
+- **Faithfulness** — does the draft only claim things the retrieved evidence actually supports? An LLM judge reads the evidence pool and the draft, then rules supports / partially supports / does not support. Zero "does not support" means no fabricated claims.
+- **Strong Over-claim** — the evidence wasn't sufficient, but the draft asserted a fix anyway. The most dangerous failure mode — this is where hallucination lives.
+- **Strong Under-use** — the evidence was sufficient, but the draft failed to use it. Wasted retrieval — the agent had what it needed and didn't leverage it.
+- **Context Sufficiency (judge)** — could an ideal responder produce the right answer from this evidence pool alone? Measures retrieval quality independent of how well the responder actually used it.
+- **Low-confidence Citations** — when evidence confidence is low but the responder still cites sources, does it hedge honestly or misleadingly claim a fix? All 9 flagged cases were honest hedges.
 
 ### Open gaps
 
-- **Citation precision.**
-  - HyDE and parent context lifted retrieval recall and sufficiency materially, but citation precision dropped (pool and citation precision converged around 0.32, down from a prior gap where citation precision exceeded pool precision)
-  - The responder is citing more broadly from a richer pool rather than selectively picking the best chunks — the next lever is responder evidence consumption, not more retrieval augmentation
+- **Attribution Precision.**
+  - HyDE and parent context lifted retrieval recall and sufficiency materially, but attribution precision stayed low — the responder is only marginally more selective than the raw pool (attribution precision sits just above concept precision, a narrow gap)
+  - Effectively the responder is citing broadly from a richer pool rather than picking out the load-bearing chunks — the next lever is responder evidence consumption, not more retrieval augmentation
   - Candidates: require the responder to explicitly reference load-bearing chunks before drafting, add an evidence checklist in the investigator output, or force mention of unresolved contradictions when multiple patch versions disagree
 
 - **Critic node-level over-rejection.**
-  - System-level churn is fully solved — action-freeze intercepts action-only rejections and effective first-pass rate is near-ceiling at 97.8%, with zero cases reaching max iterations
-  - The critic *node itself* still over-rejects on action grounds (22 action rejections vs 2 drafting rejections), but action-freeze renders this operationally harmless
+  - System-level churn is largely solved — action-freeze intercepts action-only rejections and non-freeze first-pass rate is 82.6%, with zero cases reaching max iterations
+  - The critic *node itself* still over-rejects on action grounds (27 action rejections vs 13 drafting rejections), but action-freeze renders this operationally harmless
   - Broad rubric rewrites are closed as a lever (the critic reconstructs rung semantics from action names alone); targeted boundary-sharpening rules improved action correctness but did not lift raw iter-0 approval
   - Further improvement would need a different approach (e.g., critic fine-tuning, separate action-evaluation node), but the cost-benefit is low given action-freeze's effectiveness
 

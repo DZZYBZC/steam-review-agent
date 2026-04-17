@@ -61,6 +61,8 @@ CLUSTER_NOTE_AUTO_MIN_SOURCES = 2
 CLUSTER_NOTE_STATUSES = ["active", "resolved"]
 
 AGENT_MAX_ITERATIONS = 3
+ACTION_FREEZE_ENABLED = True  # Iter7 action-freeze interception. Iter 8 alt 1 tested False → triple stop-rule failure (revert); kept as feature flag for future experiments.
+LLM_PARSE_RETRIES = 2  # max retries on JSON parse failure in responder/critic before terminal parse_error
 CHECKPOINT_BACKEND = "sqlite"
 CHECKPOINT_DB_PATH = "checkpoints.db"
 
@@ -82,9 +84,6 @@ PARENT_CONTEXT_RESPONDER = True         # Flip second after investigator context
 PARENT_DEDUP_ENABLED = False            # Reverted — dedup dropped concept-carrying chunks, regressed retrieval metrics
 PARENT_DEDUP_MAX_PER_PARENT = 2         # When dedup enabled: max children kept per parent (not hard-1)
 RERANKER_USE_FP16 = True                # Use fp16 for Gemma reranker; set False on hardware without fp16 support
-RERANKER_HYDE_AUGMENT = False             # Augment reranker query with HyDE hypothetical doc; reverted — displaced load-bearing chunks
-RERANKER_HYDE_MAX_CHARS = 150             # Truncate hypothetical doc for reranker query (query dominance guard)
-RERANKER_HYDE_AUGMENT_DIAGNOSTIC = False  # Log rank-shift + membership diff (2x reranker cost); disable in production
 
 # HyDE (Hypothetical Document Embedding) retrieval
 HYDE_ENABLED = True                           # Feature flag — staged rollout
@@ -99,16 +98,16 @@ HYDE_MAX_PER_PARENT = 2                       # Pre-RRF diversity cap on HyDE re
 # AND logic makes the gate conservative; these numbers are calibration starters,
 # not principled thresholds.
 HYDE_GATE_ENABLED = False                     # Disabled — let HyDE run unconditionally; gate saves pennies but masks impact
-HYDE_GATE_MIN_NONZERO_HITS = 6                # ~rich BM25 set out of top-8 (BM25_TOP_K); adjust if BM25_TOP_K changes
+HYDE_GATE_MIN_NONZERO_HITS = 8                # ~rich BM25 set out of top-10 (BM25_TOP_K); adjust if BM25_TOP_K changes
 HYDE_GATE_MIN_TOP_SCORE = 8.0                 # AND BM25 top score >= this; calibrate after first gate-audit replay
 
 EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
 SIMILARITY_THRESHOLD = 0.3
-VECTOR_TOP_K = 8
-BM25_TOP_K = 8
+VECTOR_TOP_K = 10
+BM25_TOP_K = 10
 RRF_K = 60
 RERANKER_MODEL = "BAAI/bge-reranker-v2-gemma"
-RERANKER_TOP_N = 5
+RERANKER_TOP_N = 7
 
 INVESTIGATOR_MODEL = "claude-sonnet-4-6"
 INVESTIGATOR_TEMPERATURE = 0.1

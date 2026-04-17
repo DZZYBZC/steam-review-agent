@@ -37,6 +37,9 @@ SNAPSHOT_SCHEMA_VERSION = 8
 DIFF_METRICS: list[tuple[str, str, str]] = [
     # (label, dotted_path, format_spec)
     ("action_correct_rate",          "action.correct_rate",                ".3f"),
+    ("action_macro_f1",              "action.macro_f1",                    ".3f"),
+    ("action_freeze_correct_rate",   "action.freeze_correct_rate",         ".3f"),
+    ("action_freeze_n",              "action.freeze_n_total",              "d"),
     ("recall_source_mean",           "retrieval.recall_source_mean",       ".3f"),
     ("recall_relevant_mean",         "retrieval.recall_relevant_mean",     ".3f"),
     # concept_recall generalizes retrieval_recall over named concepts.
@@ -51,6 +54,8 @@ DIFF_METRICS: list[tuple[str, str, str]] = [
     ("sufficient_sets_coverage_pct",  "retrieval.sufficient_sets_coverage_pct",   ".1f"),
     ("relevant_concept_precision_mean","retrieval.relevant_concept_precision_mean",".3f"),
     ("citation_concept_precision_mean","retrieval.citation_concept_precision_mean",".3f"),
+    ("citation_concept_recall_mean",  "retrieval.citation_concept_recall_mean",  ".3f"),
+    ("ndcg_at_k_mean",               "retrieval.ndcg_at_k_mean",               ".3f"),
     ("concept_hit_source_rate",      "retrieval.concept_hit_source_rate",  ".3f"),
     ("concept_hit_relevant_rate",    "retrieval.concept_hit_relevant_rate",".3f"),
     ("n_lost_to_filter",             "retrieval.n_lost_to_filter",         "d"),
@@ -336,6 +341,19 @@ def _build_aggregates(
     n_correct = sum(1 for s in action_evaluable if s["correct"])
     action_correct_rate = (n_correct / n_action_evaluable) if n_action_evaluable else None
 
+    # Macro F1: unweighted average of per-class F1 across the four action labels.
+    # Penalizes poor performance on rare classes that accuracy would hide.
+    from config import PROPOSED_ACTIONS
+    _f1s: list[float] = []
+    for cls in PROPOSED_ACTIONS:
+        tp = sum(1 for s in action_evaluable if s["ideal"] == cls and s["predicted"] == cls)
+        fp = sum(1 for s in action_evaluable if s["ideal"] != cls and s["predicted"] == cls)
+        fn = sum(1 for s in action_evaluable if s["ideal"] == cls and s["predicted"] != cls)
+        prec = tp / (tp + fp) if (tp + fp) else 0.0
+        rec = tp / (tp + fn) if (tp + fn) else 0.0
+        _f1s.append(2 * prec * rec / (prec + rec) if (prec + rec) else 0.0)
+    action_macro_f1 = round(sum(_f1s) / len(_f1s), 3) if _f1s else None
+
     # Split exclusions for snapshot diffs.
     excluded_action = [
         s["action_correctness"] for s in per_case.values()
@@ -349,6 +367,20 @@ def _build_aggregates(
         1 for s in excluded_action
         if s.get("stop_reason") == "no_response_needed"
     )
+    n_excluded_action_freeze = sum(
+        1 for s in excluded_action
+        if s.get("action_freeze")
+    )
+
+    # Action-freeze accuracy: tracked separately since these are contested
+    # actions deferred to human review (auto-approved in evals).
+    action_freeze_cases = [
+        s["action_correctness"] for s in per_case.values()
+        if s["action_correctness"].get("action_freeze")
+    ]
+    n_freeze_correct = sum(1 for s in action_freeze_cases if s["correct"])
+    n_freeze_total = len(action_freeze_cases)
+    freeze_correct_rate = round(n_freeze_correct / n_freeze_total, 3) if n_freeze_total else None
 
     # Retrieval (schema v6): slot-based recall with source vs relevant pools.
     # Cases with empty must_include are not_applicable and excluded entirely.
@@ -426,6 +458,20 @@ def _build_aggregates(
         if not s["citation_concept_precision"].get("not_applicable")
     ]
     citation_concept_precision_mean = _mean([s["precision"] for s in cite_precision_scored])
+
+    # Citation-concept recall: of retrieved gold concepts, how many did the responder cite?
+    cite_recall_scored = [
+        s["citation_concept_recall"] for s in per_case.values()
+        if not s["citation_concept_recall"].get("not_applicable")
+    ]
+    citation_concept_recall_mean = _mean([s["recall"] for s in cite_recall_scored])
+
+    # NDCG@K: rank-aware retrieval quality.
+    ndcg_scored = [
+        s["ndcg_at_k"] for s in per_case.values()
+        if not s["ndcg_at_k"].get("not_applicable")
+    ]
+    ndcg_mean = _mean([s["ndcg"] for s in ndcg_scored])
 
     # Citation subset
     n_cite_ok = sum(1 for s in per_case.values() if s["citation_audit"]["subset_ok"])
@@ -560,7 +606,12 @@ def _build_aggregates(
             "n_excluded_total": n_action_excluded,
             "n_excluded_infra_error": n_excluded_infra,
             "n_excluded_no_response": n_excluded_no_response,
+            "n_excluded_action_freeze": n_excluded_action_freeze,
             "correct_rate": action_correct_rate,
+            "macro_f1": action_macro_f1,
+            "freeze_n_correct": n_freeze_correct,
+            "freeze_n_total": n_freeze_total,
+            "freeze_correct_rate": freeze_correct_rate,
         },
         "retrieval": {
             "recall_source_mean": recall_source_mean,
@@ -585,6 +636,10 @@ def _build_aggregates(
             "n_relevant_concept_precision_scored": len(precision_scored),
             "citation_concept_precision_mean": citation_concept_precision_mean,
             "n_citation_concept_precision_scored": len(cite_precision_scored),
+            "citation_concept_recall_mean": citation_concept_recall_mean,
+            "n_citation_concept_recall_scored": len(cite_recall_scored),
+            "ndcg_at_k_mean": ndcg_mean,
+            "n_ndcg_scored": len(ndcg_scored),
         },
         "citation": {
             "subset_ok_rate": cite_rate,

@@ -163,6 +163,7 @@ def build_initial_state(case: dict) -> AgentState:
         "action_freeze_applied": False,
         "action_override_count": 0,
         "first_override_at_iteration": -1,
+        "is_eval": True,
     }
 
 
@@ -309,11 +310,11 @@ def main():
     completed = 0
 
     def _is_retryable(record: dict) -> bool:
-        """A run is retryable if it threw an exception OR the graph terminated with llm_error."""
+        """A run is retryable if it threw an exception OR the graph terminated with llm_error/parse_error."""
         if not record["ok"]:
             return True
         stop = (record.get("result") or {}).get("stop_reason", "")
-        return stop == "llm_error"
+        return stop in ("llm_error", "parse_error")
 
     def _run_with_retry(idx_case):
         idx, case = idx_case

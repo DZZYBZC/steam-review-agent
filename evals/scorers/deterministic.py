@@ -16,6 +16,7 @@ Expected shapes:
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -409,10 +410,17 @@ def action_correctness(case: dict, result: dict) -> dict:
     applicable=False — they're excluded from the action_correct_rate
     denominator AND from the wrong_action_severity failure-mode tally, since
     the agent never produced an action to be right or wrong about.
+
+    Action-freeze cases (action_freeze_applied=True) are excluded from the
+    primary action_correct_rate. These are cases where the critic disagreed
+    on action and the coordinator deferred to human review — but in evals
+    the human is auto-approve, so the frozen first-draft action is not a
+    genuine system decision. They are tracked separately.
     """
     ideal = case.get("ideal_action", "") or ""
     predicted = result.get("proposed_action", "") or ""
     stop_reason = result.get("stop_reason", "") or ""
+    action_freeze = bool(result.get("action_freeze_applied", False))
 
     if stop_reason in INFRASTRUCTURE_ERROR_STOP_REASONS or stop_reason in NO_RESPONSE_STOP_REASONS:
         return {
@@ -421,6 +429,7 @@ def action_correctness(case: dict, result: dict) -> dict:
             "predicted": predicted,
             "cell": (ideal, predicted),
             "applicable": False,
+            "action_freeze": False,
             "stop_reason": stop_reason,
         }
 
@@ -429,7 +438,8 @@ def action_correctness(case: dict, result: dict) -> dict:
         "ideal": ideal,
         "predicted": predicted,
         "cell": (ideal, predicted),
-        "applicable": True,
+        "applicable": not action_freeze,
+        "action_freeze": action_freeze,
         "stop_reason": stop_reason,
     }
 
@@ -465,6 +475,118 @@ def citation_concept_precision(case: dict, result: dict) -> dict:
         "precision": round(in_concept / len(cited_set), 3),
         "n_cited_in_concept": in_concept,
         "n_cited": len(cited_set),
+        "not_applicable": False,
+    }
+
+
+def citation_concept_recall(case: dict, result: dict) -> dict:
+    """
+    Of the gold concepts the retriever successfully surfaced (post-filter),
+    how many did the responder actually cite at least one chunk from?
+
+    Measures generation-side evidence utilization at the concept level.
+    Low citation concept recall = retrieval found it but generation didn't use it.
+
+    Empty required_concepts OR empty cited set OR no concepts retrieved → not_applicable.
+    This metric isolates generation-side utilization: did the responder use
+    concepts the retriever already surfaced? Cases where retrieval missed
+    the concepts entirely are excluded — those are retrieval failures, not
+    generation failures.
+    """
+    concepts = case.get("required_concepts") or []
+    cited_set = set(result.get("source_ids_cited") or [])
+    relevant_pool = set((result.get("evidence_package") or {}).get("relevant_ids") or [])
+
+    if not concepts or not cited_set:
+        return {
+            "recall": None,
+            "n_cited_concepts": 0,
+            "n_retrieved_concepts": 0,
+            "n_total_concepts": len(concepts),
+            "not_applicable": True,
+        }
+
+    # Which concepts were retrieved (post-filter)?
+    retrieved_concepts: list[dict] = []
+    for c in concepts:
+        any_of = c.get("any_of") or []
+        if any(x in relevant_pool for x in any_of):
+            retrieved_concepts.append(c)
+
+    if not retrieved_concepts:
+        return {
+            "recall": None,
+            "n_cited_concepts": 0,
+            "n_retrieved_concepts": 0,
+            "n_total_concepts": len(concepts),
+            "not_applicable": True,
+        }
+
+    # Of retrieved concepts, how many did the responder cite?
+    n_cited_concepts = 0
+    for c in retrieved_concepts:
+        any_of = c.get("any_of") or []
+        if any(x in cited_set for x in any_of):
+            n_cited_concepts += 1
+
+    return {
+        "recall": round(n_cited_concepts / len(retrieved_concepts), 3),
+        "n_cited_concepts": n_cited_concepts,
+        "n_retrieved_concepts": len(retrieved_concepts),
+        "n_total_concepts": len(concepts),
+        "not_applicable": False,
+    }
+
+
+def ndcg_at_k(case: dict, result: dict, k: int = 7) -> dict:
+    """
+    NDCG@K over the investigator's post-filter pool, ranked by reranker score.
+
+    Binary relevance: a chunk scores 1 if it belongs to any gold concept's
+    any_of set, 0 otherwise. Measures whether the reranker puts the
+    concept-carrying chunks near the top of the ranked list.
+
+    Empty required_concepts or empty relevant_ids → not_applicable.
+    """
+    concepts = case.get("required_concepts") or []
+    ep = result.get("evidence_package") or {}
+    sources = ep.get("sources") or []
+    relevant_ids = ep.get("relevant_ids") or []
+
+    if not concepts or not relevant_ids:
+        return {
+            "ndcg": None,
+            "k": k,
+            "pool_size": len(relevant_ids),
+            "n_relevant_in_pool": 0,
+            "not_applicable": True,
+        }
+
+    # Gold concept chunk set
+    gold_chunks: set[str] = set()
+    for c in concepts:
+        for x in c.get("any_of") or []:
+            gold_chunks.add(x)
+
+    # Rank relevant_ids by reranker score (descending)
+    score_map = {s["chunk_id"]: s.get("relevance_score", 0.0) for s in sources}
+    ranked = sorted(relevant_ids, key=lambda x: score_map.get(x, 0.0), reverse=True)
+
+    # Binary relevance vector, truncated to K
+    rels = [1.0 if cid in gold_chunks else 0.0 for cid in ranked[:k]]
+
+    def _dcg(r: list[float]) -> float:
+        return sum(v / math.log2(i + 2) for i, v in enumerate(r))
+
+    dcg = _dcg(rels)
+    idcg = _dcg(sorted(rels, reverse=True))
+    score = round(dcg / idcg, 3) if idcg > 0 else 0.0
+
+    return {
+        "ndcg": score,
+        "k": k,
+        "pool_size": len(relevant_ids),
+        "n_relevant_in_pool": sum(1 for cid in relevant_ids if cid in gold_chunks),
         "not_applicable": False,
     }
 
@@ -766,6 +888,8 @@ PER_CASE_SCORERS = {
     "evidence_sufficiency": evidence_sufficiency,
     "relevant_concept_precision": relevant_concept_precision,
     "citation_concept_precision": citation_concept_precision,
+    "citation_concept_recall": citation_concept_recall,
+    "ndcg_at_k": ndcg_at_k,
     "action_correctness": action_correctness,
     "citation_audit": citation_audit,
     "evidence_utilization": evidence_utilization,

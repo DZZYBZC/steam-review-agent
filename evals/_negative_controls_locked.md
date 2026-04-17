@@ -1,3 +1,185 @@
+# Iteration 8 (alt 1 — disable action freeze) — locked 2026-04-16
+
+**Locked at:** 2026-04-16, BEFORE flipping `ACTION_FREEZE_ENABLED=False` in config.py and re-running evals.
+**Baseline run:** `evals/runs/run_20260416_052812.json` (blended 39/50 = 78.0%; freeze_n=27).
+**Change:** feature-flag gate on the freeze interception block in `agent/nodes/coordinator.py`. Default `False`. No other code/skill/prompt edits.
+**Hypothesis:** Pattern 2 diagnosis showed critic-side catches were correctly identifying under-escalations (4 freeze_wrong cases). Removing freeze lets the revision loop propagate critic's direction to responder. If responder complies, we pick up freeze_wrong cases as wins.
+**Known asymmetric risk (explicit, not hidden):** baseline had 19 freeze_correct vs 8 freeze_wrong cases. When freeze fired, critic was wrong 19/27 = **70%** of the time. If revision loop causes responder to comply with critic's wrong direction, alt 1 is net-negative. This is the exact tradeoff the eval is designed to measure.
+
+## Two-sided gate
+
+### Positive — 8 freeze_wrong cases (alt 1 target cases)
+Each was responder-wrong, critic-right, and freeze locked in the wrong answer in baseline. With freeze disabled, the revision loop has a chance to land ideal. Baseline from `run_20260416_052812`:
+
+| # | case_id                  | ideal       | baseline frozen | direction critic was pushing |
+|---|--------------------------|-------------|-----------------|------------------------------|
+| 1 | `payday3_tech_001`       | investigate | monitor         | UP (monitor → investigate)   |
+| 2 | `civ7_monetize_001`      | no_action   | monitor         | DOWN (monitor → no_action)   |
+| 3 | `starfield_content_002`  | monitor     | no_action       | UP (no_action → monitor)     |
+| 4 | `mhw_perf_001`           | escalate    | monitor         | UP (monitor → escalate)      |
+| 5 | `poe2_balance_002`       | monitor     | no_action       | UP (no_action → monitor)     |
+| 6 | `poe2_tech_001`          | escalate    | investigate     | UP (investigate → escalate)  |
+| 7 | `poe2_tech_002`          | investigate | monitor         | UP (monitor → investigate)   |
+| 8 | `poe2_gameplay_001`      | monitor     | investigate     | DOWN (investigate → monitor) |
+
+Direction mix is intentional: 6 UP, 2 DOWN — matches the direction-aware-freeze diagnosis that critic's under-escalation catches dominate.
+
+### Negative — 5 freeze_correct cases (regression risk — responder was right, critic wrong)
+Each was responder-correct, critic-wrong, freeze held correct. With freeze off, revision loop could push responder to critic's wrong direction. Selected to span all four action rungs:
+
+| # | case_id                | ideal       | risk being guarded                                                                                                |
+|---|------------------------|-------------|-------------------------------------------------------------------------------------------------------------------|
+| 1 | `civ7_vague_001`       | no_action   | **no_action rung.** Zero-specificity venting. Critic disagreed (wanted higher); must not promote.                 |
+| 2 | `payday3_multi_002`    | monitor     | **monitor rung + crash-word canary.** "Pretty much unplayable" in server-lag context. Must not escalate.          |
+| 3 | `starfield_perf_001`   | monitor     | **monitor rung.** Loading-screen frequency annoyance. Must not promote to investigate.                            |
+| 4 | `payday3_tech_002`     | investigate | **investigate rung.** Clear actionable issue. Must not downgrade to monitor under critic pressure.                |
+| 5 | `civ7_tech_001`        | escalate    | **escalate rung.** Hard-blocker at top of ladder. Must not downgrade.                                             |
+
+### Aggregate metrics
+- `n_judge_error == 0` across all judges.
+- `citation.subset_ok_rate == 1.0`.
+- `judge_grounding.n_hard_violations == 0`.
+- **Blended `action.correct_rate`** (denominator = 50, judge-eligible): floor **0.74** (regress below = revert), target **0.80** (accept into main). Baseline 0.78; band 0.74-0.80 = neutral / document.
+- `action.freeze_n_total`: expected to go to **0** (tautological; flag disabled).
+- Per-case iteration_count: informational only. Expect freeze_wrong cases to take iter ≥1 to land (revision loop fires).
+
+### Stop rule
+- **Negatives:** ≥2 of 5 regress → revert (alt 1 is net-negative in spirit).
+- **Positives:** <2 of 8 freeze_wrong cases reach ideal → revert (alt 1 is a no-op — responder doesn't comply with critic in revision loop either, burning iteration budget for nothing).
+- **Aggregate:** blended `correct_rate` < 0.74 → revert regardless of positives/negatives.
+- **Single-retry allowance:** exactly one lone positive failure AND zero negative regressions → rerun once (per `feedback_spot_check_single_retry.md`). Two+ failures on either side → stop immediately.
+
+### Cache proof
+Offline re-score against the post-edit run JSON (per `feedback_cache_proof_offline_rescore.md`).
+
+### Verification result (2026-04-16, run `run_20260416_172234`, snapshot `snapshot_20260416_172247`)
+
+**Gate verdict: FAIL on ALL THREE stop-rule axes. Alt 1 REVERTED.** `ACTION_FREEZE_ENABLED` flipped back to `True` in config.py; feature flag retained for future experiments.
+
+**Positives: 1/8 WIN.** Floor was ≥2 — failed.
+| case_id                  | ideal       | was_frozen  | now         | iters | verdict |
+|--------------------------|-------------|-------------|-------------|-------|---------|
+| `payday3_tech_001`       | investigate | monitor     | escalate    | 3     | LOSS (overshot past ideal) |
+| `civ7_monetize_001`      | no_action   | monitor     | monitor     | 3     | LOSS    |
+| `starfield_content_002`  | monitor     | no_action   | no_action   | 3     | LOSS    |
+| `mhw_perf_001`           | escalate    | monitor     | investigate | 3     | LOSS    |
+| `poe2_balance_002`       | monitor     | no_action   | no_action   | 2     | LOSS    |
+| `poe2_tech_001`          | escalate    | investigate | monitor     | 3     | LOSS (moved DOWN, not UP) |
+| `poe2_tech_002`          | investigate | monitor     | monitor     | 1     | LOSS    |
+| `poe2_gameplay_001`      | monitor     | investigate | monitor     | 3     | WIN     |
+
+**Negatives: 3/5 HOLD.** Floor was ≥4 (≤1 regression) — failed.
+| case_id              | ideal       | baseline    | now         | iters | verdict |
+|----------------------|-------------|-------------|-------------|-------|---------|
+| `civ7_vague_001`     | no_action   | no_action   | no_action   | 3     | HOLD    |
+| `payday3_multi_002`  | monitor     | monitor     | monitor     | 3     | HOLD    |
+| `starfield_perf_001` | monitor     | monitor     | monitor     | 1     | HOLD    |
+| `payday3_tech_002`   | investigate | investigate | monitor     | 1     | REGRESS |
+| `civ7_tech_001`      | escalate    | escalate    | investigate | 2     | REGRESS |
+
+**Aggregate:**
+- Blended `action.correct_rate`: 30/50 = **0.600** (baseline 0.780). Floor 0.74 — failed.
+- `action_macro_f1`: 0.856 → 0.389 (-0.467).
+- `judge_act_over_escalation`: 1 → 9 (+8).
+- `judge_act_missed_escalation`: 0 → 7 (+7).
+- `judge_pw_revision_improved`: 11 → 6 (-5). Revision loop makes drafts worse on net.
+- `action.freeze_n_total`: 27 → 0 (tautological; flag off).
+- `critic_iter0_approval`: 0.28 → 0.52 (+0.24) — critic approves more at iter 0, but iter-0 approval is uncorrelated with correctness.
+- 17 cases hit `max_iterations_reached` — critic-responder never converged within budget.
+- `citation.subset_ok_rate`: 1.0 ✓. `judge_grounding.n_hard_violations`: 0 ✓. `judge_error`: 0 ✓.
+
+**Root cause:** removing freeze hands action-disagreements to the revision loop, which turns out to be **unstable in both directions**. The responder doesn't cleanly adopt critic's direction — it sometimes overshoots (`payday3_tech_001` investigate→escalate past ideal), sometimes flips the wrong way (`poe2_tech_001` investigate→monitor when critic wanted escalate), sometimes oscillates to max_iterations. The freeze mechanism was providing **directional anchoring** that neither critic nor responder alone provides. The 70% freeze-correct rate (19/27) was a real signal that freeze was load-bearing — even if imperfect.
+
+**Lesson:** freeze is imperfect but removing it entirely costs far more than it saves. The 8 freeze_wrong cases the critic was catching don't translate 1:1 to revision-loop wins — only 1/8 landed ideal, and 2 responder-correct cases were lost. Graph-logic interventions on action disagreement need a **scoped** design (direction-aware, confidence-gated, or per-rung-specific) rather than removing the anchor.
+
+**Reverted:** `ACTION_FREEZE_ENABLED = True` in `config.py`. Feature flag retained (not deleted) so future scoped experiments can gate on it.
+
+---
+
+# Iteration 8 (Pattern 2 + escalate hard-blocker carve-outs) — locked 2026-04-16
+
+**Locked at:** 2026-04-16, BEFORE re-running evals against the bundled Pattern 2 skill edits. The edits themselves already shipped to the three skill files on 2026-04-14/15; this lock covers the verification run only.
+**Baseline run:** `evals/runs/run_20260416_052812.json` (blended 39/50 non-freeze-excluded = 78.0%; non-freeze 20/23 = 87.0%; freeze 19/27 = 70.4%)
+**Skills touched (coordinated):** `skills/draft-response/SKILL.md`, `skills/critique-draft/SKILL.md`, `skills/judge-action/SKILL.md`
+**Bundled edits (attribution caveat — no per-edit breakdown possible in this run):**
+  1. Specificity > tone lead paragraph (all three skills)
+  2. Escalate (b) hard-blocker extended to include hardware-class / driver-incompatibility lockouts with persistence
+  3. Anti-downgrade guard: "patches in topic area ≠ resolution of reviewer's specific symptom"
+  4. Loading-screen edge case (enumerated triggers → monitor; brief mention stays no_action)
+  5. Secondary evidence rule ([secondary]-tagged sources inform text only, not action)
+  6. Action-stability revision rule (`<revision_type>` → keep `proposed_action` unchanged when not `"action"`)
+  7. Two new worked examples in draft-response (2-year persistence, hardware-class lockout)
+
+## Two-sided gate
+
+### Positive — 5 named fix targets
+Each expected to reach ideal action in the post-edit run. Baseline values are from `run_20260416_052812`.
+
+| # | case_id              | ideal       | baseline pred | freeze? | why this is the fix target                                                                                                   |
+|---|----------------------|-------------|---------------|---------|------------------------------------------------------------------------------------------------------------------------------|
+| 1 | `poe2_balance_002`   | monitor     | no_action     | yes     | "RIP last lament witch build" — named nerf, sarcastic/brief tone. Specificity>tone should lift no_action → monitor.          |
+| 2 | `poe2_tech_002`      | investigate | monitor       | yes     | "too many bug and crashes... lose all your progress mid-boss" — concrete crash+progress-loss, brief frustrated tone.         |
+| 3 | `payday3_tech_001`   | investigate | monitor       | yes     | "SOLO stealth heist max difficulty... connection error boots you" — specific scenario+symptom, brief tone.                   |
+| 4 | `mhw_perf_001`       | escalate    | monitor       | yes     | "Feb performance patch completely wrecked the game... over a month... 900 hours" — persistence + hardware-class framing.     |
+| 5 | `poe2_tech_001`      | escalate    | investigate   | yes     | "unplayable in current state. Crashing constantly... pervasive across the gaming community" — persistence + widespread.      |
+
+Freeze dropping on these 5 is a secondary signal (expected; responder choosing ideal → critic approves at iter0 → no freeze needed).
+
+### Negative — 5 currently-correct cases that must NOT regress
+Each was `ideal == predicted` in the baseline. Risk-direction guards:
+
+| # | case_id                | ideal       | risk being guarded                                                                                                                    |
+|---|------------------------|-------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| 1 | `civ7_vague_001`       | no_action   | Specificity>tone over-firing on zero-specificity venting. "Tedious, bad maps. convoluted" has no concrete product element → stay.     |
+| 2 | `payday3_monetize_001` | no_action   | Monetization exclusion must hold. Pricing/DLC complaints stay `no_action` regardless of specificity.                                  |
+| 3 | `starfield_perf_001`   | monitor     | Loading-screen enumerated-triggers lands monitor, NOT investigate/escalate. Over-firing of the new loading-screen clause.             |
+| 4 | `payday3_multi_002`    | monitor     | **Crash-word canary (reused from Iter 1).** "Pretty much unplayable" in server-lag context must stay monitor, NOT escalate.           |
+| 5 | `mhw_content_001`      | monitor     | Named balance/tuning complaint stays monitor, NOT promoted to investigate. Specificity>tone should not over-weight named mechanics.   |
+
+### Aggregate metrics (necessary but not sufficient)
+- `n_judge_error == 0` across all judges (grounding, action, pairwise).
+- `citation.subset_ok_rate == 1.0` (critic invariant).
+- `judge_grounding.n_hard_violations == 0`.
+- **Primary floor:** non-freeze `action.correct_rate` ≥ 0.87 (maintain baseline 20/23).
+- **Primary target:** blended `correct_rate = (non_freeze_correct + freeze_correct) / 50` ≥ 0.82 (up from 0.78 baseline; requires +2 net hits, consistent with 5 positives moving).
+- **Freeze count direction:** `action.freeze_n_total` should decrease (baseline 27) — Pattern 2 fixes are expected to move items from critic-rejected-frozen back to first-draft-correct.
+
+### Stop rule
+- ALL 5 positives must reach ideal action: **floor 4/5 with single-retry allowance on one lone failure** (per `feedback_spot_check_single_retry.md`).
+- ALL 5 negatives must hold: floor 5/5 — any regression = revert. Over-correction is the primary failure mode for this bundle.
+- If 2+ positives fail OR any negative regresses: revert the Pattern 2 bundle and split into narrower iterations (Iter 8a = specificity>tone alone, Iter 8b = escalate carve-outs alone).
+
+### Cache proof
+Offline re-score against the post-edit run JSON (per `feedback_cache_proof_offline_rescore.md`).
+
+### Verification result (2026-04-16, run `run_20260416_161215`, snapshot `snapshot_20260416_161229`)
+
+**Gate verdict: FAIL. Stop rule triggered. Pattern 2 skill bundle REVERTED.**
+
+**Positives: 1/5 PASS.**
+- `poe2_balance_002` — PASS (no_action → monitor). The named-nerf case; specificity>tone landed.
+- `poe2_tech_002` — FAIL (stayed at monitor; ideal investigate). Frozen.
+- `payday3_tech_001` — FAIL (stayed at monitor; ideal investigate). Frozen.
+- `mhw_perf_001` — FAIL (stayed at monitor; ideal escalate). Frozen.
+- `poe2_tech_001` — FAIL (stayed at investigate; ideal escalate). Frozen.
+
+**Negatives: 5/5 HOLD.** Over-correction risk did not materialize. Specificity>tone and the escalate carve-outs did not over-fire on any of the five currently-correct cases.
+
+**Aggregates:**
+- Non-freeze `action.correct_rate`: 0.875 (14/16) — floor 0.87 PASS, but denominator shrank from 23 to 16 (7 cases migrated into freeze bucket).
+- Blended: 37/50 = 0.740 — target ≥0.82 FAIL; regressed 0.780 → 0.740.
+- `action.freeze_n_total`: 27 → 34 — wrong direction. Critic rejected more, not less.
+- `citation.subset_ok_rate`: 1.0 ✓.
+- `judge_grounding.n_hard_violations`: 0 ✓. All `judge_error`: 0 ✓.
+
+**Root cause (discovered via iter-0 critique diagnosis):** the Pattern 2 edits split signal — **critic-side edits worked, responder-side edits didn't, and Iter7 freeze neutralized the critic's correct catches.** All 4 failed positives show the critic's iter-0 critique explicitly invoking the new rules ("anti-downgrade guard," "persistence framing," "hard-blocker symptom") and correctly pushing action UP the ladder. Then the coordinator froze the responder's unchanged wrong choice and human-auto-approved it. The freeze mechanism (Iter7) is direction-blind; it was built to block critic over-firing on subjective monitor↔investigate promotions, but now it also blocks critic *correctness* on under-escalation catches.
+
+**Lesson:** the lever for these 4 cases is not more prompt edits — it's **asymmetric (direction-aware) freeze** in the coordinator. Freeze only when critic pushes DOWN the ladder; allow revision when critic pushes UP. This belongs in a separate iteration (Iter 8 candidate, graph-logic change, not prompt).
+
+**Reverted:** `skills/draft-response/SKILL.md`, `skills/critique-draft/SKILL.md`, `skills/judge-action/SKILL.md` restored to `f4ca59d` via `git checkout HEAD --`. Left in place: `agent/nodes/responder.py` `<revision_type>` XML tag (benign; skills no longer reference it), `evals/scorers/deterministic.py` + `evals/snapshot.py` freeze-split metric (kept — honest measurement, not Pattern 2).
+
+---
+
 # Negative controls locked for Option B (multi_part_complaint rule edit)
 
 **Locked at:** 2026-04-08, BEFORE editing skills/draft-response/SKILL.md

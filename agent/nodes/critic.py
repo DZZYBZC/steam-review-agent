@@ -19,6 +19,7 @@ from config import (
     CRITIC_MODEL,
     CRITIC_TEMPERATURE,
     CRITIC_MAX_TOKENS,
+    LLM_PARSE_RETRIES,
 )
 
 logger = logging.getLogger(__name__)
@@ -131,24 +132,33 @@ def critic_node(state: AgentState) -> dict:
         drafted_response, proposed_action, source_ids_cited,
     )
 
-    try:
-        data, tokens = _call_critic_llm(user_message)
-    except json.JSONDecodeError as e:
-        logger.error(f"Critic: LLM response parse failed: {e}")
-        return {
-            "critique": f"Critic parse failed: {e}",
-            "approved": False,
-            "stop_reason": "parse_error",
-            "node_log": [f"critic: parse_error — {e}"],
-        }
-    except Exception as e:
-        logger.error(f"Critic: LLM call failed: {e}")
-        return {
-            "critique": f"Critic failed: {e}",
-            "approved": False,
-            "stop_reason": "llm_error",
-            "node_log": [f"critic: llm_error — {e}"],
-        }
+    last_error = None
+    data = None
+    tokens = None
+    for attempt in range(1, LLM_PARSE_RETRIES + 2):
+        try:
+            data, tokens = _call_critic_llm(user_message)
+            break
+        except json.JSONDecodeError as e:
+            last_error = e
+            if attempt <= LLM_PARSE_RETRIES:
+                logger.warning(f"Critic: parse attempt {attempt} failed: {e}. Retrying...")
+                continue
+            logger.error(f"Critic: LLM response parse failed after {attempt} attempts: {e}")
+            return {
+                "critique": f"Critic parse failed: {e}",
+                "approved": False,
+                "stop_reason": "parse_error",
+                "node_log": [f"critic: parse_error after {attempt} attempts — {e}"],
+            }
+        except Exception as e:
+            logger.error(f"Critic: LLM call failed: {e}")
+            return {
+                "critique": f"Critic failed: {e}",
+                "approved": False,
+                "stop_reason": "llm_error",
+                "node_log": [f"critic: llm_error — {e}"],
+            }
 
     approved = data.get("approved", False)
     critique = data.get("critique", "")

@@ -6,7 +6,7 @@ import logging
 import uuid
 from agent.state import AgentState
 from pipeline.storage import get_connection, save_audit_entry
-from config import AGENT_MAX_ITERATIONS
+from config import AGENT_MAX_ITERATIONS, ACTION_FREEZE_ENABLED
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +59,11 @@ def coordinator_node(state: AgentState) -> dict:
     # Action-freeze interception: if critic rejected on action grounds only,
     # override the rejection, freeze the responder's action, route to human.
     # Checked BEFORE max_iterations so the freeze fires even at the iteration cap.
+    # Gated on ACTION_FREEZE_ENABLED (Iter 8 alt 1: disabled — action-only rejections
+    # now flow through the normal revision loop; critic-right/responder-wrong cases
+    # get a chance to land ideal via redraft instead of terminating at HITL).
     reason_type = state.get("reason_type", "")
-    if not approved and reason_type == "action" and human_decision != "rejected":
+    if ACTION_FREEZE_ENABLED and not approved and reason_type == "action" and human_decision != "rejected":
         action = state.get("proposed_action", "monitor")
         frozen = state.get("frozen_action", "") or action
         logger.info(

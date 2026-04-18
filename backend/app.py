@@ -99,7 +99,7 @@ def _check_featured_cases_valid() -> dict[str, Any]:
             "ok": False,
             "n_valid": 0,
             "missing_run_ids": [],
-            "note": "FEATURED_CASES is empty — run curation script (task 3)",
+            "note": "FEATURED_CASES is empty — run curation script",
         }
     run_ids = [case["run_id"] for case in FEATURED_CASES]
     placeholders = ",".join("?" * len(run_ids))

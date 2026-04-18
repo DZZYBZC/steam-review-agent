@@ -136,7 +136,6 @@ def coordinator_node(state: AgentState) -> dict:
 
         # Approve-anyway: filter judged critic's bump-down-by-1 as noise. Accept
         # responder's action as-is, no freeze metadata, route to human_approval.
-        skip_count = state.get("action_filter_skip_count", 0) + 1
         logger.info(
             f"Coordinator: action-only rejection filter-skipped "
             f"(responder='{action}', critic_pref='{critic_pref}'), "
@@ -144,7 +143,6 @@ def coordinator_node(state: AgentState) -> dict:
         )
         return {
             "run_id": run_id,
-            "action_filter_skip_count": skip_count,
             "approved": True,
             "revision_reason": "",
             "reason_type": "",
@@ -155,7 +153,7 @@ def coordinator_node(state: AgentState) -> dict:
             "node_log": [
                 f"coordinator: action-only rejection filter-skipped "
                 f"(responder='{action}', critic_pref='{critic_pref}'), "
-                f"skip_count={skip_count}, routing to human_approval"
+                f"routing to human_approval"
             ],
         }
 

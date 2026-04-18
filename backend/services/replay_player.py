@@ -111,7 +111,7 @@ def build_events(run_id: str) -> list[dict[str, Any]]:
             # Synthetic retrieval sub-steps — describe the pipeline stages that
             # the investigator's retrieve_patches tool always runs. Per-stage
             # counts aren't persisted for replay; the labels describe the
-            # architecture. Live runner (task 5) will emit real per-call stats.
+            # architecture. Live runner emits real per-call stats.
             sources_cited = _parse_json_field(audit.get("source_ids_cited"), [])
             ev_conf = audit.get("evidence_confidence")
             ev_summary = audit.get("evidence_summary") or ""
@@ -133,7 +133,7 @@ def build_events(run_id: str) -> list[dict[str, Any]]:
                     "output": "~20 candidate chunks (with overlap allowed)",
                     "note": (
                         "Per-stage candidate lists aren't persisted to audit_log; "
-                        "the live runner (task 5) will surface the live candidate set."
+                        "the live runner surfaces the live candidate set."
                     ),
                 },
             })

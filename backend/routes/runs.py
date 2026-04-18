@@ -1,8 +1,6 @@
 """
-Live run routes — POST a review to start a new run, stream the SSE events.
-
-Task 5: start + pre-gate stream only. Resume + human gate decision handled
-by task 6 in POST /runs/{run_id}/resume.
+Live run routes — POST a review to start a new run, stream the SSE events,
+and resume after the human approval gate.
 """
 
 from __future__ import annotations

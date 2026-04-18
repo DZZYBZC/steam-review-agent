@@ -531,7 +531,6 @@ def investigator_node(state: AgentState) -> dict:
 
     total_tokens = {"input": 0, "output": 0}
 
-    # Load cluster notes for additional context
     cluster_notes_text = ""
     notes_count = 0
     if app_id and category:

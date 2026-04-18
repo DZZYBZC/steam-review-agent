@@ -1,5 +1,5 @@
-// Steam Review Triage — frontend (replay only, task 4).
-// Consumes the canonical SSE schema from /replays/{run_id}/stream.
+// Steam Review Triage — frontend.
+// Consumes the canonical SSE schema from /replays/{run_id}/stream and /runs/{run_id}/stream.
 
 const $ = (id) => document.getElementById(id);
 

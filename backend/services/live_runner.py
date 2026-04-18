@@ -4,8 +4,7 @@ output into the canonical SSE schema used by the frontend.
 
 Emits the same event shapes as replay_player so the UI reducer is blind to
 the source. Terminates the stream at the human_approval interrupt with a
-`human_gate_open` event; resume is handled by the /runs/{run_id}/resume route
-(task 6).
+`human_gate_open` event; resume is handled by the /runs/{run_id}/resume route.
 """
 
 from __future__ import annotations
@@ -106,7 +105,6 @@ def build_initial_state(app_id: str, review_id: str, run_id: str) -> AgentState:
         "action_freeze_applied": False,
         "action_override_count": 0,
         "first_override_at_iteration": -1,
-        "action_filter_skip_count": 0,
         "is_eval": False,
         "is_demo": True,  # tag all interview-demo live runs so they skip promotion
     }

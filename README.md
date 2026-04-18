@@ -390,6 +390,7 @@ The metrics below cite four distinct populations:
 | Strong Under-use | **0** | The evidence was sufficient, but the draft failed to use it. Wasted retrieval — the agent had what it needed and didn't leverage it. |
 | Context Sufficiency (judge) | supports 19 / partial 17 / no_support 8 | Could an ideal responder produce the right answer from this evidence pool alone? Measures retrieval quality independent of how well the responder actually used it. |
 | Low-confidence Citations | 10 honest hedge / 1 misleading / 0 unclear | When evidence confidence is low but the responder still cites sources, does it hedge honestly or misleadingly claim a fix? Of 11 flagged cases, 10 were honest hedges and 1 misleadingly framed a tangential fix as resolution. |
+| Revision Improvement | **9/9 improved · 0 regressed** | Of the 50 judge-eligible runs, 9 had a revision loop fire (critic rejected iter 0+). The pairwise judge compares iter-0 draft against the final-iter draft. All 9 improved, zero regressed. The remaining 41 never needed revision and are deterministically-neutral (no draft change to judge); they're not a quality signal and should not be included in the denominator. |
 
 ### Open gaps
 

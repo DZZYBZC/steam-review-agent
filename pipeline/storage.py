@@ -216,6 +216,17 @@ def create_tables(conn: sqlite3.Connection) -> None:
         ],
     )
 
+    _apply_migration(
+        conn,
+        version=6,
+        description="demo isolation: add is_demo flag so interview demo writes don't feed production promotion",
+        sql_statements=[
+            "ALTER TABLE audit_log ADD COLUMN is_demo INTEGER DEFAULT 0",
+            "ALTER TABLE audit_log_iterations ADD COLUMN is_demo INTEGER DEFAULT 0",
+            "ALTER TABLE cluster_notes ADD COLUMN is_demo INTEGER DEFAULT 0",
+        ],
+    )
+
     conn.execute("CREATE INDEX IF NOT EXISTS idx_reviews_app_id ON reviews(app_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_classifications_app_id ON classifications(app_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_app_category ON audit_log(app_id, category)")
@@ -451,8 +462,8 @@ def save_audit_entry(conn: sqlite3.Connection, state: dict) -> bool:
              evidence_summary, evidence_confidence, drafted_response,
              proposed_action, source_ids_cited, critique, human_decision,
              human_feedback, iteration_count, stop_reason, retrieval_decision,
-             token_usage, run_id, is_eval)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             token_usage, run_id, is_eval, is_demo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             state.get("app_id", ""),
             state.get("review_id", ""),
@@ -473,6 +484,7 @@ def save_audit_entry(conn: sqlite3.Connection, state: dict) -> bool:
             json.dumps(state.get("token_usage", {})),
             state.get("run_id", ""),
             1 if state.get("is_eval") else 0,
+            1 if state.get("is_demo") else 0,
         ))
         conn.commit()
         logger.info(f"Saved audit entry for review {state.get('review_id', '???')}.")
@@ -636,8 +648,8 @@ def save_audit_iteration(
             INSERT INTO audit_log_iterations
             (app_id, review_id, iteration, drafted_response, proposed_action,
              source_ids_cited, critique, approved, revision_reason,
-             reason_type, retrieval_hint, token_usage, run_id, is_eval)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             reason_type, retrieval_hint, token_usage, run_id, is_eval, is_demo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             state.get("app_id", ""),
             state.get("review_id", ""),
@@ -653,6 +665,7 @@ def save_audit_iteration(
             json.dumps(tokens or {}),
             state.get("run_id", ""),
             1 if state.get("is_eval") else 0,
+            1 if state.get("is_demo") else 0,
         ))
         conn.commit()
         logger.debug(
@@ -865,6 +878,7 @@ def save_cluster_note(
     created_by: str = "system",
     source_review_id: str | None = None,
     is_eval: bool = False,
+    is_demo: bool = False,
 ) -> int | None:
     """
     Save a note to the cluster_notes table.
@@ -876,6 +890,8 @@ def save_cluster_note(
         created_by: "system" or "human".
         source_review_id: Review ID that triggered this note.
         is_eval: If True, marks the note as eval-generated (excluded from production reads).
+        is_demo: If True, marks the note as interview-demo-generated. Promotion guards
+                 skip demo rows so they never feed investigator / few-shot context.
 
     Returns:
         The inserted note id on success, None on error. Callers can pass the
@@ -885,8 +901,8 @@ def save_cluster_note(
     try:
         cursor = conn.execute("""
             INSERT INTO cluster_notes
-            (app_id, category, note_type, tags, note_text, created_by, source_review_id, is_eval)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (app_id, category, note_type, tags, note_text, created_by, source_review_id, is_eval, is_demo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             app_id,
             category,
@@ -896,6 +912,7 @@ def save_cluster_note(
             created_by,
             source_review_id,
             1 if is_eval else 0,
+            1 if is_demo else 0,
         ))
         conn.commit()
         logger.info(f"Saved {note_type} note for {app_id}/{category}.")

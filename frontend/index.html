@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Steam Review Triage &amp; Response Agent</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <nav class="view-tabs">
+      <button class="view-tab active" data-view="demo">Demo</button>
+      <button class="view-tab" data-view="evals">Evals</button>
+      <button class="view-tab" data-view="notes">Memory</button>
+    </nav>
+    <div id="stepper" class="stepper" hidden>
+      <button id="step-run" class="step-btn step-run" hidden>▶ Run</button>
+      <button id="step-prev" class="step-btn">◀ Prev</button>
+      <button id="step-next" class="step-btn step-primary">Next step ▶</button>
+      <button id="step-play" class="step-btn">Play remaining</button>
+      <button id="step-end" class="step-btn">Skip to end ⏭</button>
+      <button id="step-restart" class="step-btn">⟲ Restart</button>
+      <span id="step-status" class="step-status"></span>
+    </div>
+    <div class="mode-toggle">
+      <button class="mode-btn active" data-mode="featured">Featured Cases</button>
+      <button class="mode-btn" data-mode="live">Try Live</button>
+    </div>
+    <button id="home-btn" class="reset">Home</button>
+    <button id="reset-btn" class="reset">Reset all</button>
+  </header>
+
+  <main class="layout">
+    <aside id="sidebar" class="sidebar">
+      <h2 id="sidebar-heading">Featured Cases</h2>
+      <ul id="case-list" class="case-list"></ul>
+    </aside>
+
+    <section class="canvas">
+      <div id="welcome" class="welcome">
+        <h1 class="welcome-title">Steam Review Triage &amp; Response Agent</h1>
+        <div class="welcome-grid">
+          <div class="welcome-card">
+            <h3>About This Demo</h3>
+            <p>
+              Each curated case in the sidebar is a real agent run reconstructed from persisted audit data.
+              Click one to watch the full loop: coordinator &rarr; investigator &rarr; responder &rarr; critic &rarr; human gate.
+            </p>
+            <ul>
+              <li><strong>Step through</strong> events one at a time with <em>Next step</em> / <em>Previous</em>.</li>
+              <li>Or <strong>play remaining</strong> at normal pace.</li>
+              <li>Each case has <strong>interviewer notes</strong> with the story.</li>
+              <li>Click any chunk id in <strong>Cited evidence</strong> to expand its patch-note text.</li>
+            </ul>
+          </div>
+          <div class="welcome-card">
+            <h3>Key Engineering Decisions</h3>
+            <ul>
+              <li><strong>Coordinator is plain Python</strong>, not an LLM — deterministic routing, no token cost per hop.</li>
+              <li><strong>Tiered model assignments</strong> — Haiku for narrow tasks (classifier, tone, critic); Sonnet for reasoning (investigator, responder).</li>
+              <li><strong>Hybrid RAG</strong> — BM25 + vector + HyDE &rarr; RRF fusion &rarr; Gemma rerank &rarr; tool-use loop with up to 4 primary query reformulations + 1 secondary-aspect probe.</li>
+              <li><strong>Evals are first-class</strong> — action correctness, retrieval recall, LLM judges, snapshot diffs.</li>
+            </ul>
+          </div>
+          <div class="welcome-card">
+            <h3>Memory Architecture</h3>
+            <ul>
+              <li><strong>AgentState</strong> <em>(working)</em> — per-run TypedDict passed between nodes; checkpointed to SQLite so the graph can pause at the human gate and resume.</li>
+              <li><strong>Audit log</strong> <em>(episodic)</em> — every completed run persisted with full state.</li>
+              <li><strong>Cluster notes</strong> <em>(institutional)</em> — per-category memory (known issues, response history, human feedback) with 90-day TTL.</li>
+              <li><strong>Patch vector store (ChromaDB)</strong> <em>(semantic)</em> — persistent index of every patch-note chunk, embedded with bge-base-en-v1.5.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="welcome-graph">
+          <h3>Pre-Agent Pipeline</h3>
+          <svg viewBox="0 0 760 130" xmlns="http://www.w3.org/2000/svg" class="graph-svg pipeline-svg" role="img" aria-label="Pre-agent data pipeline">
+            <defs>
+              <marker id="arrow-pre" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#8a90a0"/>
+              </marker>
+            </defs>
+            <!-- Forward arrows -->
+            <line x1="115" y1="55" x2="150" y2="55" stroke="#8a90a0" stroke-width="1.8" marker-end="url(#arrow-pre)"/>
+            <line x1="265" y1="55" x2="300" y2="55" stroke="#8a90a0" stroke-width="1.8" marker-end="url(#arrow-pre)"/>
+            <line x1="415" y1="55" x2="450" y2="55" stroke="#8a90a0" stroke-width="1.8" marker-end="url(#arrow-pre)"/>
+            <line x1="555" y1="55" x2="595" y2="55" stroke="#8a90a0" stroke-width="1.8" marker-end="url(#arrow-pre)"/>
+            <!-- Nodes -->
+            <g class="pipeline-node"><rect x="20" y="33" width="95" height="44" rx="6"/><text x="67" y="60" text-anchor="middle">Steam API</text></g>
+            <g class="pipeline-node"><rect x="150" y="33" width="115" height="44" rx="6"/><text x="207" y="60" text-anchor="middle">Ingest + Dedup</text></g>
+            <g class="pipeline-node"><rect x="300" y="33" width="115" height="44" rx="6"/><text x="357" y="60" text-anchor="middle">Classifier + Tone</text></g>
+            <g class="pipeline-node"><rect x="450" y="33" width="105" height="44" rx="6"/><text x="502" y="60" text-anchor="middle">Cluster Build</text></g>
+            <g class="pipeline-node"><rect x="595" y="33" width="130" height="44" rx="6" stroke-dasharray="4 3"/><text x="660" y="52" text-anchor="middle" fill="#5aa9ff">Agent Graph</text><text x="660" y="68" text-anchor="middle" fill="#5aa9ff" font-size="10">(see below)</text></g>
+          </svg>
+          <p class="graph-caption">
+            <span class="legend-row"><span class="legend-swatch" style="background:#8a90a0"></span>
+              <strong>Pre-agent pipeline</strong> — data prep that runs before the LangGraph: fetch, dedupe, classify (category + tone + secondary aspects), build per-category clusters.
+            </span>
+          </p>
+        </div>
+
+        <div class="welcome-graph">
+          <h3>Agent Graph</h3>
+          <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" class="graph-svg" role="img" aria-label="Agent graph topology">
+            <defs>
+              <marker id="arrow-main" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#5aa9ff"/>
+              </marker>
+              <marker id="arrow-freeze" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#b47ce0"/>
+              </marker>
+            </defs>
+
+            <!-- Main forward edges: coord -> inv -> resp -> crit -> gate -->
+            <line x1="115" y1="90" x2="150" y2="90" stroke="#5aa9ff" stroke-width="2" marker-end="url(#arrow-main)"/>
+            <line x1="265" y1="90" x2="300" y2="90" stroke="#5aa9ff" stroke-width="2" marker-end="url(#arrow-main)"/>
+            <line x1="405" y1="90" x2="440" y2="90" stroke="#5aa9ff" stroke-width="2" marker-end="url(#arrow-main)"/>
+            <line x1="535" y1="90" x2="570" y2="90" stroke="#5aa9ff" stroke-width="2" marker-end="url(#arrow-main)"/>
+
+            <!-- Revision loop (same blue color, dashed): critic -> coordinator -->
+            <path d="M 490 115 Q 490 170 65 170 Q 65 115 65 115"
+                  fill="none" stroke="#5aa9ff" stroke-width="1.8" stroke-dasharray="6 4"
+                  marker-end="url(#arrow-main)"/>
+            <text x="275" y="185" text-anchor="middle" fill="#5aa9ff" font-size="12"
+                  font-family="SF Mono,Monaco,monospace">
+              Revision Loop (Drafting / Evidence Reject)
+            </text>
+
+            <!-- Action-freeze: coordinator -> human gate (skips inv+resp) -->
+            <path d="M 70 65 Q 70 25 635 25 Q 635 65 635 65"
+                  fill="none" stroke="#b47ce0" stroke-width="1.8" stroke-dasharray="6 4"
+                  marker-end="url(#arrow-freeze)"/>
+            <text x="350" y="18" text-anchor="middle" fill="#b47ce0" font-size="12"
+                  font-family="SF Mono,Monaco,monospace">
+              Action-Freeze (Coordinator Skips Revision)
+            </text>
+
+            <!-- Nodes -->
+            <g class="graph-node"><rect x="20" y="68" width="95" height="44" rx="6"/><text x="67" y="95" text-anchor="middle">Coordinator</text></g>
+            <g class="graph-node"><rect x="150" y="68" width="115" height="44" rx="6"/><text x="207" y="95" text-anchor="middle">Investigator</text></g>
+            <g class="graph-node"><rect x="300" y="68" width="105" height="44" rx="6"/><text x="352" y="95" text-anchor="middle">Responder</text></g>
+            <g class="graph-node"><rect x="440" y="68" width="95" height="44" rx="6"/><text x="487" y="95" text-anchor="middle">Critic</text></g>
+            <g class="graph-node graph-gate"><rect x="570" y="68" width="130" height="44" rx="6"/><text x="635" y="95" text-anchor="middle">Human Gate</text></g>
+
+            <!-- Memory-source tags: nodes that read from persistent stores -->
+            <g class="graph-tag">
+              <rect x="150" y="118" width="115" height="18" rx="3"/>
+              <text x="207" y="131" text-anchor="middle">Cluster Notes</text>
+            </g>
+            <g class="graph-tag">
+              <rect x="300" y="118" width="105" height="18" rx="3"/>
+              <text x="352" y="131" text-anchor="middle">Audit Logs</text>
+            </g>
+
+            <!-- Human gate options -->
+            <g class="gate-option gate-approve">
+              <rect x="570" y="118" width="62" height="18" rx="3"/>
+              <text x="601" y="131" text-anchor="middle">Approve</text>
+            </g>
+            <g class="gate-option gate-reject">
+              <rect x="638" y="118" width="62" height="18" rx="3"/>
+              <text x="669" y="131" text-anchor="middle">Reject</text>
+            </g>
+          </svg>
+          <p class="graph-caption">
+            <span class="legend-row"><span class="legend-swatch" style="background:#5aa9ff"></span>
+              <strong>Main path</strong> — forward flow + revision loop (critic back to coordinator on drafting or evidence reject).
+            </span>
+            <span class="legend-row"><span class="legend-swatch" style="background:#b47ce0"></span>
+              <strong>Action-freeze</strong> — coordinator intercepts action-only reject and routes directly to the gate, skipping another revision cycle.
+            </span>
+            <span class="legend-row"><span class="legend-swatch" style="background:#5fc7d9"></span>
+              <strong>Memory-fed nodes</strong> — investigator reads active cluster_notes; responder reads approved drafts from audit_log as few-shot examples.
+            </span>
+          </p>
+        </div>
+        <p class="hint">&larr; Pick a case to begin.</p>
+      </div>
+
+      <div id="talk-track" class="talk-track" hidden>
+        <button class="toggle" aria-expanded="false">Interviewer notes ▸</button>
+        <div class="content"></div>
+      </div>
+
+
+      <div id="run-panels" hidden>
+      <article id="input-panel" class="panel">
+        <header>
+          <h3>Review</h3>
+          <span class="header-right">
+            <span id="input-tone" class="tone-chip" hidden></span>
+            <span id="input-meta" class="meta"></span>
+          </span>
+        </header>
+        <p id="input-text" class="review-text empty">Select a case from the sidebar.</p>
+      </article>
+
+      <article id="timeline-panel" class="panel">
+        <header><h3>Step timeline</h3><span id="timeline-status" class="meta"></span></header>
+        <div id="timeline" class="timeline empty">—</div>
+      </article>
+
+      <article id="retrieval-panel" class="panel">
+        <header><h3>Retrieval pipeline</h3><span id="retrieval-status" class="meta"></span></header>
+        <ol id="retrieval-steps" class="retrieval-steps empty"><li>—</li></ol>
+      </article>
+
+      <article id="why-panel" class="panel">
+        <header><h3>Why this action?</h3></header>
+        <dl id="why" class="why-grid empty">—</dl>
+      </article>
+
+      <article id="draft-panel" class="panel">
+        <header><h3>Draft response</h3><span id="draft-iter" class="meta"></span></header>
+        <p id="draft-text" class="draft empty">—</p>
+      </article>
+
+      <article id="evidence-panel" class="panel">
+        <header><h3>Cited evidence</h3><span id="evidence-count" class="meta"></span></header>
+        <ul id="evidence-list" class="evidence-list empty"><li>—</li></ul>
+        <details id="evidence-summary-wrap" hidden>
+          <summary>Evidence summary</summary>
+          <p id="evidence-summary"></p>
+        </details>
+      </article>
+
+      <article id="critique-panel" class="panel">
+        <header><h3>Critic's critique</h3><span id="critique-status" class="meta"></span></header>
+        <p id="critique-text" class="critique-text empty">—</p>
+        <details id="critique-trail" hidden>
+          <summary>Audit trail across iterations</summary>
+          <div id="critique-trail-body"></div>
+        </details>
+      </article>
+
+      <article id="gate-panel" class="panel gate-panel">
+        <header><h3>Human gate</h3><span id="gate-status" class="meta"></span></header>
+        <div class="gate-body" id="gate-body">Not reached yet.</div>
+      </article>
+
+      <article id="outcome-panel" class="panel">
+        <header><h3>Outcome</h3></header>
+        <div id="outcome-badge" class="outcome-badge pending">PENDING</div>
+        <div id="outcome-summary" class="outcome-summary"></div>
+      </article>
+      </div>
+
+      <div id="evals-view" hidden>
+        <div id="evals-loading" class="empty" style="padding:40px;">Loading latest snapshot…</div>
+        <div id="evals-body" hidden>
+          <article class="panel">
+            <header>
+              <h3>Latest snapshot</h3>
+              <span id="evals-meta" class="meta"></span>
+            </header>
+            <div id="evals-headline" class="headline-grid"></div>
+          </article>
+          <article class="panel">
+            <header><h3>Critic health</h3><span id="evals-critic-meta" class="meta"></span></header>
+            <div id="evals-critic" class="critic-grid"></div>
+          </article>
+          <article class="panel">
+            <header><h3>Judge rulings</h3><span class="meta">LLM-judge flags, per-case</span></header>
+            <div id="evals-judge" class="judge-grid"></div>
+          </article>
+          <article class="panel">
+            <header><h3>Action freeze</h3><span class="meta">override path usage</span></header>
+            <div id="evals-freeze" class="freeze-grid"></div>
+          </article>
+        </div>
+      </div>
+
+      <div id="notes-view" hidden>
+        <div id="notes-loading" class="empty" style="padding:40px;">Loading memory…</div>
+        <div id="notes-body" hidden>
+          <div id="promote-banner" class="promote-banner" hidden></div>
+          <article class="panel">
+            <header><h3>Isolation architecture</h3><span class="meta">what is actually visible to the agent vs what's in the DB</span></header>
+            <div id="notes-totals" class="totals-grid"></div>
+          </article>
+          <article class="panel">
+            <header><h3>Cluster notes — what the investigator reads</h3><span id="notes-list-meta" class="meta"></span></header>
+            <div class="notes-filters">
+              <label>Category <select id="notes-filter-category"><option value="">all</option></select></label>
+              <label>Type <select id="notes-filter-type"><option value="">all</option></select></label>
+              <label>Game <select id="notes-filter-game"><option value="">all</option></select></label>
+              <label>Sort by
+                <select id="notes-sort">
+                  <option value="promoted_desc">Promoted (newest first)</option>
+                  <option value="promoted_asc">Promoted (oldest first)</option>
+                  <option value="created_desc">Created (newest first)</option>
+                  <option value="created_asc">Created (oldest first)</option>
+                  <option value="category">Category (A→Z)</option>
+                </select>
+              </label>
+            </div>
+            <ul id="notes-list" class="notes-list"></ul>
+          </article>
+          <article class="panel">
+            <header><h3>Audit log few-shot pool — what the responder reads</h3><span id="audits-list-meta" class="meta"></span></header>
+            <div class="notes-filters">
+              <label>Category <select id="audits-filter-category"><option value="">all</option></select></label>
+              <label>Action <select id="audits-filter-action"><option value="">all</option></select></label>
+              <label>Game <select id="audits-filter-game"><option value="">all</option></select></label>
+              <label>Sort by
+                <select id="audits-sort">
+                  <option value="promoted_desc">Promoted (newest first)</option>
+                  <option value="promoted_asc">Promoted (oldest first)</option>
+                  <option value="created_desc">Created (newest first)</option>
+                  <option value="created_asc">Created (oldest first)</option>
+                  <option value="category">Category (A→Z)</option>
+                  <option value="iterations">Iterations (most first)</option>
+                </select>
+              </label>
+            </div>
+            <ul id="audits-list" class="audits-list"></ul>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

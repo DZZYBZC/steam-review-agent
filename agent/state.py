@@ -50,3 +50,7 @@ class AgentState(TypedDict):
 
     # Eval isolation — when True, DB writes are tagged so they don't pollute production reads
     is_eval: bool
+
+    # Demo isolation — when True, DB writes are tagged and skip promotion so interview
+    # demo runs never feed production few-shot selection or investigator cluster notes.
+    is_demo: bool

@@ -35,6 +35,9 @@ def _log_audit(state: AgentState, stop_reason: str) -> None:
     review_id = state.get("review_id", "")
     run_id = state.get("run_id", "")
     is_eval = bool(state.get("is_eval", False))
+    is_demo = bool(state.get("is_demo", False))
+    # Demo and eval rows are both excluded from production promotion.
+    skip_promotion = is_eval or is_demo
 
     # Merge the final stop_reason so the audit entry reflects the node's decision
     audit_state = {**state, "stop_reason": stop_reason}
@@ -43,7 +46,7 @@ def _log_audit(state: AgentState, stop_reason: str) -> None:
     try:
         save_audit_entry(conn, audit_state)
 
-        if decision == "approved" and not is_eval and run_id:
+        if decision == "approved" and not skip_promotion and run_id:
             promote_audit_entry(conn, run_id=run_id, promoted_by="human_approved")
 
         if not app_id or not category:
@@ -57,7 +60,7 @@ def _log_audit(state: AgentState, stop_reason: str) -> None:
             )
             if existing:
                 update_cluster_note_text(conn, existing["id"], feedback)
-                if not is_eval:
+                if not skip_promotion:
                     promote_cluster_note(
                         conn, note_id=existing["id"], promoted_by="human_rejected"
                     )
@@ -66,9 +69,9 @@ def _log_audit(state: AgentState, stop_reason: str) -> None:
                     conn, app_id=app_id, category=category,
                     note_type="human_feedback", note_text=feedback,
                     created_by="human", source_review_id=review_id,
-                    is_eval=is_eval,
+                    is_eval=is_eval, is_demo=is_demo,
                 )
-                if note_id and not is_eval:
+                if note_id and not skip_promotion:
                     promote_cluster_note(
                         conn, note_id=note_id, promoted_by="human_rejected"
                     )
@@ -84,7 +87,7 @@ def _log_audit(state: AgentState, stop_reason: str) -> None:
                 source_review_id=review_id,
             )
             if existing:
-                if not is_eval:
+                if not skip_promotion:
                     promote_cluster_note(
                         conn, note_id=existing["id"], promoted_by="human_approved"
                     )
@@ -93,9 +96,9 @@ def _log_audit(state: AgentState, stop_reason: str) -> None:
                     conn, app_id=app_id, category=category,
                     note_type="response_history", note_text=note_text,
                     created_by="system", source_review_id=review_id,
-                    is_eval=is_eval,
+                    is_eval=is_eval, is_demo=is_demo,
                 )
-                if note_id and not is_eval:
+                if note_id and not skip_promotion:
                     promote_cluster_note(
                         conn, note_id=note_id, promoted_by="human_approved"
                     )
@@ -207,14 +210,18 @@ def route_from_human_approval(state: AgentState) -> str:
     """
     Conditional edge: decide where to go after the human approval gate.
 
+    Reads `stop_reason` rather than `human_decision` because the rejection
+    branch of `human_approval_node` clears `human_decision` in its return
+    (intentionally — so a subsequent coordinator freeze-guard check won't see
+    stale "rejected" on the next iteration). LangGraph applies the node's
+    updates before the router runs, so reading `human_decision` here would
+    always see "" after a rejection and mis-route to END. `stop_reason` is set
+    to "revising" specifically on rejection and survives the clear.
+
     Returns:
-        "done" if approved or awaiting (interrupt handles the wait),
-        "coordinator" if rejected (re-enters revision loop).
+        "coordinator" if rejected (re-enters revision loop),
+        "done" if approved or awaiting (interrupt handles the wait).
     """
-    decision = state.get("human_decision", "")
-
-    if decision == "rejected":
+    if state.get("stop_reason", "") == "revising":
         return "coordinator"
-
-    # "approved" or "" — both go to END
     return "done"

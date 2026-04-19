@@ -11,7 +11,8 @@ let appliedEvents = [];     // events already applied, for undo
 let streamEnded = false;    // server closed SSE
 let autoPlay = false;       // auto-drain the queue when true
 let autoPlayTimer = null;
-let currentView = "demo";       // "demo" | "evals" | "notes"
+let cmAbort = null;             // AbortController for the CM Mode fetch+SSE stream
+let currentView = "demo";       // "demo" | "evals" | "notes" | "cm"
 let currentMode = "featured";   // "featured" | "live" (only meaningful in Demo view)
 let selectedLiveCandidate = null; // candidate picked but not yet run (Try Live only)
 let evalsLoaded = false;
@@ -34,16 +35,33 @@ function emptyState() {
     retrievalSteps: [],      // [{stage, label, description, done}]
     gate: null,
     outcome: null,
+    // CM Mode state — isolated from Demo's reducer; mutated only by applyCMEvent.
+    cm: {
+      goal: "",
+      meta_run_id: null,
+      plan: null,            // {filter, synthesis_instruction, uncertain, concerns, fetch_calls_made}
+      candidates: [],        // [{app_id, review_id, category, review_preview,
+                             //   status, current_node, final_action, approved, stop_reason, error}]
+      synthesis: "",
+      error: null,           // {node, message} for stage-level (planner/synthesizer) errors
+      running: false,
+      planner_activity: [],  // [{turn, tool_name, input, output, status: "running"|"done"|"error"}]
+      planner_gate: null,    // {filter, synthesis_instruction, concerns:[], gate_triggers:[], actual_count} or null
+      planner_gate_sent: null, // {decision} once user submits
+    },
   };
 }
 
 function resetMutableState() {
   // Clear everything except the selected-case identity fields.
-  const { meta, case: c, run_id } = state;
+  // Also preserves state.cm so a Demo Restart/Prev doesn't kill an
+  // in-flight CM Mode batch — they live in independent reducers.
+  const { meta, case: c, run_id, cm } = state;
   state = emptyState();
   state.meta = meta;
   state.case = c;
   state.run_id = run_id;
+  state.cm = cm;
 }
 
 function currentIterEntry(iter) {
@@ -838,8 +856,11 @@ function selectLiveCandidate(candidate) {
   }
 
   // Stage the candidate: show Input + talk-track, no events yet. Run button enables.
+  // Preserve state.cm so an in-flight CM Mode batch isn't wiped by Demo navigation.
   selectedLiveCandidate = candidate;
+  const cm = state.cm;
   state = emptyState();
+  state.cm = cm;
   eventQueue = [];
   appliedEvents = [];
   streamEnded = false;
@@ -933,7 +954,12 @@ function snapshotCurrentCase() {
 function restoreCase(run_id) {
   const snap = caseCache.get(run_id);
   if (!snap) return false;
+  // Preserve current state.cm — the snapshot's cm could be stale (or empty if
+  // it was taken before the CM run started). The CM stream is independent of
+  // Demo case navigation; do not let snapshot replay overwrite it.
+  const cm = state.cm;
   state = structuredClone(snap.state);
+  state.cm = cm;
   eventQueue = structuredClone(snap.eventQueue);
   appliedEvents = structuredClone(snap.appliedEvents);
   streamEnded = snap.streamEnded;
@@ -952,8 +978,13 @@ async function selectCase(run_id) {
     li.classList.toggle("selected", li.dataset.runId === run_id);
   }
   if (restoreCase(run_id)) { scrollCanvasToTop(); return; }
-  // First visit — fetch metadata and open stream fresh.
+  // First visit — fetch metadata and open stream fresh. Preserve state.cm so
+  // an in-flight CM Mode batch keeps accumulating events into preserved state
+  // while the user navigates Demo cases (cmAbort is deliberately not aborted
+  // on view/case switches; same isolation contract as resetMutableState).
+  const cm = state.cm;
   state = emptyState();
+  state.cm = cm;
   eventQueue = [];
   appliedEvents = [];
   streamEnded = false;
@@ -989,7 +1020,10 @@ function goHome() {
   clearHighlights();
   snapshotCurrentCase();
   for (const li of document.querySelectorAll(".case-list li")) li.classList.remove("selected");
+  // Preserve state.cm so an in-flight CM Mode batch survives Demo Home click.
+  const cm = state.cm;
   state = emptyState();
+  state.cm = cm;
   eventQueue = [];
   appliedEvents = [];
   streamEnded = false;
@@ -1266,6 +1300,7 @@ function setView(view) {
   $("run-panels").hidden = !isDemo || !caseActive;
   $("evals-view").hidden = view !== "evals";
   $("notes-view").hidden = view !== "notes";
+  $("cm-view").hidden = view !== "cm";
   $("stepper").hidden = !isDemo || !caseActive;
   $("talk-track").hidden = !isDemo || !caseActive;
 
@@ -1276,6 +1311,7 @@ function setView(view) {
     loadMemory();
     renderPromoteBanner();
   }
+  if (view === "cm") renderCM();
   scrollCanvasToTop();
 }
 
@@ -1791,6 +1827,726 @@ function renderEvals(data) {
     </div>
   `;
 }
+
+// ============== CM Mode ==============
+// Independent reducer + stream consumer for the /cm/run batch endpoint.
+// Never calls into Demo's applyEvent — forwarded sub-run events that share
+// type names with Demo events are routed by payload.candidate_index.
+
+const CM_NODE_ORDER = ["coordinator", "investigator", "responder", "critic", "gate", "done"];
+
+async function startCMRun(goal) {
+  // Abort any prior stream still running.
+  cmAbort?.abort();
+  cmAbort = new AbortController();
+
+  // Reset CM state for a fresh batch but preserve the goal so the textarea
+  // value matches what's executing.
+  state.cm = emptyState().cm;
+  state.cm.goal = goal;
+  state.cm.running = true;
+  renderCM();
+
+  let res;
+  try {
+    res = await fetch("/cm/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goal }),
+      signal: cmAbort.signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    state.cm.error = { node: "fetch", message: String(err) };
+    state.cm.running = false;
+    renderCM();
+    return;
+  }
+  if (!res.ok || !res.body) {
+    state.cm.error = { node: "fetch", message: `HTTP ${res.status}` };
+    state.cm.running = false;
+    renderCM();
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE frames are separated by blank lines (\n\n).
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop();  // last frame is possibly incomplete
+      for (const frame of frames) {
+        // Defensive: skip empty frames or anything that isn't a `data:` line.
+        // Backend currently only emits `data: <json>\n\n` (sse.py:format_sse),
+        // but this guards future keepalive comments / event:/id:/retry: prefixes.
+        const trimmed = frame.trim();
+        if (!trimmed || !trimmed.startsWith("data:")) continue;
+        const json = trimmed.slice(5).trimStart();
+        try {
+          applyCMEvent(JSON.parse(json));
+        } catch (err) {
+          console.error("bad CM event", err, json);
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name !== "AbortError") {
+      state.cm.error = { node: "stream", message: String(err) };
+      state.cm.running = false;
+      renderCM();
+    }
+  }
+  // Stream ended (EOF). Flip running off if the meta run_complete didn't already.
+  if (state.cm.running) {
+    state.cm.running = false;
+    renderCMGoal();
+  }
+}
+
+function applyCMEvent(evt) {
+  const { type, payload = {} } = evt;
+  const ci = payload.candidate_index;
+
+  // ---- Forwarded sub-run events (carry candidate_index) ----
+  if (ci !== undefined && ci !== null) {
+    const card = state.cm.candidates[ci];
+    if (!card) return;
+    if (type === "node_start") {
+      card.current_node = payload.node;
+    } else if (type === "human_gate_open") {
+      card.current_node = "gate";
+    } else if (type === "run_complete") {
+      // Defensive midpoint marker; cm_candidate_complete (which immediately
+      // follows in the next yield, per cm_runner.py:run_cm lines 148→157)
+      // populates the authoritative status / final_action.
+      card.current_node = "done";
+    } else if (type === "error") {
+      card.error = payload.message;
+      card.status = "error";
+    }
+    // state_update is intentionally ignored — Demo's iteration tracking
+    // doesn't apply here, and authoritative completion comes via cm_candidate_complete.
+    renderCMCandidateCard(ci);
+    return;
+  }
+
+  // ---- CM-level events ----
+  if (type === "cm_plan_started") {
+    state.cm.meta_run_id = evt.run_id;
+    state.cm.plan = null;
+    state.cm.candidates = [];
+    state.cm.synthesis = "";
+    state.cm.error = null;
+    state.cm.running = true;
+    renderCM();
+  } else if (type === "cm_plan") {
+    state.cm.plan = payload.plan;
+    renderCMPlan();
+    highlightCMPanel("cm-plan-panel");
+  } else if (type === "cm_candidates") {
+    state.cm.candidates = (payload.candidates || []).map((c) => ({
+      app_id: c.app_id,
+      review_id: c.review_id,
+      category: c.category,
+      review_preview: c.review_preview,
+      status: "pending",
+      current_node: null,
+      final_action: null,
+      approved: null,
+      stop_reason: null,
+      drafted_response: "",
+      error: null,
+    }));
+    renderCMCandidates();
+    highlightCMPanel("cm-candidates-panel");
+  } else if (type === "cm_candidate_start") {
+    const card = state.cm.candidates[payload.candidate_index];
+    if (card) {
+      card.status = "running";
+      card.current_node = "coordinator";
+      renderCMCandidateCard(payload.candidate_index);
+    }
+  } else if (type === "cm_candidate_complete") {
+    const card = state.cm.candidates[payload.candidate_index];
+    if (card) {
+      const errored = payload.stop_reason === "error";
+      card.status = errored ? "error" : "done";
+      card.current_node = "done";
+      card.final_action = payload.proposed_action || null;
+      card.approved = payload.critic_approved;
+      card.stop_reason = payload.stop_reason;
+      card.drafted_response = payload.drafted_response || "";
+      if (payload.error_message) card.error = payload.error_message;
+      renderCMCandidateCard(payload.candidate_index);
+    }
+  } else if (type === "cm_synthesis") {
+    state.cm.synthesis = payload.markdown || "";
+    renderCMSynthesis();
+    highlightCMPanel("cm-synthesis-panel");
+  } else if (type === "cm_planner_tool_call") {
+    state.cm.planner_activity.push({
+      turn: payload.turn,
+      tool_name: payload.tool_name,
+      input: payload.input,
+      output: null,
+      status: "running",
+      latency_ms: null,
+    });
+    renderCMPlannerActivity();
+    highlightCMPanel("cm-planner-activity-panel");
+  } else if (type === "cm_planner_tool_result") {
+    // Match by (turn, tool_name) — the most recent entry with that pairing.
+    for (let i = state.cm.planner_activity.length - 1; i >= 0; i--) {
+      const e = state.cm.planner_activity[i];
+      if (e.turn === payload.turn && e.tool_name === payload.tool_name && e.status === "running") {
+        e.output = payload.output;
+        e.latency_ms = payload.latency_ms;
+        e.status = payload.error ? "error" : "done";
+        break;
+      }
+    }
+    renderCMPlannerActivity();
+  } else if (type === "cm_planner_runaway") {
+    state.cm.error = { node: "cm_planner_runaway",
+      message: `planner exceeded ${payload.max_turns} turns without committing (info=${payload.info_calls_used}, fetch=${payload.fetch_calls_used})` };
+    renderCMPlan();
+  } else if (type === "cm_planner_human_gate") {
+    state.cm.planner_gate = {
+      filter: payload.filter,
+      synthesis_instruction: payload.synthesis_instruction,
+      concerns: payload.concerns || [],
+      gate_triggers: payload.gate_triggers || [],
+      actual_count: payload.actual_count,
+      app_id_alternatives: payload.app_id_alternatives || [],
+    };
+    state.cm.planner_gate_sent = null;
+    renderCMPlan();
+    highlightCMPanel("cm-plan-panel");
+  } else if (type === "run_complete") {
+    // Meta run_complete (sub-run run_completes are caught by the candidate_index branch).
+    if (evt.run_id === state.cm.meta_run_id) {
+      state.cm.running = false;
+      renderCMGoal();
+    }
+  } else if (type === "error") {
+    // Stage-level (no candidate_index). Route by exact payload.node value
+    // emitted in cm_runner.py.
+    state.cm.error = { node: payload.node, message: payload.message };
+    state.cm.running = false;
+    if (payload.node === "cm_planner" || payload.node === "cm_candidates") {
+      renderCMPlan();
+    } else if (payload.node === "cm_synthesizer") {
+      renderCMSynthesis();
+    }
+    renderCMGoal();
+  }
+}
+
+function clearCMHighlights() {
+  // Mirrors Demo's "clear all, then add new" pattern (see highlightChanges).
+  // Scoped to #cm-view so it never touches Demo's .just-changed panels.
+  document.querySelectorAll(
+    "#cm-view .panel.just-changed, #cm-view .cm-candidate-card.just-changed",
+  ).forEach((el) => el.classList.remove("just-changed"));
+}
+
+function highlightCMPanel(id) {
+  const el = $(id);
+  if (!el) return;
+  clearCMHighlights();
+  // Force reflow so re-adding the class re-triggers the transition.
+  void el.offsetWidth;
+  el.classList.add("just-changed");
+}
+
+// ---- CM render functions ----
+
+function renderCM() {
+  renderCMGoal();
+  renderCMPlan();
+  renderCMPlannerActivity();
+  renderCMCandidates();
+  renderCMDrafts();
+  renderCMSynthesis();
+}
+
+function renderCMGoal() {
+  const btn = $("cm-run-btn");
+  const status = $("cm-run-status");
+  const input = $("cm-goal-input");
+  // Reflect goal into textarea only when it's empty, to avoid clobbering user typing.
+  if (state.cm.goal && !input.value) input.value = state.cm.goal;
+  btn.disabled = state.cm.running;
+  if (state.cm.error) {
+    status.textContent = `error: ${state.cm.error.node}`;
+  } else if (state.cm.running) {
+    status.textContent = "running…";
+  } else if (state.cm.synthesis || state.cm.candidates.length > 0) {
+    status.textContent = "complete";
+  } else {
+    status.textContent = "";
+  }
+}
+
+function renderCMPlan() {
+  const grid = $("cm-plan-grid");
+  const instr = $("cm-plan-instruction");
+  const errBox = $("cm-plan-error");
+  const uncBox = $("cm-plan-uncertain");
+  const gateBox = $("cm-planner-gate");
+  const plan = state.cm.plan;
+  const err = state.cm.error;
+
+  // Plan-stage / planner errors render here; synthesizer errors render in synthesis panel.
+  const planErrNodes = new Set([
+    "cm_planner", "cm_planner_rejected", "cm_planner_runaway",
+    "cm_candidates", "fetch", "stream",
+  ]);
+  if (err && planErrNodes.has(err.node)) {
+    errBox.hidden = false;
+    errBox.textContent = `${err.node}: ${err.message}`;
+  } else {
+    errBox.hidden = true;
+    errBox.textContent = "";
+  }
+
+  if (!plan) {
+    // No committed plan — usually because the planner picked reject_goal.
+    // Render the rejection prominently so the user sees the planner's reasoning,
+    // not just a tiny red-bordered box at the bottom of an empty panel.
+    if (err && (err.node === "cm_planner_rejected" || err.node === "cm_planner_runaway")) {
+      grid.innerHTML = "";
+      grid.classList.remove("empty");
+      grid.outerHTML = `
+        <div id="cm-plan-grid" class="cm-plan-rejected">
+          <div class="cm-plan-rejected-header">⊗ Planner rejected this goal</div>
+          <div class="cm-plan-rejected-reason">${escapeHtml(err.message || "(no reason provided)")}</div>
+          <div class="cm-plan-rejected-hint">See the activity panel for the tool calls that led to this decision.</div>
+        </div>
+      `;
+      // outerHTML replaces the node — re-grabbing for safety on subsequent renders
+      errBox.hidden = true;  // suppress the redundant smaller error box
+    } else {
+      grid.innerHTML = "—";
+      grid.classList.add("empty");
+    }
+    instr.textContent = "";
+    uncBox.hidden = true;
+    gateBox.hidden = true;
+    return;
+  }
+  grid.classList.remove("empty");
+  const f = plan.filter || {};
+  const fmt = (v) => v === null || v === undefined || v === "" ? "—" : String(v);
+  const fetched = plan.fetch_calls_made && Object.keys(plan.fetch_calls_made).length > 0
+    ? Object.entries(plan.fetch_calls_made).map(([app, n]) => `${app}×${n}`).join(", ")
+    : "—";
+  grid.innerHTML = `
+    <dt>app_id</dt>      <dd>${escapeHtml(fmt(f.app_id))}</dd>
+    <dt>category</dt>    <dd>${escapeHtml(fmt(f.category))}</dd>
+    <dt>voted_up</dt>    <dd>${escapeHtml(fmt(f.voted_up))}</dd>
+    <dt>since_days</dt>  <dd>${escapeHtml(fmt(f.since_days))}</dd>
+    <dt>limit</dt>       <dd>${escapeHtml(fmt(f.limit))}</dd>
+    <dt>fetch_calls</dt> <dd><code>${escapeHtml(fetched)}</code></dd>
+  `;
+  instr.textContent = plan.synthesis_instruction || "";
+
+  // Planner uncertainty signals
+  if (plan.uncertain || (plan.concerns && plan.concerns.length > 0)) {
+    uncBox.hidden = false;
+    const concerns = plan.concerns || [];
+    uncBox.innerHTML = `
+      <strong>Planner flagged uncertainty</strong> (uncertain=${plan.uncertain ? "true" : "false"}).
+      ${concerns.length > 0 ? `<ul>${concerns.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>` : ""}
+    `;
+  } else {
+    uncBox.hidden = true;
+    uncBox.innerHTML = "";
+  }
+
+  // CM-level human gate (deterministic, fired by orchestrator)
+  if (state.cm.planner_gate) {
+    gateBox.hidden = false;
+    const g = state.cm.planner_gate;
+    if (state.cm.planner_gate_sent) {
+      gateBox.innerHTML = `
+        <h4>Decision sent: ${escapeHtml(state.cm.planner_gate_sent.decision)}</h4>
+        <div class="cm-planner-gate-sent">
+          ${state.cm.planner_gate_sent.decision === "approved"
+            ? "Continuing to candidate sub-runs…"
+            : "Run terminated; the planner's filter was not committed."}
+        </div>
+      `;
+    } else {
+      const concernsHtml = (g.concerns && g.concerns.length > 0)
+        ? `<ul>${g.concerns.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>`
+        : "";
+      const triggersHtml = g.gate_triggers.map((t) =>
+        `<span class="cm-planner-gate-trigger">${escapeHtml(t)}</span>`
+      ).join("");
+      // If READY_TO_DRAFT is the only trigger, this is the universal confirmation
+      // step (CM_GATE_ALWAYS=True path). Otherwise we genuinely caught a flag.
+      const onlyReady = g.gate_triggers.length === 1 && g.gate_triggers[0] === "READY_TO_DRAFT";
+      const hasAlternatives = (g.app_id_alternatives || []).length >= 2;
+      const heading = hasAlternatives
+        ? `Multiple games matched — pick which to draft against`
+        : (onlyReady
+          ? `Ready to draft replies for ${g.actual_count} reviews`
+          : `Confirm before drafting replies for ${g.actual_count} reviews`);
+      const subhead = hasAlternatives
+        ? `<p>The lookup found ${g.app_id_alternatives.length} games in the database whose names match what you typed. Pick the one you meant — the planner's other filter fields stay the same.</p>`
+        : (onlyReady
+          ? "<p>Planner committed to a clean filter. Approve to start the sub-run loop.</p>"
+          : "<p>The orchestrator paused because:</p><div class=\"cm-planner-gate-triggers\">" + triggersHtml + "</div>");
+
+      // Picker — only when ≥2 in-DB matches. Default-selects the planner's
+      // current filter.app_id so a one-click Approve uses what the planner picked.
+      let pickerHtml = "";
+      if (hasAlternatives) {
+        const currentAppId = (g.filter || {}).app_id || "";
+        pickerHtml = `
+          <div class="cm-planner-gate-picker">
+            <label for="cm-planner-app-picker">Game:</label>
+            <select id="cm-planner-app-picker">
+              ${g.app_id_alternatives.map((alt) => {
+                const sel = alt.app_id === currentAppId ? " selected" : "";
+                return `<option value="${escapeHtml(alt.app_id)}"${sel}>${escapeHtml(alt.name)} (${escapeHtml(alt.app_id)}, ${alt.n_local_reviews} reviews)</option>`;
+              }).join("")}
+            </select>
+          </div>
+        `;
+      }
+
+      gateBox.innerHTML = `
+        <h4>${heading}</h4>
+        ${subhead}
+        ${pickerHtml}
+        ${concernsHtml ? `<p style="margin-top:8px"><em>Planner concerns:</em></p>${concernsHtml}` : ""}
+        <div class="cm-planner-gate-actions">
+          <button class="cm-planner-gate-btn approve" data-act="approve">Approve &amp; run</button>
+          <button class="cm-planner-gate-btn reject" data-act="reject">Reject</button>
+        </div>
+      `;
+      gateBox.querySelector("[data-act='approve']").addEventListener("click", () => submitCMPlannerGate("approved"));
+      gateBox.querySelector("[data-act='reject']").addEventListener("click", () => submitCMPlannerGate("rejected"));
+    }
+  } else {
+    gateBox.hidden = true;
+    gateBox.innerHTML = "";
+  }
+}
+
+function renderCMPlannerActivity() {
+  const list = $("cm-planner-activity-list");
+  const meta = $("cm-planner-activity-meta");
+  const items = state.cm.planner_activity;
+  if (items.length === 0) {
+    list.innerHTML = "<li class=\"empty\">—</li>";
+    list.classList.add("empty");
+    meta.textContent = "";
+    return;
+  }
+  list.classList.remove("empty");
+  list.innerHTML = "";
+  for (const e of items) {
+    const li = document.createElement("li");
+    const inputJson = e.input == null ? "" : JSON.stringify(e.input, null, 2);
+    const outputJson = e.output == null ? "" : JSON.stringify(e.output, null, 2);
+    const latencyLabel = e.latency_ms != null ? ` · ${e.latency_ms}ms` : "";
+    li.innerHTML = `
+      <details class="cm-planner-tool-row">
+        <summary class="cm-planner-tool-summary">
+          <span class="cm-planner-tool-turn">turn ${e.turn}</span>
+          <span class="cm-planner-tool-name">${escapeHtml(e.tool_name)}</span>
+          <span class="cm-planner-status-pill ${e.status}">${escapeHtml(e.status)}${latencyLabel}</span>
+        </summary>
+        <div class="cm-planner-tool-payload">
+          <div class="cm-planner-payload-label">input</div>
+          <pre>${escapeHtml(inputJson)}</pre>
+          ${outputJson ? `<div class="cm-planner-payload-label">output</div><pre>${escapeHtml(outputJson)}</pre>` : ""}
+        </div>
+      </details>
+    `;
+    list.appendChild(li);
+  }
+  const done = items.filter((e) => e.status !== "running").length;
+  meta.textContent = `${done}/${items.length} tool calls complete`;
+}
+
+async function submitCMPlannerGate(decision) {
+  if (!state.cm.meta_run_id || !state.cm.planner_gate) return;
+  const meta_run_id = state.cm.meta_run_id;
+  // If the picker is rendered, capture the user's choice. Empty string means
+  // no picker (or no override) — server skips the app_id patching.
+  const picker = document.getElementById("cm-planner-app-picker");
+  const chosen_app_id = picker ? picker.value : "";
+  state.cm.planner_gate_sent = { decision, chosen_app_id };
+  renderCMPlan();
+  try {
+    const res = await fetch(`/cm/${meta_run_id}/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision, chosen_app_id }),
+    });
+    if (res.status !== 202) {
+      const body = await res.text();
+      alert(`CM confirm failed (${res.status}): ${body}`);
+      state.cm.planner_gate_sent = null;
+      renderCMPlan();
+    }
+  } catch (err) {
+    console.error("CM confirm POST failed", err);
+    alert("CM confirm request failed — see console");
+    state.cm.planner_gate_sent = null;
+    renderCMPlan();
+  }
+}
+
+function renderCMCandidates() {
+  const list = $("cm-candidate-list");
+  const meta = $("cm-candidates-meta");
+  if (state.cm.candidates.length === 0) {
+    list.innerHTML = "<li class=\"empty\">—</li>";
+    list.classList.add("empty");
+    meta.textContent = "";
+    return;
+  }
+  list.classList.remove("empty");
+  list.innerHTML = "";
+  for (let i = 0; i < state.cm.candidates.length; i++) {
+    const li = document.createElement("li");
+    li.appendChild(buildCMCandidateCard(state.cm.candidates[i], i));
+    list.appendChild(li);
+  }
+  const done = state.cm.candidates.filter((c) => c.status === "done" || c.status === "error").length;
+  meta.textContent = `${done}/${state.cm.candidates.length} complete`;
+}
+
+function renderCMCandidateCard(i) {
+  // Re-render only the i-th card in place; keeps DOM churn small and lets
+  // .just-changed transitions land per-card.
+  const list = $("cm-candidate-list");
+  const items = list.querySelectorAll("li");
+  if (!items[i]) { renderCMCandidates(); return; }
+  const card = state.cm.candidates[i];
+  if (!card) return;
+  const newCard = buildCMCandidateCard(card, i);
+  newCard.classList.add("just-changed");
+  items[i].innerHTML = "";
+  items[i].appendChild(newCard);
+  // Update the meta counter too.
+  const meta = $("cm-candidates-meta");
+  const done = state.cm.candidates.filter((c) => c.status === "done" || c.status === "error").length;
+  meta.textContent = `${done}/${state.cm.candidates.length} complete`;
+  // The drafts-panel state depends on which cards have non-empty drafted_response,
+  // which only flips on cm_candidate_complete. Re-render it whenever a card flips.
+  renderCMDrafts();
+}
+
+function buildCMCandidateCard(c, index) {
+  const div = document.createElement("div");
+  div.className = "cm-candidate-card";
+
+  // Header row: index + category chip + review_id
+  const head = document.createElement("div");
+  head.className = "cm-candidate-head";
+  head.innerHTML = `
+    <span class="cm-candidate-idx">#${index}</span>
+    <span class="cm-candidate-chip">${escapeHtml(c.category || "?")}</span>
+    <span class="cm-candidate-idx">review ${escapeHtml(c.review_id || "?")}</span>
+  `;
+  div.appendChild(head);
+
+  // Review preview
+  const prev = document.createElement("p");
+  prev.className = "cm-candidate-preview";
+  prev.textContent = c.review_preview || "(no preview)";
+  div.appendChild(prev);
+
+  // Progress pill row
+  const prog = document.createElement("div");
+  prog.className = "cm-progress";
+  const currentIdx = c.current_node ? CM_NODE_ORDER.indexOf(c.current_node) : -1;
+  for (let k = 0; k < CM_NODE_ORDER.length; k++) {
+    const node = CM_NODE_ORDER[k];
+    const pill = document.createElement("span");
+    pill.className = "cm-pill";
+    if (c.status === "error" && k === currentIdx) pill.classList.add("error");
+    else if (currentIdx >= 0 && k < currentIdx) pill.classList.add("done");
+    else if (currentIdx >= 0 && k === currentIdx) pill.classList.add("active");
+    pill.textContent = node;
+    prog.appendChild(pill);
+    if (k < CM_NODE_ORDER.length - 1) {
+      const sep = document.createElement("span");
+      sep.className = "cm-pill-sep";
+      sep.textContent = "›";
+      prog.appendChild(sep);
+    }
+  }
+  div.appendChild(prog);
+
+  // Footer: final action + approved + stop_reason
+  if (c.status === "done" || c.status === "error") {
+    const foot = document.createElement("div");
+    foot.className = "cm-candidate-foot";
+    const parts = [];
+    if (c.final_action) {
+      parts.push(`<span class="action-chip ${escapeHtml(c.final_action)}">${escapeHtml(c.final_action.toUpperCase())}</span>`);
+    }
+    if (c.approved === true) parts.push(`<span class="cm-candidate-approved">critic ✓</span>`);
+    else if (c.approved === false) parts.push(`<span class="cm-candidate-rejected">critic ✗</span>`);
+    if (c.stop_reason) parts.push(`stop: ${escapeHtml(c.stop_reason)}`);
+    foot.innerHTML = parts.join(" · ");
+    div.appendChild(foot);
+  }
+
+  if (c.error) {
+    const err = document.createElement("div");
+    err.className = "cm-candidate-error";
+    err.textContent = c.error;
+    div.appendChild(err);
+  }
+
+  // Drafted response — collapsed by default, expand to read in full.
+  if (c.drafted_response) {
+    const details = document.createElement("details");
+    details.className = "cm-candidate-draft";
+    details.innerHTML = `
+      <summary>View draft (${c.drafted_response.length} chars)</summary>
+      <pre>${escapeHtml(c.drafted_response)}</pre>
+    `;
+    div.appendChild(details);
+  }
+
+  return div;
+}
+
+function renderCMDrafts() {
+  // Centralized "Approved drafts" panel — dropdown-driven view of every
+  // candidate that produced an approved draft. Lets the user compare drafts
+  // across reviews without scrolling through cards. Independent of the per-card
+  // "View draft" affordance (both can coexist; this is a different UX hook).
+  const panel = $("cm-drafts-panel");
+  const picker = $("cm-drafts-picker");
+  const body = $("cm-drafts-body");
+  const meta = $("cm-drafts-meta");
+
+  // A candidate is "draftable for the picker" iff its sub-run produced a
+  // non-empty drafted_response. We accept ANY non-error stop_reason (not just
+  // human_approved) so the user can see drafts that were produced even if
+  // they came from edge-case completion paths — same shape the candidate cards use.
+  const drafted = state.cm.candidates
+    .map((c, idx) => ({ ...c, _idx: idx }))
+    .filter((c) => c.drafted_response && c.drafted_response.trim().length > 0);
+
+  if (drafted.length === 0) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  meta.textContent = `${drafted.length} draft${drafted.length > 1 ? "s" : ""} available`;
+
+  // Preserve the current selection if it's still valid; otherwise default to
+  // the first option so the body always shows something on first render.
+  const previousValue = picker.value;
+  picker.innerHTML = drafted.map((c) => {
+    const action = c.final_action ? ` (${c.final_action})` : "";
+    return `<option value="${c._idx}">#${c._idx} · review ${escapeHtml(c.review_id)} · ${escapeHtml(c.category || "?")}${escapeHtml(action)}</option>`;
+  }).join("");
+  if (previousValue && drafted.some((c) => String(c._idx) === previousValue)) {
+    picker.value = previousValue;
+  }
+
+  // Wire up change handler exactly once per render — replaceWith pattern
+  // would be safer but innerHTML rewrite above already wiped any prior listeners.
+  picker.onchange = () => _renderCMDraftBody(picker, body);
+  _renderCMDraftBody(picker, body);
+}
+
+function _renderCMDraftBody(picker, body) {
+  const idx = parseInt(picker.value, 10);
+  const card = state.cm.candidates[idx];
+  if (!card) {
+    body.innerHTML = "<em>(no draft)</em>";
+    return;
+  }
+  const metaLine = `review ${escapeHtml(card.review_id)} · ${escapeHtml(card.category || "?")} · action ${escapeHtml(card.final_action || "?")} · ${card.drafted_response.length} chars`;
+  body.innerHTML = `
+    <div class="cm-drafts-body-meta">${metaLine}</div>${escapeHtml(card.drafted_response)}
+  `;
+}
+
+function renderCMSynthesis() {
+  const body = $("cm-synthesis-body");
+  const errBox = $("cm-synthesis-error");
+  const err = state.cm.error;
+  if (err && err.node === "cm_synthesizer") {
+    errBox.hidden = false;
+    errBox.textContent = `${err.node}: ${err.message}`;
+  } else {
+    errBox.hidden = true;
+    errBox.textContent = "";
+  }
+  if (!state.cm.synthesis) {
+    body.innerHTML = "—";
+    body.classList.add("empty");
+    return;
+  }
+  body.classList.remove("empty");
+  body.innerHTML = mdToHtml(state.cm.synthesis);
+}
+
+// Tiny markdown converter — covers the subset the synthesizer skill emits
+// (## h2, ### h3, - bullets, paragraphs) plus defensive **bold** support.
+function mdToHtml(src) {
+  if (!src) return "";
+  const escaped = escapeHtml(src);
+  const blocks = escaped.split(/\n\s*\n/);
+  const out = [];
+  for (const raw of blocks) {
+    const block = raw.trim();
+    if (!block) continue;
+    if (block.startsWith("### ")) {
+      out.push(`<h3>${applyInline(block.slice(4))}</h3>`);
+    } else if (block.startsWith("## ")) {
+      out.push(`<h2>${applyInline(block.slice(3))}</h2>`);
+    } else {
+      const lines = block.split("\n");
+      // List block: every line begins with "- "
+      if (lines.every((l) => l.trim().startsWith("- "))) {
+        const items = lines.map((l) => `<li>${applyInline(l.trim().slice(2))}</li>`).join("");
+        out.push(`<ul>${items}</ul>`);
+      } else {
+        out.push(`<p>${applyInline(lines.join("<br>"))}</p>`);
+      }
+    }
+  }
+  return out.join("");
+}
+
+function applyInline(s) {
+  // Replace **bold** with <strong>. Run on already-HTML-escaped text.
+  return s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
+// ---- Wire up CM Mode controls ----
+$("cm-run-btn").addEventListener("click", () => {
+  const goal = $("cm-goal-input").value.trim();
+  if (!goal) return;
+  startCMRun(goal);
+});
+$("cm-reset-btn").addEventListener("click", () => {
+  cmAbort?.abort();
+  state.cm = emptyState().cm;
+  $("cm-goal-input").value = "";
+  clearCMHighlights();
+  renderCM();
+});
 
 $("step-run").addEventListener("click", () => startLiveRun());
 $("step-prev").addEventListener("click", () => {

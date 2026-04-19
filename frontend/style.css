@@ -1068,3 +1068,515 @@ summary:hover { color: var(--text); }
   line-height: 1.5;
 }
 .human-feedback strong { color: var(--reject); }
+
+/* ============== CM Mode ============== */
+#cm-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 20px;
+}
+.cm-candidate-card.just-changed {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 6px 24px rgba(90, 169, 255, 0.15);
+}
+
+/* Goal panel */
+#cm-goal-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-sidebar);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-family: var(--font);
+  font-size: 13px;
+  resize: vertical;
+  min-height: 70px;
+}
+.cm-goal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cm-btn {
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: var(--font);
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-sidebar);
+  color: var(--text);
+}
+.cm-btn:hover:not(:disabled) { background: var(--bg-panel); }
+.cm-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.cm-btn-run {
+  background: rgba(78, 194, 138, 0.18);
+  color: var(--approve);
+  border-color: var(--approve);
+  font-weight: 600;
+}
+.cm-btn-run:hover:not(:disabled) { background: rgba(78, 194, 138, 0.32); }
+
+/* Plan panel */
+.cm-plan-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 0;
+}
+.cm-plan-grid dt { color: var(--text-dim); font-size: 12px; font-family: var(--mono); }
+.cm-plan-grid dd { margin: 0; font-size: 13px; color: var(--text); }
+.cm-plan-grid dd code {
+  background: var(--bg-sidebar);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.cm-plan-instruction {
+  margin: 12px 0 0 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--accent-dim);
+  background: rgba(90, 169, 255, 0.04);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+  font-style: italic;
+}
+.cm-plan-instruction:empty { display: none; }
+.cm-error {
+  padding: 8px 10px;
+  margin-top: 10px;
+  border-left: 3px solid var(--reject);
+  background: rgba(224, 96, 96, 0.08);
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--mono);
+  line-height: 1.5;
+}
+
+/* Prominent planner rejection — replaces the empty-state "—" in the plan grid
+   when the planner picked reject_goal so the reason is unmissable. */
+.cm-plan-rejected {
+  padding: 14px 16px;
+  border: 1px solid var(--reject);
+  background: rgba(224, 96, 96, 0.06);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cm-plan-rejected-header {
+  color: var(--reject);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.cm-plan-rejected-reason {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.cm-plan-rejected-hint {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* Candidate cards */
+.cm-candidate-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cm-candidate-list li.empty { padding: 6px 10px; }
+.cm-candidate-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  transition: border-color 180ms, box-shadow 180ms;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cm-candidate-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.cm-candidate-idx {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.cm-candidate-chip {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  text-transform: lowercase;
+  font-family: var(--mono);
+}
+.cm-candidate-preview {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+}
+.cm-candidate-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+.cm-candidate-approved {
+  color: var(--approve);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.cm-candidate-rejected {
+  color: var(--reject);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.cm-candidate-error {
+  color: var(--reject);
+  font-size: 12px;
+  font-family: var(--mono);
+  padding: 6px 8px;
+  background: rgba(224, 96, 96, 0.08);
+  border-radius: 3px;
+}
+
+/* Centralized drafts panel — dropdown-driven view between candidates and synthesis. */
+.cm-drafts-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.cm-drafts-controls label {
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cm-drafts-controls select {
+  flex: 1;
+  background: var(--bg-sidebar);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 5px 8px;
+  font-family: var(--font);
+  font-size: 13px;
+}
+.cm-drafts-body {
+  padding: 12px 14px;
+  background: var(--bg-sidebar);
+  border-left: 2px solid var(--accent-dim);
+  border-radius: 4px;
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cm-drafts-body-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Per-card drafted-response — collapsed by default; full text on expand. */
+.cm-candidate-draft {
+  margin-top: 4px;
+  font-size: 12px;
+}
+.cm-candidate-draft summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 0;
+  list-style: none;
+}
+.cm-candidate-draft summary::-webkit-details-marker { display: none; }
+.cm-candidate-draft summary::before {
+  content: "▸ ";
+  color: var(--text-faint);
+}
+.cm-candidate-draft[open] summary::before { content: "▾ "; }
+.cm-candidate-draft summary:hover { color: var(--text); }
+.cm-candidate-draft pre {
+  margin: 6px 0 0 0;
+  padding: 10px 12px;
+  background: var(--bg-sidebar);
+  border-radius: 4px;
+  border-left: 2px solid var(--accent-dim);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Progress pill row */
+.cm-progress {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cm-pill {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+  background: transparent;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  transition: color 150ms, background 150ms, border-color 150ms;
+}
+.cm-pill.done {
+  color: var(--approve);
+  border-color: var(--approve);
+  background: rgba(78, 194, 138, 0.1);
+}
+.cm-pill.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.cm-pill.error {
+  color: var(--reject);
+  border-color: var(--reject);
+  background: rgba(224, 96, 96, 0.12);
+}
+.cm-pill-sep {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+/* Markdown render */
+.cm-md { font-size: 13px; line-height: 1.55; color: var(--text); }
+.cm-md.empty { color: var(--text-faint); font-style: italic; }
+.cm-md h2 {
+  font-size: 14px;
+  margin: 14px 0 6px 0;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+.cm-md h2:first-child { margin-top: 0; }
+.cm-md h3 {
+  font-size: 13px;
+  margin: 10px 0 4px 0;
+  color: var(--text);
+  font-weight: 600;
+}
+.cm-md ul {
+  padding-left: 20px;
+  margin: 4px 0 8px 0;
+}
+.cm-md li { margin-bottom: 3px; color: var(--text); }
+.cm-md p { margin: 6px 0; }
+.cm-md strong { color: var(--text); font-weight: 600; }
+
+/* Planner activity panel — collapse-by-default tool-call trace */
+.cm-planner-activity-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cm-planner-activity-list li.empty { padding: 6px 10px; color: var(--text-faint); font-style: italic; }
+.cm-planner-tool-row {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0;
+}
+.cm-planner-tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--mono);
+  list-style: none;
+}
+.cm-planner-tool-summary::-webkit-details-marker { display: none; }
+.cm-planner-tool-summary::before {
+  content: "▸";
+  color: var(--text-faint);
+  font-size: 10px;
+  width: 10px;
+}
+details[open] > .cm-planner-tool-summary::before { content: "▾"; }
+.cm-planner-tool-turn { color: var(--text-faint); font-size: 11px; min-width: 50px; }
+.cm-planner-tool-name { color: var(--text); font-weight: 500; flex: 1; }
+.cm-planner-status-pill {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  text-transform: lowercase;
+  border: 1px solid var(--border-strong);
+}
+.cm-planner-status-pill.running { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+.cm-planner-status-pill.done    { color: var(--approve); border-color: var(--approve); background: rgba(78,194,138,0.1); }
+.cm-planner-status-pill.error   { color: var(--reject); border-color: var(--reject); background: rgba(224,96,96,0.12); }
+.cm-planner-tool-payload {
+  padding: 6px 12px 10px 30px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+.cm-planner-tool-payload pre {
+  margin: 4px 0 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+.cm-planner-payload-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin-top: 6px;
+}
+.cm-planner-payload-label:first-child { margin-top: 0; }
+
+/* Inline uncertain indicator on plan panel */
+#cm-plan-uncertain {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--warn);
+  background: rgba(224, 160, 64, 0.06);
+  font-size: 12px;
+  color: var(--text);
+}
+#cm-plan-uncertain ul { margin: 4px 0 0 0; padding-left: 18px; }
+#cm-plan-uncertain li { font-size: 12px; color: var(--text-dim); }
+
+/* Inline CM-level human gate inside the plan panel */
+.cm-planner-gate {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--memory);
+  background: rgba(95, 199, 217, 0.06);
+  border-radius: 6px;
+}
+.cm-planner-gate h4 {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  color: var(--memory);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cm-planner-gate p { margin: 4px 0; font-size: 12px; color: var(--text); }
+.cm-planner-gate-triggers {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cm-planner-gate-trigger {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--bg-sidebar);
+  color: var(--memory);
+  border: 1px solid var(--memory);
+}
+.cm-planner-gate-picker {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--bg-sidebar);
+  border-radius: 4px;
+  border-left: 2px solid var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-family: var(--font);
+}
+.cm-planner-gate-picker label {
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cm-planner-gate-picker select {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 5px 8px;
+  font-family: var(--font);
+  font-size: 13px;
+}
+.cm-planner-gate-actions { display: flex; gap: 8px; margin-top: 12px; }
+.cm-planner-gate-btn {
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: var(--font);
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-sidebar);
+  color: var(--text);
+}
+.cm-planner-gate-btn.approve {
+  background: rgba(78, 194, 138, 0.18);
+  color: var(--approve);
+  border-color: var(--approve);
+  font-weight: 600;
+}
+.cm-planner-gate-btn.approve:hover { background: rgba(78, 194, 138, 0.32); }
+.cm-planner-gate-btn.reject {
+  background: rgba(224, 96, 96, 0.15);
+  color: var(--reject);
+  border-color: var(--reject);
+}
+.cm-planner-gate-btn.reject:hover { background: rgba(224, 96, 96, 0.25); }
+.cm-planner-gate-sent {
+  margin-top: 10px;
+  padding: 6px 10px;
+  background: rgba(78, 194, 138, 0.08);
+  border-left: 3px solid var(--approve);
+  color: var(--text);
+  font-size: 12px;
+}

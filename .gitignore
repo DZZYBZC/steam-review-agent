@@ -4,6 +4,7 @@
 
 __pycache__/
 *.pyc
+.pytest_cache/
 
 *.db
 *.db-shm
@@ -19,6 +20,9 @@ Thumbs.db
 
 .claude/
 CLAUDE.md
+CONTEXT_ENGINEERING.md
+AGENT_ARCHITECTURE.md
+agent-design-notes/
 
 data/*.json
 data/*.csv

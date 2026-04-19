@@ -12,6 +12,7 @@
       <button class="view-tab active" data-view="demo">Demo</button>
       <button class="view-tab" data-view="evals">Evals</button>
       <button class="view-tab" data-view="notes">Memory</button>
+      <button class="view-tab" data-view="cm">CM Mode</button>
     </nav>
     <div id="stepper" class="stepper" hidden>
       <button id="step-run" class="step-btn step-run" hidden>▶ Run</button>
@@ -51,6 +52,7 @@
               <li>Or <strong>play remaining</strong> at normal pace.</li>
               <li>Each case has <strong>interviewer notes</strong> with the story.</li>
               <li>Click any chunk id in <strong>Cited evidence</strong> to expand its patch-note text.</li>
+              <li>Switch to the <strong>CM Mode</strong> tab to drive the batch agent — type a goal in plain English and watch the ReAct planner orchestrate parallel per-review sub-runs.</li>
             </ul>
           </div>
           <div class="welcome-card">
@@ -73,28 +75,90 @@
           </div>
         </div>
         <div class="welcome-graph">
-          <h3>Pre-Agent Pipeline</h3>
-          <svg viewBox="0 0 760 130" xmlns="http://www.w3.org/2000/svg" class="graph-svg pipeline-svg" role="img" aria-label="Pre-agent data pipeline">
+          <h3>CM Mode Architecture (frontend → tool calling → ReAct → execute)</h3>
+          <svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" class="graph-svg" role="img" aria-label="CM Mode architectural stack from frontend through tool calling and ReAct down to execution">
             <defs>
-              <marker id="arrow-pre" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#8a90a0"/>
+              <marker id="arrow-stack" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#5aa9ff"/>
+              </marker>
+              <marker id="arrow-stack-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#5fc7d9"/>
               </marker>
             </defs>
-            <!-- Forward arrows -->
-            <line x1="115" y1="55" x2="150" y2="55" stroke="#8a90a0" stroke-width="1.8" marker-end="url(#arrow-pre)"/>
-            <line x1="265" y1="55" x2="300" y2="55" stroke="#8a90a0" stroke-width="1.8" marker-end="url(#arrow-pre)"/>
-            <line x1="415" y1="55" x2="450" y2="55" stroke="#8a90a0" stroke-width="1.8" marker-end="url(#arrow-pre)"/>
-            <line x1="555" y1="55" x2="595" y2="55" stroke="#8a90a0" stroke-width="1.8" marker-end="url(#arrow-pre)"/>
-            <!-- Nodes -->
-            <g class="pipeline-node"><rect x="20" y="33" width="95" height="44" rx="6"/><text x="67" y="60" text-anchor="middle">Steam API</text></g>
-            <g class="pipeline-node"><rect x="150" y="33" width="115" height="44" rx="6"/><text x="207" y="60" text-anchor="middle">Ingest + Dedup</text></g>
-            <g class="pipeline-node"><rect x="300" y="33" width="115" height="44" rx="6"/><text x="357" y="60" text-anchor="middle">Classifier + Tone</text></g>
-            <g class="pipeline-node"><rect x="450" y="33" width="105" height="44" rx="6"/><text x="502" y="60" text-anchor="middle">Cluster Build</text></g>
-            <g class="pipeline-node"><rect x="595" y="33" width="130" height="44" rx="6" stroke-dasharray="4 3"/><text x="660" y="52" text-anchor="middle" fill="#5aa9ff">Agent Graph</text><text x="660" y="68" text-anchor="middle" fill="#5aa9ff" font-size="10">(see below)</text></g>
+
+            <!-- Layer 1: Frontend -->
+            <g class="graph-node">
+              <rect x="280" y="15" width="200" height="44" rx="6"/>
+              <text x="380" y="42" text-anchor="middle">Frontend</text>
+            </g>
+
+            <!-- Arrow Layer 1 → 2 -->
+            <line x1="380" y1="59" x2="380" y2="92" stroke="#5aa9ff" stroke-width="2" marker-end="url(#arrow-stack)"/>
+
+            <!-- Layer 2: CM Planner (with ReAct loop annotation) -->
+            <g class="graph-node">
+              <rect x="280" y="92" width="200" height="44" rx="6"/>
+              <text x="380" y="119" text-anchor="middle">CM Planner</text>
+            </g>
+
+            <!-- ReAct loop arc (curved arrow next to planner) -->
+            <path d="M 488 114 Q 540 114 540 100 Q 540 84 488 96"
+                  fill="none" stroke="#5fc7d9" stroke-width="1.8" stroke-dasharray="5 3"
+                  marker-end="url(#arrow-stack-loop)"/>
+            <text x="565" y="103" fill="#5fc7d9" font-size="11" font-family="SF Mono,Monaco,monospace">ReAct ↺</text>
+
+            <!-- Branching arrows from planner to 3 tool categories -->
+            <line x1="380" y1="136" x2="115" y2="172" stroke="#5aa9ff" stroke-width="1.6" marker-end="url(#arrow-stack)"/>
+            <line x1="380" y1="136" x2="380" y2="172" stroke="#5aa9ff" stroke-width="1.6" marker-end="url(#arrow-stack)"/>
+            <line x1="380" y1="136" x2="645" y2="172" stroke="#5aa9ff" stroke-width="1.6" marker-end="url(#arrow-stack)"/>
+            <text x="380" y="156" text-anchor="middle" fill="#8a90a0" font-size="10" font-family="SF Mono,Monaco,monospace">tool calling — pick one</text>
+
+            <!-- Layer 3: Three tool category groups.
+                 Category title = bold + accent blue + underline rule;
+                 tool names = regular weight + memory cyan (default fill from .graph-tag CSS). -->
+            <!-- Info gathering (left) -->
+            <g class="graph-tag">
+              <rect x="20" y="178" width="190" height="86" rx="6"/>
+              <text x="115" y="198" text-anchor="middle" font-size="12" font-weight="700" fill="#5aa9ff">Information-gathering</text>
+              <line x1="40" y1="206" x2="190" y2="206" stroke="#5aa9ff" stroke-width="0.8" opacity="0.55"/>
+              <text x="115" y="224" text-anchor="middle" font-size="11">count_matching_reviews</text>
+              <text x="115" y="240" text-anchor="middle" font-size="11">inspect_reviews</text>
+              <text x="115" y="256" text-anchor="middle" font-size="11">lookup_app_by_name</text>
+            </g>
+
+            <!-- Corpus expansion (middle) -->
+            <g class="graph-tag">
+              <rect x="240" y="178" width="280" height="86" rx="6"/>
+              <text x="380" y="198" text-anchor="middle" font-size="12" font-weight="700" fill="#5aa9ff">Corpus expansion</text>
+              <line x1="270" y1="206" x2="490" y2="206" stroke="#5aa9ff" stroke-width="0.8" opacity="0.55"/>
+              <text x="380" y="228" text-anchor="middle" font-size="11">fetch_game_reviews</text>
+              <text x="380" y="248" text-anchor="middle" font-size="11">fetch_game_patch_notes</text>
+            </g>
+
+            <!-- Terminal action (right) -->
+            <g class="graph-tag">
+              <rect x="550" y="178" width="190" height="86" rx="6"/>
+              <text x="645" y="198" text-anchor="middle" font-size="12" font-weight="700" fill="#5aa9ff">Terminal action</text>
+              <line x1="570" y1="206" x2="720" y2="206" stroke="#5aa9ff" stroke-width="0.8" opacity="0.55"/>
+              <text x="645" y="228" text-anchor="middle" font-size="11">draft_responses_for_batch</text>
+              <text x="645" y="248" text-anchor="middle" font-size="11">reject_goal</text>
+            </g>
+
+            <!-- Arrow from Terminal box down to Execute (only fires when terminal=draft) -->
+            <line x1="645" y1="264" x2="645" y2="282" stroke="#5aa9ff" stroke-width="2" marker-end="url(#arrow-stack)"/>
+
+            <!-- Layer 4: Execute (points down at the agent graph below) -->
+            <g class="graph-node">
+              <rect x="495" y="282" width="260" height="32" rx="6" stroke-dasharray="4 3"/>
+              <text x="625" y="303" text-anchor="middle" fill="#5aa9ff">Execute → Agent Graph (see below)</text>
+            </g>
           </svg>
           <p class="graph-caption">
-            <span class="legend-row"><span class="legend-swatch" style="background:#8a90a0"></span>
-              <strong>Pre-agent pipeline</strong> — data prep that runs before the LangGraph: fetch, dedupe, classify (category + tone + secondary aspects), build per-category clusters.
+            <span class="legend-row"><span class="legend-swatch" style="background:#5aa9ff"></span>
+              <strong>Architectural stack</strong> — user goal flows from the frontend down through the planner's tool-calling layer (planner picks one of seven tools by category), iterates via ReAct until a terminal action fires, then hands off to the per-review agent graph below for execution.
+            </span>
+            <span class="legend-row"><span class="legend-swatch" style="background:#5fc7d9"></span>
+              <strong>ReAct loop</strong> — after every information-gathering or corpus-expansion call, the planner observes the result and reasons about the next action. Loops until a terminal tool fires.
             </span>
           </p>
         </div>
@@ -316,6 +380,51 @@
             <ul id="audits-list" class="audits-list"></ul>
           </article>
         </div>
+      </div>
+
+      <div id="cm-view" hidden>
+        <article id="cm-goal-panel" class="panel">
+          <header><h3>Community Manager goal</h3><span id="cm-run-status" class="meta"></span></header>
+          <textarea id="cm-goal-input" rows="3" placeholder="e.g. Find the 3 most recent negative reviews about performance for app 1086940 and draft responses"></textarea>
+          <div class="cm-goal-actions">
+            <button id="cm-run-btn" class="cm-btn cm-btn-run">▶ Run batch</button>
+            <button id="cm-reset-btn" class="cm-btn">Reset</button>
+          </div>
+        </article>
+
+        <article id="cm-plan-panel" class="panel">
+          <header><h3>Plan</h3><span class="meta">committed filter from planner</span></header>
+          <dl id="cm-plan-grid" class="cm-plan-grid empty">—</dl>
+          <p id="cm-plan-instruction" class="cm-plan-instruction"></p>
+          <div id="cm-plan-uncertain" hidden></div>
+          <div id="cm-plan-error" class="cm-error" hidden></div>
+          <div id="cm-planner-gate" class="cm-planner-gate" hidden></div>
+        </article>
+
+        <article id="cm-planner-activity-panel" class="panel">
+          <header><h3>Planner activity</h3><span id="cm-planner-activity-meta" class="meta"></span></header>
+          <ol id="cm-planner-activity-list" class="cm-planner-activity-list empty"><li class="empty">—</li></ol>
+        </article>
+
+        <article id="cm-candidates-panel" class="panel">
+          <header><h3>Candidates</h3><span id="cm-candidates-meta" class="meta"></span></header>
+          <ul id="cm-candidate-list" class="cm-candidate-list empty"><li>—</li></ul>
+        </article>
+
+        <article id="cm-drafts-panel" class="panel" hidden>
+          <header><h3>Approved drafts</h3><span id="cm-drafts-meta" class="meta"></span></header>
+          <div class="cm-drafts-controls">
+            <label for="cm-drafts-picker">Review:</label>
+            <select id="cm-drafts-picker"></select>
+          </div>
+          <div id="cm-drafts-body" class="cm-drafts-body"></div>
+        </article>
+
+        <article id="cm-synthesis-panel" class="panel">
+          <header><h3>Synthesis</h3><span class="meta">markdown rollup</span></header>
+          <div id="cm-synthesis-body" class="cm-md empty">—</div>
+          <div id="cm-synthesis-error" class="cm-error" hidden></div>
+        </article>
       </div>
     </section>
   </main>

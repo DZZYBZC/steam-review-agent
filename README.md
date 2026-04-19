@@ -34,11 +34,16 @@ For the full data pipeline, eval suite, runtime/cost estimates, and other entry 
 
 ## What it does
 
-Ingests Steam reviews and routes each one through a LangGraph workflow: classify → retrieve patch notes → draft an evidence-grounded reply → critic gate → human approval. The interesting problem isn't generation — it's *defensible* generation that traces every claim back to a retrieved patch chunk.
+Two agents stacked on the same retrieval/memory infrastructure:
+
+**Per-review agent (LangGraph)** — ingests Steam reviews and routes each one through a workflow: classify → retrieve patch notes → draft an evidence-grounded reply → critic gate → human approval. The interesting problem isn't generation — it's *defensible* generation that traces every claim back to a retrieved patch chunk.
 
 - Investigator / responder / critic agents + a plain-Python coordinator and human approval gate
 - Approved drafts become few-shot examples for future runs
 - Human-rejected drafts become cluster notes that warn the next investigator about known issues in the same category
+
+**CM Mode batch agent (ReAct planner + meta-orchestration)** — a second agent runs on top of the per-review graph. Takes a natural-language goal from a community manager (e.g. *"draft replies to recent negative performance reviews for Baldur's Gate 3"*), drives a tool-use loop to commit to a filter, then orchestrates 8-way-parallel per-review sub-runs and produces a markdown rollup. Adds two new agent capabilities to the project: classical multi-tool function calling (planner picks among 7 tools with distinct downstream effects) and dynamic corpus expansion (autonomously fetches missing games via Steam APIs).
+
 - **Not** a chatbot. **Not** an autoresponder. The human-in-the-loop gate is non-negotiable — the agent does the research and drafts; the human ships it.
 
 <details>
@@ -64,21 +69,45 @@ steam-review-agent/
 │   ├── stats.py                   # Aggregate statistics over reviews + clusters
 │   ├── chunk.py                   # Parent-child section-aware patch-note chunking
 │   ├── retrieve.py                # Hybrid RAG: vector + BM25 + optional HyDE → RRF → Gemma rerank
+│   ├── steam_app_index.py         # Steam storefront search wrapper (backs CM planner's lookup_app_by_name)
 │   ├── storage.py                 # SQLite schema, DAO functions, cluster-note lifecycle
 │   ├── keywords.py                # Keyword extraction helpers
 │   └── retry.py                   # Retry decorator for flaky API calls
 │
-├── agent/                       # LangGraph multi-agent system
+├── agent/                       # LangGraph multi-agent system + CM batch planner/synthesizer
 │   ├── state.py                   # AgentState TypedDict
 │   ├── models.py                  # Pydantic models for LLM-output trust boundaries
 │   ├── graph.py                   # StateGraph construction, conditional edges, checkpointing
 │   ├── utils.py                   # Shared agent helpers (token accumulation, evidence formatting)
+│   ├── planner_cm.py              # CM batch planner — ReAct loop over 7 tools (Haiku)
+│   ├── synthesizer_cm.py          # CM batch markdown synthesizer (Haiku)
 │   └── nodes/
 │       ├── coordinator.py         # Plain-Python routing (mints run_id, action-freeze interception)
 │       ├── investigator.py        # Tool-use retrieval + self-RAG retries + cluster-note loading + secondary aspect probing
 │       ├── responder.py           # Drafts player-facing reply (Sonnet 4.6)
 │       ├── critic.py              # Validates evidence chain, tone, action — writes per-iter audit
 │       └── human_approval.py      # Human-in-the-loop interrupt gate
+│
+├── backend/                     # FastAPI demo backend (per-review demo + CM Mode)
+│   ├── app.py                     # App entry, route mounting, lifespan warm-load
+│   ├── routes/
+│   │   ├── cm.py                    # POST /cm/run + POST /cm/{meta_run_id}/confirm
+│   │   ├── runs.py                  # POST /runs + SSE stream + per-run resume
+│   │   ├── replays.py               # Featured-case replay
+│   │   ├── reviews.py               # Live-mode candidate listing
+│   │   ├── chunks.py                # Chunk lookup for citation drilldown
+│   │   ├── evals.py                 # Latest eval-snapshot endpoint
+│   │   └── notes.py                 # Memory-pool inspection + promotion
+│   └── services/
+│       ├── cm_runner.py             # CM batch orchestrator — drives planner in worker thread, parallel sub-runs, deterministic gate
+│       ├── live_runner.py           # Per-review run driver (mints ids, threads checkpointer)
+│       ├── sse.py                   # SSE event envelope + format_sse helper
+│       └── featured.py              # Featured replay case manifest
+│
+├── frontend/                    # Vanilla-JS SPA (no build step)
+│   ├── index.html                 # 4-tab shell: Demo / Evals / Memory / CM Mode
+│   ├── app.js                     # Reducer + render functions + SSE consumers (separate dispatchers for Demo and CM)
+│   └── style.css                  # All styles (single file)
 │
 ├── skills/                      # Agent skills — SKILL.md files loaded by Python via load_skill()
 │   ├── classify-review/           # Category classifier prompt
@@ -88,6 +117,8 @@ steam-review-agent/
 │   ├── draft-response/            # Responder draft template
 │   ├── critique-draft/            # Critic quality-gate checklist
 │   ├── generate-hyde/             # HyDE hypothetical patch-note generator
+│   ├── plan-cm-goal/              # CM planner ReAct loop instructions (probe → fetch → commit)
+│   ├── synthesize-cm-batch/       # CM synthesizer rollup instructions (Pattern / Recommended escalations / Per-review actions)
 │   ├── judge-grounding/           # Eval judge: low-confidence citation classifier
 │   ├── judge-action/              # Eval judge: action severity classifier
 │   ├── judge-pairwise/            # Eval judge: revision improvement
@@ -234,6 +265,86 @@ Five nodes: coordinator (plain Python), investigator, responder, critic, and hum
 - **Sonnet 4.6** — investigator and responder
   - Investigator: query formulation and evidence evaluation benefit from a stronger model (sufficiency lifted ~14pp when upgraded from Haiku)
   - Responder: generates player-visible prose
+
+---
+
+## CM Mode (batch agent)
+
+A second agent runs *on top of* the per-review graph above. Takes a natural-language goal from a community manager and orchestrates a parallel batch of per-review sub-runs.
+
+```
+                ┌──────────────────────┐
+   user goal ──►│      CM Planner      │── reject_goal ──────────► END (no draft)
+                │   (ReAct, 7 tools,   │
+                │        Haiku)        │
+                └──────────┬───────────┘
+                           │ draft_responses_for_batch
+                           ▼
+                ┌──────────────────────┐
+                │  Deterministic Gate  │── human rejects ────────► END
+                │  (Python rules over  │
+                │  CM_GATE_* triggers; │
+                │  disambig picker     │
+                │  when ≥2 in-DB hits) │
+                └──────────┬───────────┘
+                           │ human approves
+                           ▼
+                ┌──────────────────────┐
+                │   Parallel Sub-Runs  │
+                │  (CM_SUBRUN_PARALLEL │
+                │  ISM-way executor;   │
+                │   each sub-run is    │
+                │   the per-review     │
+                │   graph above with   │
+                │   silently auto-     │
+                │   approved gate)     │
+                └──────────┬───────────┘
+                           ▼
+                ┌──────────────────────┐
+                │   Synthesizer (Haiku)│
+                │   3-section markdown │
+                │   rollup             │
+                └──────────────────────┘
+```
+
+### The planner is a ReAct loop over 7 tools
+
+Three categories with explicit budgets:
+
+- **Information-gathering** (read-only, cheap, can iterate): `count_matching_reviews` (SQL count + DB-membership check), `inspect_reviews` (sample previews), `lookup_app_by_name` (resolves a typed game name to its Steam app_id via the storefront search API + cross-references each candidate against the local DB so the planner knows which are already ingested)
+- **Corpus expansion** (slow, single-call budget per kind): `fetch_game_reviews` (wraps the existing `pipeline/ingest_reviews` + classifier), `fetch_game_patch_notes` (wraps `pipeline/ingest_patch_notes` + chunking + ChromaDB embedding) — autonomously brings missing games into the DB
+- **Action** (terminal, ends the loop): `draft_responses_for_batch` (commits with filter + synthesis_instruction + uncertain/concerns signals), `reject_goal` (refuses)
+
+The investigator uses tool-use too, but with one tool (`retrieve_patches`) iterated for query reformulation — that's self-RAG. The CM planner uses seven distinct tools for fundamentally different actions — that's classical multi-tool function calling. Two ReAct agents in the project, deliberately chosen for different problems.
+
+### Gating is deterministic Python, not an LLM tool
+
+The planner emits structured uncertainty signals (`uncertain: bool`, `concerns: list[str]`) on its `draft_responses_for_batch` call. The orchestrator's Python rules in `cm_runner.py:_evaluate_gate_triggers` decide whether to pause for human approval. Five trigger types:
+
+- `READY_TO_DRAFT` — fires unconditionally when `CM_GATE_ALWAYS=True` (default — turns the gate into a universal "ready to draft, approve to proceed" step rather than an exception path)
+- `CM_GATE_ON_UNCERTAIN` — fires when `uncertain=true` or `concerns` is non-empty
+- `CM_GATE_NO_APP_ID_TRIGGER` — fires when filter.app_id is null
+- `CM_GATE_FETCH_TRIGGERED` — fires when the planner used a fetch tool this run (we just spent tokens; confirm before spending more)
+- `CM_GATE_COUNT_THRESHOLD` — fires when actual candidate count exceeds the threshold (default 50)
+- `CM_GATE_DISAMBIGUATE_APP` — fires when `lookup_app_by_name` found ≥2 in-DB matches; gate UI shows a dropdown so the user picks which game
+
+**Why deterministic, not LLM-judged:** same principle as the per-review coordinator — the workflow is fixed and the branching is knowable in advance. An earlier draft had a `request_human_confirmation` tool the planner could invoke; it was removed because *should we ask the human?* is a knowable Python rule, not an LLM judgment. The LLM owns the diagnosis (uncertain + concerns); Python owns the policy.
+
+### Sub-run parallelism
+
+After the gate approves, sub-runs fire in a `ThreadPoolExecutor` with `CM_SUBRUN_PARALLELISM` workers (default 8). Each sub-run is the per-review LangGraph above, with the human gate **silently auto-approved** by `_drive_sub_run_streaming` — the user's only visible gate is the CM-level one. Forwarded events stream to the SSE generator in real-time as workers fire them, so the frontend cards advance in waves rather than batch-rendering at the end.
+
+### What the agent demonstrates
+
+After this layer, the project showcases five distinct agent patterns coexisting in one codebase, each chosen for the right sub-problem:
+
+1. **ReAct** (Yao 2022) — investigator's iterative retrieval + CM planner's multi-tool loop
+2. **Plan-and-Execute** (Wang 2023) — planner produces the plan, orchestrator + sub-agents execute it; HITL gate sits at the plan-execute boundary
+3. **Self-RAG** (Asai 2023) — investigator decides when to retrieve and evaluates evidence sufficiency
+4. **Reflexion** (Shinn 2023) — critic loop with revision (per-run) + cluster_notes as inter-run reflection
+5. **Multi-Agent Collaboration** — two-level: meta CM planner orchestrates parallel per-review multi-agent graphs
+
+Plus the supporting infrastructure: tiered memory architecture (working / episodic / institutional / semantic), two distinct HITL implementations, deterministic-vs-LLM decision boundary, parallel streaming agent execution.
 
 ---
 
@@ -418,7 +529,9 @@ The metrics below cite four distinct populations:
 - **Embeddings:** sentence-transformers (`BAAI/bge-base-en-v1.5`)
 - **Reranker:** Gemma reranker (`BAAI/bge-reranker-v2-gemma`)
 - **Lexical search:** rank-bm25 (in-memory, rebuilt per run)
-- **Other:** pandas, python-frontmatter (for skill files), python-dotenv
+- **Demo backend:** FastAPI (per-review SSE stream, CM Mode batch endpoint, eval/memory introspection routes)
+- **Demo frontend:** vanilla JavaScript SPA — no build step, no framework. SSE consumer manually parsed via `fetch` + `ReadableStream` for the CM POST endpoint; `EventSource` for the per-review GET stream.
+- **Other:** pandas, python-frontmatter (for skill files), python-dotenv, requests
 
 ---
 
@@ -453,3 +566,6 @@ export HF_TOKEN=...
 | `python test_graph.py` | End-to-end graph smoke test on a hardcoded "game crashes in dungeon" review. Auto-approves at the human gate. ~3-5 real LLM calls, ~30s wall clock, costs a few cents. |
 | `python evals/run_evals.py` | Run the full eval suite (56 golden cases). `--quick` for a subset, `--case-id <id>` for a single case, `--app-id <id>` and `--category <cat>` for filters, `--workers N` to control parallelism (default 10). Writes a snapshot to `evals/snapshots/` and a raw run JSON to `evals/runs/`. |
 | `python resolve_note.py {list <app_id> <category> \| resolve <note_id> \| reactivate <note_id>}` | Manage the cluster notes lifecycle. |
+| `uvicorn backend.app:app --reload` | Boot the demo web app on `http://127.0.0.1:8000`. Four tabs in the topbar: **Demo** (per-review featured replays + Try Live), **Evals** (latest snapshot dashboard), **Memory** (cluster notes + audit log few-shot pool), **CM Mode** (batch agent — type a goal, watch the planner ReAct loop, approve at the gate, see drafts produced in parallel). Lifespan hook warm-loads the embedding + reranker models on startup (~10s on first boot). |
+| `python -m pytest test_cm_planner_tools.py -v` | CM planner tool handlers in isolation. SQL tests run by default; pass `--integration` to also run the Steam-API tests (lookup/fetch). |
+| `python -m pytest test_cm_planner_loop.py -v --integration` | End-to-end CM planner ReAct loop golden cases (5 scenarios: gibberish reject, ingested-game happy path, cold-game fetch, vague-input gate-trigger, name-resolution path). Hits live Anthropic API. |

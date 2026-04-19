@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import CHECKPOINT_DB_PATH, DB_PATH
 from backend.routes import chunks as chunks_route
+from backend.routes import cm as cm_route
 from backend.routes import evals as evals_route
 from backend.routes import notes as notes_route
 from backend.routes import replays as replays_route
@@ -73,6 +74,7 @@ app.include_router(reviews_route.router)
 app.include_router(runs_route.router)
 app.include_router(evals_route.router)
 app.include_router(notes_route.router)
+app.include_router(cm_route.router)
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 

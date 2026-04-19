@@ -162,3 +162,48 @@ CLASSIFIER_WORKERS = 10     # Thread pool size for parallel classification
 CLASSIFICATION_LIMIT = 200  # Default number of reviews to classify per run
 
 TEST_APP_ID = "2246340"  # Monster Hunter Wilds — used by test scripts
+
+# CM planner — ReAct tool-use loop. Mirrors investigator's dual-budget pattern.
+# See agent/planner_cm.py and skills/plan-cm-goal/SKILL.md.
+CM_PLANNER_MODEL = CLASSIFIER_MODEL                  # Haiku — narrow planning task
+CM_PLANNER_TEMPERATURE = 0.0
+CM_PLANNER_MAX_TOKENS = 1500                         # matches investigator; verified sufficient via Phase 0B spike
+CM_PLANNER_MAX_INFO_CALLS = 5                        # caps count_matching_reviews + inspect_reviews calls
+CM_PLANNER_MAX_FETCH_CALLS = 2                       # caps fetch_game_reviews + fetch_game_patch_notes calls (one per kind per run)
+CM_PLANNER_MAX_TOTAL_TURNS = 10                      # absolute hard cap on loop iterations; 2-turn slack over a maximally busy 8-call run
+CM_PLANNER_INSPECT_PREVIEW_CHARS = 200               # truncation for inspect_reviews previews
+CM_PLANNER_FETCH_REVIEWS_HARD_CAP = 200              # max_reviews ceiling for fetch_game_reviews
+CM_PLANNER_FETCH_PATCH_NOTES_HARD_CAP = 100          # max_items ceiling for fetch_game_patch_notes (matches PATCH_NOTE_MAX_ITEMS)
+
+# CM-level human gate — deterministic Python rule, NOT an LLM tool. Planner emits
+# uncertain + concerns on draft_responses_for_batch; the orchestrator decides whether
+# to gate based on these signals plus deterministic triggers below.
+# Universal gate — when True, every batch pauses for human confirmation before
+# drafting fires, even if no other trigger applies. Demo-friendly default: lets
+# the user (or interviewer) inspect the planner's committed filter before the
+# expensive sub-run loop starts. Flip to False to auto-execute when the planner
+# is confident and no other trigger fires.
+CM_GATE_ALWAYS = True
+
+CM_GATE_ON_UNCERTAIN = True                          # gate if planner_result.uncertain or len(concerns) > 0
+CM_GATE_NO_APP_ID_TRIGGER = True                     # gate if filter.app_id is None (signals broad/ambiguous goal)
+CM_GATE_FETCH_TRIGGERED = True                       # gate if planner used fetch_game_reviews this run (we just spent tokens; confirm before committing more)
+# Note: COUNT_THRESHOLD is NOT a cost protector — draft_responses_for_batch.filter.limit
+# is already clamped to [1, 10], so the sub-run loop can never fire more than 10
+# candidates. What this gates against is the planner silently top-10-slicing a large
+# pool when the user probably wanted to narrow further. Bumping this without changing
+# the limit clamp changes user-intent gating, NOT cost protection.
+CM_GATE_COUNT_THRESHOLD = 50
+
+# CM sub-run parallelism — how many candidates run their investigator→responder→
+# critic→gate sub-graph concurrently. Each sub-run is independent (unique run_id,
+# thread_id, LangGraph checkpoint thread). Bound by:
+#   - Anthropic API rate limits (8-way × ~8 calls/sub-run = ~60 concurrent calls
+#     peak; comfortable under tier 3's Sonnet ~50 RPM + Haiku ~100 RPM headroom)
+#   - Local embedding/reranker contention — BAAI/bge-reranker-v2-gemma processes
+#     one query at a time, so concurrent sub-runs queue on it; above ~8 the
+#     contention dominates and per-candidate latency rises
+#   - SQLite WAL concurrent writes (LangGraph checkpointer + audit_log)
+# Set for tier 3 API account. Drop to 4 on lower tiers; serial (=1) is the
+# pre-parallelization behavior.
+CM_SUBRUN_PARALLELISM = 8
